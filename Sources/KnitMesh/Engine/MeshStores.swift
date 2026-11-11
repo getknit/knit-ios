@@ -138,6 +138,12 @@ public struct MeshConfiguration: Sendable {
     /// ``Capabilities/local`` either way, since Android reads these bits from the pinned profile alone
     /// (`CryptoScheme.kt:11-13`). Taking peers' prekeys runs either way, since it sends nothing.
     public var ratchet: Bool
+    /// Whether this build draws a link's preview card (ADR 2026-11.hcvg): on in a debug build of the app until the
+    /// maintainer approves link previews for the store, and off in a release build, knit-peer and the tests. On, our
+    /// signed profile carries ``Capabilities/linkPreview``, the promise Android reads from it alone before it attaches a
+    /// card to a DM or a group toward us (`audienceCannotRenderCards`). The HELLO and the advert carry
+    /// ``Capabilities/local`` either way, which never holds it: a release build must not claim it.
+    public var linkPreviews: Bool
     /// The label a quote rebuilt from its original carries for what the original carried with no words: a GIF, a file or
     /// a voice note, in the reader's language (`QuoteLabels`, knit-next ADR 2026-10.gpa3). The app passes its composer's
     /// own; without one, as in knit-peer and the tests, such a quote carries no words, and a photo reads as one.
@@ -145,9 +151,15 @@ public struct MeshConfiguration: Sendable {
 
     /// What our signed profile advertises while it carries our prekey: ``Capabilities/local`` (`0xC015F`) with the switch
     /// on, and without ``Capabilities/ratchetSuite`` (`0xC000F`) with it off. ``Capabilities/linkProof`` and
-    /// ``Capabilities/blindAdvert`` ride either way.
+    /// ``Capabilities/blindAdvert`` ride either way, and so do ``drawnCapabilities``'s bits: `0xC055F` in a debug build.
     public var capabilities: Capabilities {
-        ratchet ? .local : Capabilities.local.subtracting(.ratchetSuite)
+        (ratchet ? .local : Capabilities.local.subtracting(.ratchetSuite)).union(drawnCapabilities)
+    }
+
+    /// The bits our signed profile adds for what this build draws, prekey or none: ``Capabilities/linkPreview`` while
+    /// ``linkPreviews`` is on.
+    public var drawnCapabilities: Capabilities {
+        linkPreviews ? .linkPreview : []
     }
 
     /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h, and typing's 12 s and 8 s. The ratchet
@@ -163,6 +175,7 @@ public struct MeshConfiguration: Sendable {
         typingLifetimeMilliseconds: Int64 = 12_000,
         typingIntervalMilliseconds: Int64 = 8000,
         ratchet: Bool = false,
+        linkPreviews: Bool = false,
         quoteLabel: @escaping @Sendable (MessageAttachment) -> String? = { _ in nil }
     ) {
         self.router = router
@@ -174,6 +187,7 @@ public struct MeshConfiguration: Sendable {
         self.typingLifetimeMilliseconds = typingLifetimeMilliseconds
         self.typingIntervalMilliseconds = typingIntervalMilliseconds
         self.ratchet = ratchet
+        self.linkPreviews = linkPreviews
         self.quoteLabel = quoteLabel
     }
 }

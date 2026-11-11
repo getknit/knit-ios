@@ -1074,7 +1074,9 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 - **Android reads these bits from the pinned profile alone** (`CryptoScheme.kt:11-13`). That is why the dark phases
   could carry them on a Debug build's profile while the HELLO and the advert stayed `0xF`, and why the profile is what
   the switch gates: off, it carries neither the bits nor a prekey (P8), only `local` without them (`0xC000F` since
-  ADR 2026-11.sv5t, `0x4000F` from knit-ios #25 until then).
+  ADR 2026-11.sv5t, `0x4000F` from knit-ios #25 until then). The bits for what the build draws
+  (`MeshConfiguration.drawnCapabilities`, `CAP_LINK_PREVIEW` in a debug build, ADR 2026-11.hcvg) ride the profile
+  either way, so a debug build signs `0xC055F` with the prekey and `0xC040F` without.
 
 ### What this port leaves out
 

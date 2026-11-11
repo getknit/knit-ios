@@ -55,6 +55,11 @@ public final class AppSession {
     /// What records, plays and reads voice notes, or `nil` in a build without them: a release build until the maintainer
     /// approves them for the store (``VoiceNotes``).
     @ObservationIgnored public let voiceNotes: VoiceNotes?
+    /// Link previews, or `nil` in a build without them: a release build until the maintainer approves them for the store
+    /// (``LinkPreviews``, ADR 2026-11.hcvg).
+    @ObservationIgnored public let linkPreviews: LinkPreviews?
+    /// The link-preview cards opened so far, which a thread draws; `nil` in a build without link previews.
+    public let linkCards: LinkCards?
 
     @ObservationIgnored let mesh: any MeshService
     @ObservationIgnored let notifier: (any Notifier)?
@@ -68,7 +73,8 @@ public final class AppSession {
 
     /// A session over `mesh` and the stores it writes, posting notifications through `notifier`, screening words with
     /// `textScreening`, reading photos' sizes with `photoDimensions`, recording, playing and reading voice notes with
-    /// `voiceNotes`, and keeping the content filter's toggle in `preferences`.
+    /// `voiceNotes`, drawing link previews' cards with `linkPreviews`, and keeping the content filter's toggle in
+    /// `preferences`.
     @preconcurrency
     public init(
         identity: OwnIdentity, stores: MeshStores, mesh: any MeshService,
@@ -76,6 +82,7 @@ public final class AppSession {
         textScreening: TextScreening? = nil,
         photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)? = nil,
         voiceNotes: VoiceNotes? = nil,
+        linkPreviews: LinkPreviews? = nil,
         preferences: any AppPreferences = MemoryPreferences()
     ) {
         self.identity = identity
@@ -85,6 +92,9 @@ public final class AppSession {
         self.textScreening = textScreening
         self.photoDimensions = photoDimensions
         self.voiceNotes = voiceNotes
+        self.linkPreviews = linkPreviews
+        let blobs = stores.blobs
+        linkCards = linkPreviews.map { _ in LinkCards { blobs.bytes(of: $0) } }
         self.preferences = preferences
         filtersContent = preferences.filtersContent
     }

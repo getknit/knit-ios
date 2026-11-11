@@ -39,6 +39,11 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   peer whose HELLO or pinned profile carries it (ADR 2026-11.sv5t). Every start whose profile would
   carry other capabilities than its last publish recorded republishes it as an edit, so no older profile of ours can
   take a bit back where a peer holds it (the `link-hello-proof` contract, §7).
+- **`CAP_LINK_PREVIEW` (`0x400`) lives in the signed profile alone, in a debug build alone.** It promises that this
+  phone draws a link's preview card, and Android attaches one to a DM or a group only toward a pinned profile carrying
+  it. A debug build signs it beside the rest (`MeshConfiguration.linkPreviews`), reading `0xC055F` with the prekey and
+  `0xC040F` without; a release build signs `0xC015F` until the maintainer approves link previews (ADR 2026-11.hcvg).
+  Never add it to `Capabilities.local`, which the HELLO and the advert send in every build.
 - **`CAP_DOORBELL` (`0x1000`) lives in the HELLO alone.** The HELLO adds it, reading `c315f`, when the radio
   serves the doorbell (`Radio.servesDoorbell`). Nothing else ever advertises it: not `Capabilities.local`, not the
   signed profile, not the advert, and never the Linux peer's `android` profile, which serves no GATT.

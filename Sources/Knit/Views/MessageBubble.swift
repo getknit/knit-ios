@@ -13,7 +13,8 @@
     /// takes reactions, the menu opens on the six, and VoiceOver offers each as an action (ADR 2026-10.ehe6). Where it takes
     /// replies, Reply leads the rest; a reply's quote sits above its photo and words, and takes the thread to the original
     /// when the thread shows it (ADR 2026-10.mn29). A web address in the words opens on a tap, as on Android, and
-    /// VoiceOver offers each as an action of the row it is part of (ADR 2026-11.w5ew).
+    /// VoiceOver offers each as an action of the row it is part of (ADR 2026-11.w5ew). In a build with link previews, the
+    /// card the sender fetched for one of them sits where a photo would, and hides behind the same tap (ADR 2026-11.hcvg).
     internal struct MessageBubble: View {
         let message: ChatMessage
         /// Where it sits in its run.
@@ -96,6 +97,9 @@
                         Button(Copy.Attachments.viewPhoto) { open(photo) }
                     }
                 }
+                if cardCovered {
+                    Button(Copy.LinkPreviews.show, action: reveal)
+                }
                 voiceActions
                 if let react {
                     ForEach(ReactionChoices.six, id: \.self) { emoji in
@@ -134,6 +138,7 @@
                 message: message,
                 place: place,
                 covered: covered,
+                cardCovered: cardCovered,
                 hidden: hidden,
                 reveal: reveal,
                 open: open,
@@ -155,6 +160,11 @@
             !revealed && photo.map { screening?.isHiding($0, isMine: message.isMine) == true } == true
         }
 
+        /// Whether the content filter hides the link's card now: screened as flagged, someone else's, and not tapped to show.
+        private var cardCovered: Bool {
+            !revealed && message.card.map { screening?.isHiding(card: $0, isMine: message.isMine) == true } == true
+        }
+
         /// Why the filter hides the words now, a quote's with the reply's, or `nil` while they show. Words it has yet to read
         /// never show on a tap.
         private var hidden: HiddenWords? {
@@ -167,7 +177,11 @@
         private var value: String {
             let time = Date(milliseconds: message.sentAt).formatted(date: .omitted, time: .shortened)
             let stamp = place.showsStamp ? [] : [time, message.status?.label]
-            let hides = [hidden.map { _ in Copy.Moderation.hiddenMessage }, covered ? Copy.Moderation.hiddenPhotoValue : nil]
+            let hides = [
+                hidden.map { _ in Copy.Moderation.hiddenMessage },
+                covered ? Copy.Moderation.hiddenPhotoValue : nil,
+                cardCovered ? Copy.LinkPreviews.hiddenValue : nil,
+            ]
             return (stamp + hides + [message.reactionSummary])
                 .compactMap(\.self)
                 .joined(separator: ", ")
@@ -232,12 +246,14 @@
     }
 
     /// A message's column: the author's name in the room and a group, which opens their profile, the quote of the message
-    /// it replies to, its photo, its words or what stands in for them, its reactions, and its stamp.
+    /// it replies to, its photo or its link's card, its words or what stands in for them, its reactions, and its stamp.
     private struct BubbleContent: View {
         let message: ChatMessage
         let place: MessagePlace
         /// Whether the photo hides until a tap.
         let covered: Bool
+        /// Whether the link's card hides until a tap.
+        let cardCovered: Bool
         /// Why the words hide, or `nil` while they show.
         let hidden: HiddenWords?
         let reveal: () -> Void
@@ -260,9 +276,7 @@
                 }
                 // A quote's words hide with the reply's, behind the same tap.
                 QuoteButton(quote: hidden == nil ? message.quote : nil, isMine: message.isMine, showOriginal: showOriginal)
-                if let attachment = message.attachment {
-                    AttachmentView(attachment: attachment, isMine: message.isMine, covered: covered, reveal: reveal) { open(attachment) }
-                }
+                carried
                 if let hidden {
                     HiddenWordsView(hidden: hidden, shape: shape, reveal: reveal)
                 } else if !message.body.isEmpty {
@@ -280,6 +294,17 @@
                 if place.showsStamp {
                     Stamp(message: message)
                 }
+            }
+        }
+
+        /// What the message carries above its words: its photo or voice note, or its link's card. Never both: a card is no
+        /// attachment.
+        @ViewBuilder private var carried: some View {
+            if let attachment = message.attachment {
+                AttachmentView(attachment: attachment, isMine: message.isMine, covered: covered, reveal: reveal) { open(attachment) }
+            }
+            if let card = message.card {
+                LinkCardView(card: card, isMine: message.isMine, covered: cardCovered, reveal: reveal)
             }
         }
 

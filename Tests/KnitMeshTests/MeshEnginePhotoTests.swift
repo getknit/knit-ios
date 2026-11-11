@@ -149,6 +149,30 @@ import Testing
         #expect(fixture.engine.blobExchange.isWanted(hash))
     }
 
+    /// A link's preview card is an attachment like any other to the engine, whose rules never read a type (ADR
+    /// 2026-11.hcvg): an accepted DM's sealed card is wanted, kept as it lands, and announced, so the app draws it.
+    @Test func aDMLinkCardIsWantedKeptAndAnnouncedLikeAPhoto() throws {
+        let fixture = EngineFixture(alice)
+        fixture.link(bob)
+        try fixture.pin(bob)
+        let card = LinkPreviewBlob(url: "https://example.com/a", title: "A page").encoded
+        let sealed = try #require(AttachmentCrypto.seal(card))
+        let hash = BlobHash(of: sealed.blob)
+        let link = "https://example.com/a"
+        let key = Base64.encode(sealed.key)
+        let content = MessageContent(body: link, attachmentHash: hash.string, attachmentMime: LinkPreviewBlob.mime, attachmentKey: key)
+        let message = try bob.directMessage(link, to: alice, id: frameIdOf("dm-1"), sentAt: EngineFixture.start, content: content)
+        fixture.deliver(message, from: bob)
+        fixture.engine.accept(bob.nodeId.string)
+        #expect(fixture.engine.blobExchange.isWanted(hash))
+        _ = fixture.engine.drainEvents()
+        let landed = InboundFile(from: bob.nodeId, kind: .attachment, hash: hash, mime: LinkPreviewBlob.mime, bytes: sealed.blob)
+        fixture.engine.receiveFile(landed)
+        #expect(fixture.stores.blobs.bytes(of: hash) == sealed.blob)
+        #expect(fixture.engine.drainEvents().contains(.attachmentArrived(hash)))
+        #expect(!fixture.engine.blobExchange.isWanted(hash))
+    }
+
     /// Android forwards a room picture into a DM under the room's own hash, with no key (knit-next ADR 2026-10.mptm): a
     /// null key has always meant a plaintext blob, so the message keeps the hash alone and the photo is fetched as is.
     /// Many messages may name that one blob.

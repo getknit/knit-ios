@@ -59,7 +59,8 @@ thread (`MeshManager.kt:995-1128`, `AttachmentCrypto.kt`, `AttachmentStore.kt`):
   - A voice message or a file shows a tile with its name and a line saying this build can't open it.
     (Amended 2026-10-26: a debug build plays a voice message in a DM or a group, and says a Nearby post's plays in DMs
     and groups; a release build keeps this tile until voice notes are approved for the store; ADR 2026-10.ue3y.)
-  - A link's card shows nothing the link in the text doesn't already show.
+  - A link's card shows nothing the link in the text doesn't already show. (Amended 2026-11-10: a debug build draws
+    Android's card beside the link it describes, from `ChatMessage.card`, never as an attachment; ADR 2026-11.hcvg.)
   - A list's or a notification's line for a message with no words says what it carries, as Android's does:
     "📷 Photo", "🎞️ GIF", "🎤 Voice message", or "📎" and the file's name.
 - **Preparing a photo** (`ImageCodec.chatPhoto`):

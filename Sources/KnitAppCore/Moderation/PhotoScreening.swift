@@ -12,6 +12,12 @@ public import Observation
 @MainActor
 @Observable
 public final class PhotoScreening {
+    /// What screening a card found, and whether it stands: a picture that could not be scored leaves a clean one open.
+    private struct CardVerdict: Sendable {
+        var flagged: Bool
+        var settled: Bool
+    }
+
     /// One photo as it is screened: its blob, and the key that opens it when it is sealed. Two messages may name one
     /// blob with different keys, and so different pictures.
     private struct Screened: Hashable {
@@ -32,6 +38,10 @@ public final class PhotoScreening {
     /// ``isHidingFace(_:)``, so a verdict that lands redraws them.
     private var verdicts: [Screened: Bool] = [:]
     @ObservationIgnored private var screening: [Screened: Task<[Float]?, Never>] = [:]
+    /// What each link-preview card screened so far looked like, picture and words as one, which views read through
+    /// ``isHiding(card:isMine:)``.
+    private var cardVerdicts: [Screened: Bool] = [:]
+    @ObservationIgnored private var screeningCards: [Screened: Task<CardVerdict, Never>] = [:]
 
     /// The filter over `session`'s photos, scoring them with `classifier` (none screens nothing), under the session's
     /// toggle.
@@ -78,6 +88,64 @@ public final class PhotoScreening {
     /// reads it, so a hidden photo does not open in the viewer.
     public func isHidingFace(_ photo: BlobHash) -> Bool {
         filtersContent && photo != session.directory.myPhoto && verdicts[Screened(hash: photo, key: nil)] == true
+    }
+
+    /// Whether a thread hides `card` behind a tap: the filter is on, someone else sent it, and its picture looks explicit
+    /// or its words abusive (`screenLinkPreview`). One verdict for both, since the card hides whole. It screens the card
+    /// first if nobody has yet, so a view asks before it draws one. Its words are read as a message's are in its thread:
+    /// with the room's lists in the room.
+    public func hides(card: LinkCard, isMine: Bool) async -> Bool {
+        guard filtersContent, !isMine else {
+            return false
+        }
+        let screened = Screened(hash: card.hash, key: card.key)
+        if let known = cardVerdicts[screened] {
+            return known
+        }
+        let task = screeningCards[screened] ?? Task { await self.verdict(on: card) }
+        screeningCards[screened] = task
+        let verdict = await task.value
+        screeningCards[screened] = nil
+        if verdict.settled {
+            cardVerdicts[screened] = verdict.flagged
+        }
+        return verdict.flagged
+    }
+
+    /// What ``hides(card:isMine:)`` answered for `card`, without screening it: `false` until it has been screened. The
+    /// bubble reads it to cover the card, and VoiceOver to offer Show preview.
+    public func isHiding(card: LinkCard, isMine: Bool) -> Bool {
+        filtersContent && !isMine && cardVerdicts[Screened(hash: card.hash, key: card.key)] == true
+    }
+
+    /// Whether `card`'s picture looks explicit or its words abusive. A picture that could not be scored is let through, as
+    /// a photo is, and leaves the verdict unsettled unless the words flag the card, so it is asked about again next time.
+    /// Words the model could not read pass, as a message's do.
+    private func verdict(on card: LinkCard) async -> CardVerdict {
+        var scored = true
+        if card.hasImage, let classifier {
+            if let scores = await Self.pictureScores(of: card, with: classifier, from: session) {
+                if ExplicitPhoto.isExplicit(scores) {
+                    return CardVerdict(flagged: true, settled: true)
+                }
+            } else {
+                scored = false
+            }
+        }
+        let abusive = await session.textScreening?.isAbusive(card.moderationText, inRoom: card.inRoom) ?? false
+        return CardVerdict(flagged: abusive, settled: abusive || scored)
+    }
+
+    /// The scores of `card`'s picture, read and scored off the main actor; `nil` when it is missing, or the classifier
+    /// could not score it.
+    @concurrent
+    nonisolated private static func pictureScores(
+        of card: LinkCard, with classifier: any PhotoClassifier, from session: AppSession
+    ) async -> [Float]? {
+        guard let bytes = session.picture(of: card) else {
+            return nil
+        }
+        return await classifier.scores(of: bytes)
     }
 
     /// The verdict on `photo`, screening it once however many ask at the same time. A photo that could not be scored is

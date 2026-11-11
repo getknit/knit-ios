@@ -112,6 +112,10 @@
         static let photoPlaceholder: CGFloat = 160
         /// A photo's corner.
         static let photoCorner: CGFloat = 12
+        /// A link's preview card's width in its bubble (`LINK_CARD_WIDTH`, ADR 2026-11.hcvg).
+        static let linkCardWidth: CGFloat = 220
+        /// The height of a card's picture, which fills the card's width (`LINK_CARD_IMAGE_HEIGHT`).
+        static let linkCardPicture: CGFloat = 120
         /// The side of the photo the composer holds.
         static let stagedPhoto: CGFloat = 72
         /// How long a missing photo's spinner turns, in seconds, before it settles to an hourglass

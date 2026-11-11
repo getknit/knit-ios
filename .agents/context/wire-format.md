@@ -185,7 +185,8 @@ These only ever grow. A value is never reused, even after it is retired.
 
   `LORA_DIRECT` and `INET_LINK` are Android's, and this port names neither. `LINK_PROOF` (ADR 2026-11.hpmt, knit-next
   ADR 2026-11.264w) is in `Capabilities.local`, so the HELLO reads `c215f` (`c315f` with the doorbell) and the signed
-  profile `0xC015F` or `0xC000F`. It is read twice: from the HELLO, to decide whether a link runs the proof exchange,
+  profile `0xC015F` or `0xC000F` (`0xC055F` or `0xC040F` in a debug build with link previews, which signs
+  `CAP_LINK_PREVIEW` too; ADR 2026-11.hcvg). It is read twice: from the HELLO, to decide whether a link runs the proof exchange,
   and from the signed profile, whose copy makes a peer proof-capable. A HELLO carrying it carries a fourth field,
   `n<32 lowercase hex>`, a fresh nonce, and a link where both HELLOs carry it exchanges tag-8 `PROOF` records before it
   registers (`ble-transport.md`, "The handshake").

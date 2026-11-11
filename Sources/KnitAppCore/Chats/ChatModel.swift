@@ -40,6 +40,9 @@ public struct ChatMessage: Sendable, Equatable, Identifiable {
     public var mentionSpans: [Range<Int>] = []
     /// The web addresses in ``body``, which the bubble makes links, as Android's does (ADR 2026-11.w5ew).
     public var links: [MessageLink] = []
+    /// The preview card the sender fetched for one of ``links``, or `nil` (ADR 2026-11.hcvg). Only a build with link
+    /// previews draws one, once its blob is here and opens as a card describing a link the words hold.
+    public var card: LinkCard?
 }
 
 /// A thread's view model: its messages and status lines, the composer, and a request's Accept.
@@ -53,7 +56,10 @@ public final class ChatModel {
     @ObservationIgnored let codec: (any ImageCodec)?
     @ObservationIgnored let screening: PhotoScreening?
     /// The thread as last built, with whose reactions and typing it shows.
-    @ObservationIgnored private var cache = Cached<Int, (state: ChatState, audience: ReactionAudience)>()
+    @ObservationIgnored private var cache = Cached<ThreadKey, (state: ChatState, audience: ReactionAudience)>()
+    /// The cards this thread has drawn, by blob and key, so a card the session's memo let go stays drawn here and is not
+    /// read again while the thread is open.
+    @ObservationIgnored private var cardsDrawn: [LinkCardKey: LinkCard] = [:]
     var text = ""
     /// The photo the composer holds, which Send sends with the draft or alone.
     public internal(set) var staged: StagedPhoto?
@@ -140,7 +146,8 @@ public final class ChatModel {
     /// neither moves the session's revision.
     public var state: ChatState {
         let linked = session.neighbors.contains { $0.nodeId.string == conversationId }
-        let built = cache.value(for: session.revision) { build() }
+        let key = ThreadKey(revision: session.revision, cardsOpened: session.linkCards?.openedCount ?? 0)
+        let built = cache.value(for: key) { build() }
         var reading = built.state
         reading.isLinked = linked
         reading.typing = typists(shownBy: built.audience)
@@ -327,6 +334,7 @@ public final class ChatModel {
         let me = session.identity.nodeId
         let isMine = message.senderId == me
         let named = kind != .direct && !isMine
+        let links = LinkText.links(in: message.body)
         return ChatMessage(
             id: message.id,
             body: message.body,
@@ -339,7 +347,40 @@ public final class ChatModel {
             attachment: photos.attachment(of: message).map(showVoice(kind: kind)),
             hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message) : nil,
             mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions),
-            links: LinkText.links(in: message.body)
+            links: links,
+            card: card(of: message, links: links, inRoom: kind == .room, photos: photos)
         )
     }
+
+    /// The card `message` carries when it is open and describes one of `links`, the web addresses in its words
+    /// (`linkCardFor`): a sender cannot attach one page's card to another page's link. The links compare normalized, so a
+    /// typed `http://` and the card's `https://` match. Nothing is asked for a blob not here yet; the thread asks again
+    /// when it lands.
+    private func card(of message: MessageRecord, links: [MessageLink], inRoom: Bool, photos: ThreadPhotos) -> LinkCard? {
+        guard let cards = session.linkCards, let attachment = message.attachment, AttachmentKind(attachment) == .link,
+            !links.isEmpty, photos.holds(attachment.hash)
+        else {
+            return nil
+        }
+        let key = LinkCardKey(hash: attachment.hash, key: attachment.key)
+        guard var card = cardsDrawn[key] ?? cards.card(attachment.hash, key: attachment.key) else {
+            return nil
+        }
+        cardsDrawn[key] = card
+        card.inRoom = inRoom
+        return links.contains { LinkPreviewPolicy.sameURL($0.url, card.url) } ? card : nil
+    }
+}
+
+/// What a thread is built from: the session's revision, and how many cards have opened, since a card opens off the main
+/// actor after the thread first asked for it.
+private struct ThreadKey: Equatable {
+    var revision: Int
+    var cardsOpened: Int
+}
+
+/// A card's blob and the key that opens it.
+private struct LinkCardKey: Hashable {
+    var hash: BlobHash
+    var key: String?
 }

@@ -12,7 +12,8 @@ public enum AttachmentKind: Sendable, Equatable {
     case voice
     /// A file, which this build names and cannot open.
     case file
-    /// A link's preview card (`LinkPreviewBlob.MIME`), which a thread leaves to the link in the text.
+    /// A link's preview card (`LinkPreviewBlob.MIME`), which a thread draws from ``ChatMessage/card`` in a build with link
+    /// previews and leaves to the link in the text in any other.
     case link
 
     /// What `attachment` is (`attachmentKindOf`).
@@ -120,8 +121,8 @@ public enum VoiceShowing: Sendable, Equatable {
 }
 
 extension ChatAttachment {
-    /// `attachment` as shown, with `isHeld` saying whether its bytes are here, or `nil` for a link's card, which shows
-    /// nothing the link in the text does not.
+    /// `attachment` as shown, with `isHeld` saying whether its bytes are here, or `nil` for a link's card, which is never a
+    /// thread's attachment: no ring, wait or tap counts it, as on Android (``ChatMessage/card`` draws it).
     public init?(_ attachment: MessageAttachment, isHeld: Bool) {
         let kind = AttachmentKind(attachment)
         switch kind {

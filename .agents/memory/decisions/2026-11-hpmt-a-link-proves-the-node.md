@@ -131,4 +131,5 @@ registers under that proven id, R1 to R4 unchanged. The radio hears nothing of a
 dialer's HELLO names the form it dialed (`a`, on every dial here, the id on a clear one), and a blinding responder's
 HELLO names its current tag (`t`). The proof covers both HELLOs as the bytes that crossed, so neither field can be
 rewritten (`keyed-v1.json`'s `blind.link.toldRewritten`). The bit values move with `CAP_BLIND_ADVERT`: the HELLO reads `c215f`
-(`c315f` with the doorbell) and the signed profile `0xC015F`, or `0xC000F` without the ratchet's prekey.
+(`c315f` with the doorbell) and the signed profile `0xC015F`, or `0xC000F` without the ratchet's prekey. (Amended
+2026-11-10: a debug build with link previews signs `CAP_LINK_PREVIEW` too, `0xC055F` or `0xC040F`; ADR 2026-11.hcvg.)

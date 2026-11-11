@@ -250,23 +250,10 @@
             #endif
         }
 
-        /// The app's session over `service`, which reads words with the text classifier and photos' sizes with ImageIO,
-        /// and in a debug build records, plays and reads voice notes.
-        private static func session(_ parts: Parts, over service: any MeshService, notifying alerts: LocalNotifier?) -> AppSession {
-            AppSession(
-                identity: OwnIdentity(bundle: parts.identity.bundle),
-                stores: parts.stores,
-                mesh: service,
-                notifier: alerts,
-                textScreening: .bundled(classifier: parts.textClassifier, log: parts.log),
-                photoDimensions: { PhotoDecoder.dimensions($0) },
-                voiceNotes: voiceNotes(log: parts.log, demoClip: parts.demoVoice),
-                preferences: parts.preferences
-            )
-        }
-
         static func compose(_ parts: Parts, ratchet: Bool, replace: IdentityReplacer?) -> AppEnvironment {
             let clock = SystemClock()
+            // The session draws cards only where the profile promises it, so one switch sets both.
+            let previews = linkPreviews(log: parts.log)
             let node = Mesh(
                 identity: parts.identity,
                 prekeys: parts.prekeys,
@@ -279,7 +266,9 @@
                 // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment); the ratchet too, unless a debug `-ratchet off`.
                 // A quote rebuilt from its original names a GIF, a file or a voice note as the composer does
                 // (knit-next ADR 2026-10.gpa3).
-                configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet) { AttachmentKind.quoteLabel(of: $0) },
+                configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet, linkPreviews: previews != nil) { attachment in
+                    AttachmentKind.quoteLabel(of: attachment)
+                },
                 log: parts.log,
                 partials: parts.partials
             )
@@ -287,7 +276,7 @@
             let shows = !parts.staging.isEmpty || parts.director != nil
             let shown = shows ? DemoMesh(node, staging: parts.staging, director: parts.director) : nil
             let service: any MeshService = shown ?? node as any MeshService
-            let app = session(parts, over: service, notifying: parts.isSample ? nil : alerts)
+            let app = session(parts, over: service, notifying: parts.isSample ? nil : alerts, linkPreviews: previews)
             app.director = parts.director
             let environment = AppEnvironment(
                 session: app,

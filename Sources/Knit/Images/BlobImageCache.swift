@@ -65,6 +65,19 @@
             await image(Key(hash: hash, side: Self.bucket(pixels), secret: key), unsaved: nil)
         }
 
+        /// The picture a link's preview card carries, no larger than `pixels` on its long side, read again from the card's
+        /// blob and opened with its key; `nil` when it has none, or it is no image a card may show (ADR 2026-11.hcvg).
+        func picture(of card: LinkCard, pixels: Int) async -> UIImage? {
+            let key = Key(hash: card.hash, side: Self.bucket(pixels), secret: card.key)
+            if images[key] != nil || decoding[key] != nil {
+                return await image(key, unsaved: nil)
+            }
+            guard let bytes = await Self.picture(of: card, session: session) else {
+                return nil
+            }
+            return await image(key, unsaved: bytes)
+        }
+
         /// A message's photo as it moves, opened with `key` when it is sealed, for a player to decode frame by frame; `nil`
         /// when its bytes are missing, the key does not open them, or it is still or too large to play. `unsaved` stands in
         /// for the store, for a photo picked and not yet sent.
@@ -170,6 +183,11 @@
         /// that is still or too large to play.
         nonisolated private static func animation(_ key: Key, unsaved: [UInt8]?, session: AppSession) async -> AnimatedPhoto?? {
             (unsaved ?? session.attachment(key.hash, key: key.secret)).map { PhotoDecoder.animation(Data($0)) }
+        }
+
+        @concurrent
+        nonisolated private static func picture(of card: LinkCard, session: AppSession) async -> [UInt8]? {
+            session.picture(of: card)
         }
 
         @concurrent

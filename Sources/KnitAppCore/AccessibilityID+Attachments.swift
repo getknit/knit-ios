@@ -13,6 +13,10 @@ extension AccessibilityID {
     public static let chatAttachmentTile = "chat_attachment_tile"
     /// A photo the content filter hides until it is tapped (ADR 2026-10.rpmq). Android has no tag here.
     public static let chatAttachmentHidden = "chat_attachment_hidden"
+    /// A link's preview card in a bubble (`chat_link_card`, ADR 2026-11.hcvg).
+    public static let chatLinkCard = "chat_link_card"
+    /// A link's preview card the content filter hides until it is tapped (`chat_link_card_hidden`).
+    public static let chatLinkCardHidden = "chat_link_card_hidden"
     /// The composer's mic (`chat_voice_record`).
     public static let chatVoiceRecord = "chat_voice_record"
     /// The bar in the field's place while a note records (`chat_voice_recording`).

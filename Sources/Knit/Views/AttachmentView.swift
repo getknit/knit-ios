@@ -30,7 +30,8 @@
                     AttachmentTile(attachment: attachment)
                 }
             case .link:
-                // A thread never holds one: a link's card shows nothing the link in the text does not.
+                // A thread never holds one as an attachment: a build with link previews draws the card from the message's
+                // own card (`LinkCardView`), and any other leaves it to the link in the words.
                 EmptyView()
             }
         }

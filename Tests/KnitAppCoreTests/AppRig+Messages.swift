@@ -19,7 +19,8 @@ extension AppRig {
         sentAt: Int64 = 1000,
         arrivedAt: Int64 = 1000,
         replyTo: MessageReply? = nil,
-        mentions: [MessageMention] = []
+        mentions: [MessageMention] = [],
+        attachment: MessageAttachment? = nil
     ) async -> MessageRecord {
         var record = MessageRecord(
             id: id ?? "\(sender)-\(sentAt)-\(body)",
@@ -29,6 +30,7 @@ extension AppRig {
             body: body,
             sentAt: sentAt,
             arrivedAt: arrivedAt,
+            attachment: attachment,
             moderation: sender == me || TextLimits.isBlank(body) ? .clear : .waiting,
             replyTo: replyTo,
             mentions: mentions

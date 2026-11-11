@@ -35,6 +35,11 @@ internal struct ThreadPhotos {
         pastBound = StrangerRoomPhotos.leftOut(rows, isKnown: threads.knows)
     }
 
+    /// Whether the blob `hash`, which a shown message names, is on this phone.
+    func holds(_ hash: BlobHash) -> Bool {
+        held.contains(hash)
+    }
+
     /// `message`'s attachment as the thread shows it. A request's photo waits for accept, whatever bytes are here, since
     /// only an accept fetches it from its author. A stranger's room photo past the bound and not here says so.
     func attachment(of message: MessageRecord) -> ChatAttachment? {

@@ -2,9 +2,10 @@ import KnitAppCore
 import Testing
 
 extension CopyCatalogTests {
-    /// A message's links' strings (ADR 2026-11.w5ew), apart so the suite stays under the lint's length.
+    /// A message's links' strings (ADR 2026-11.w5ew) and their cards' (ADR 2026-11.hcvg), apart so the suite stays under
+    /// the lint's length.
     static var linkStrings: [String] {
-        [Copy.Chat.openLink("https://example.org/path")]
+        [Copy.Chat.openLink("https://example.org/path")] + linkPreviewStrings
     }
 
     /// VoiceOver names each link's action by the address as the sender wrote it, so two links in one message differ.

@@ -44,10 +44,26 @@ maintainer approves them for the store (the maintainer's call, 2026-11-10). It i
     same addresses. A hand-written check would take addresses Android refuses (`a|b` in a path) and the reverse, and
     `Foundation.URL` differs between Linux and Apple platforms. `JavaURITests` holds 52 addresses to what OpenJDK 21
     read.
-- **P2, the receive half:**
-  - A card is drawn in the bubble beside the link it describes.
-  - The content filter screens its picture and its words as one verdict, so a flagged card hides whole.
-  - A debug build advertises `0x400`.
+- **P2, the receive half** (`Sources/KnitAppCore/LinkPreviews/`, `LinkCardView`):
+  - **The rule.** `LinkPreviewPolicy` ports `normalize`, `sameUrl` and `firstEligible`. A card is drawn only beside a
+    link in the words that is the same link once both are normalized (`linkCardFor`), so a sender can't attach a
+    bank's card to another page's link.
+  - **Opening.** `LinkCards` opens a card off the main actor once its blob is here, through `decode(_:)`, and keeps
+    Android's bounds: 64 cards open, 256 refusals remembered. A sealed card that its key doesn't open is refused, not
+    read again. `ChatMessage.card` carries the card without its picture's bytes. A thread rebuilds when a card opens
+    (`openedCount`), and keeps the cards it drew while it is open, so the memo's bound never makes it read in a loop.
+  - **Not an attachment.** `ChatAttachment` stays `nil` for a card, so no ring, wait or tap counts one, as on Android.
+  - **Screening.** `PhotoScreening.hides(card:isMine:)` reads the picture with the photo classifier and the words with
+    `TextScreening` in the thread's scope, one verdict per blob and key. Someone else's card draws nothing until it is
+    screened, and a flagged one hides whole behind the message's tap. A picture the model can't score is let through
+    and asked about again, as a photo is.
+  - **The bubble.** The card sits where a photo would, 220 points wide, a 120-point picture over the title (2 lines),
+    the description (3) and the host, which reads left to right. A tap opens the card's link.
+  - **VoiceOver.** The card's label joins its row: "Link preview: title, host". The row's own Open action for the link
+    opens the same page, so the card adds only Show link preview while it hides.
+  - **The bit.** `MeshConfiguration.linkPreviews` adds `0x400` to the signed profile, with or without a prekey:
+    `0xC055F` with the ratchet's prekey, `0xC040F` without. The start-time republish (ADR 2026-11.hpmt) edits the
+    profile when the bit comes or goes. `Capabilities.local`, which the HELLO and the advert send, never holds it.
 - **P3, the send half:**
   - **The fetch:** sender-side and off by default. It uses Android's address, redirect, size and header rules over
     URLSession.
@@ -70,8 +86,14 @@ way, out of reach of the address and redirect rules, and what it reads from a pa
   repairs it (`decodePayload`). Only a hand-made card shows the difference.
 - **IPv6 literals:** `JavaURI` refuses a host written as an IPv6 literal, which Java reads. No Android sender writes
   one into a card (`LinkPreviewPolicy` refuses it).
-- **Unicode hosts:** a host outside ASCII is a registry name to Java, with no host, so neither phone draws a card for
-  `https://bücher.de/`.
+- **Unicode hosts:** a host outside ASCII is a registry name to Java, with no host, so neither phone draws a card whose
+  own address is `https://bücher.de/`. Android's sender writes such a card's address in punycode, and Android draws it
+  beside `bücher.de` in the words, since `normalize` runs `IDN.toASCII`. This phone refuses a host outside ASCII
+  instead: Linux has no IDNA, so it draws no such card and will fetch none.
+- **A card can move its row:** someone else's card draws nothing until it is screened, so the row grows by the card a
+  moment after it first shows. Android's card waits for its decode the same way.
+- **Hidden words keep their card:** the card has its own verdict, so a message whose words the filter hides still
+  shows a clean card, as on Android.
 - **Not built, as on Android:** a reader-side fetch, a receive toggle, and a card beside a photo.
 - **The store:** approving previews is a later decision. It covers the privacy manifest, App Review's notes, the
   changelog and the release marker.
@@ -79,8 +101,19 @@ way, out of reach of the address and redirect rules, and what it reads from a pa
   - Reading a peer's card through `LinkPreviewBlob(decoding:)`, which skips the boundary. Use `decode(_:)`.
   - Swift's `isWhitespace` or `URL(string:)` in place of the ported rules.
   - Advertising `0x400` from `Capabilities.local`, which would put it in a release build.
+  - Reading a card's blob on the main actor, or as a photo: `BlobImageCache` reads its picture through
+    `AppSession.picture(of:)`.
 - **The guards:**
   - `GoldenVectorTests`' two card fixtures;
   - `LinkPreviewBlobTests`, every case of `LinkPreviewBlobTest.kt`;
   - `JavaURITests`;
-  - the `FuzzLinkPreview` harness.
+  - the `FuzzLinkPreview` harness;
+  - `LinkPreviewPolicyTests`, every case of `LinkPreviewPolicyTest.kt`, its IDN case turned into this limit;
+  - `ChatLinkCardTests` and `LinkCardScreeningTests`;
+  - `MeshEngineLinkPreviewCapabilityTests`, with a second engine reading the bit from its peer row;
+  - `MeshEnginePhotoTests.aDMLinkCardIsWantedKeptAndAnnouncedLikeAPhoto`, since the engine's want and intake rules
+    read no type;
+  - `check_release_app`'s marker, "link previews are on in this debug build".
+- **Owed on the iPhone:** a Pixel's DM, group message and Nearby post with a link each show their card, a flagged one
+  hides, a tap opens the page, VoiceOver reads the card in its row, and a release build sends `0xC015F`. The Linux
+  tests can't show these.
