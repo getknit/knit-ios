@@ -123,6 +123,8 @@ extension MeshEngine {
         if let anchored {
             keepAnsweredInit(anchored, from: sender, now: open.now)
         }
+        // A root this commit moved to, or our init it answered, owes our presence keys a pass (ADR 2026-11.prsp).
+        notePresenceRootMoved(sender)
     }
 
     /// An open its body abandoned: a seed waits for its roster, or the frame drops for the reason decided.

@@ -56,9 +56,10 @@ public struct StoredPresenceKey: Sendable, Equatable, CustomStringConvertible {
     public var description: String { held.description }
 }
 
-/// The presence keys peers handed us over ctl 11 (`PresenceKeyRepository`'s peer half and `PresenceKeyDao`, knit-next
-/// `data/presencekey/`, at `cad69c77b`; knit-next ADR 2026-11.xp6d; ADR 2026-11.sv5t): at most three generations per
-/// peer, each with the root tag its frame opened under. Receive only: this port keeps no key of its own.
+/// The presence keys peers handed us over ctl 11, and our own (`PresenceKeyRepository` and `PresenceKeyDao`, knit-next
+/// `data/presencekey/`, at `cad69c77b`; knit-next ADR 2026-11.xp6d; ADR 2026-11.sv5t; ADR 2026-11.prsp): at most three
+/// generations per peer, each with the root tag its frame opened under, and at most three of our own, each with its
+/// audience and the advertiser's mark.
 ///
 /// Like every store here it is synchronous and never throws (ADR 2026-09.nyya): outside a store unit a store that fails
 /// answers its fallback, nothing held, and reports the error. So every read a decision rests on runs inside a unit
@@ -83,6 +84,24 @@ public protocol PresenceKeyStore: AnyObject, Sendable {
 
     /// Deletes every key `peers` handed us (`deletePeerKeys`, `PresenceKeyRepository.kt:105-108`).
     func deleteKeys(of peers: Set<NodeId>)
+
+    /// Our own keys, newest generation first (`ownKeys`, `PresenceKeyDao.kt:17-18`).
+    func ownKeys() -> [OwnPresenceKeyRecord]
+
+    /// Applies one rotation of our own keys (`applyOwn`, `PresenceKeyRepository.kt:45-68`): `inserted` are new generations,
+    /// `updated` move an existing key's activation and audience alone, never its mark (`updateOwn`, `PresenceKeyDao.kt:28-35`:
+    /// a replace would zero the mark, and the advertiser could air an earlier slot's tag again), and every own key whose
+    /// generation is not in `keep` goes. Inside a store unit, as the presence key pass runs it.
+    func applyOwn(inserted: [OwnPresenceKeyRecord], updated: [OwnPresenceKeyRecord], keep: Set<Int64>)
+
+    /// The advertiser's mark under our key `generation`, or `nil` with none or no such key (`mark`, `PresenceKeyDao.kt:41-43`).
+    func mark(of generation: Int64) -> PresenceMark?
+
+    /// Writes `mark` under our key `generation` durably, and only while it is still the current key: activated, and the
+    /// newest activated (`markStore`'s `write`, `PresenceKeyRepository.kt:184-251`; `setCurrentMark`,
+    /// `PresenceKeyDao.kt:45-60`). Never inside a store unit: the SQL store sets `synchronous=FULL` outside any
+    /// transaction, which SQLite refuses inside one, and answers ``PresenceMarkWrite/insideUnit`` at once there.
+    func writeMark(_ mark: PresenceMark, of generation: Int64) -> PresenceMarkWrite
 }
 
 extension PresenceKeyStore {

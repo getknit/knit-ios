@@ -213,10 +213,11 @@ extension EngineFixture {
         keychain: KeptSecretStore? = nil,
         wall: Int64 = start,
         configuration: MeshConfiguration = MeshConfiguration(ratchet: true),
-        seed: UInt64 = 7
+        seed: UInt64 = 7,
+        deviceTag: String = "0011223344556677"
     ) throws -> EngineFixture {
         let ring = try PrekeyRing.load(for: me.keys, from: keychain ?? KeptSecretStore(me.keys.storedForm))
-        return EngineFixture(me, stores: stores, configuration: configuration, prekeys: ring, wall: wall, seed: seed)
+        return EngineFixture(me, stores: stores, configuration: configuration, prekeys: ring, wall: wall, seed: seed, deviceTag: deviceTag)
     }
 
     /// Our newest prekey, as a peer pins it from our profile.

@@ -2,11 +2,11 @@ import KnitCrypto
 import KnitStore
 import KnitWire
 
-/// What a received ctl 11 does to the presence keys held for its sender (knit-next ADR 2026-11.xp6d, "The presence key";
-/// ADR 2026-11.sv5t), pure: the receive half of knit-next's `PresenceKeyPolicy` (`mesh/crypto/PresenceKeyPolicy.kt` at
-/// `cad69c77b`), `keysIn` (`:299-308`) and `receive` (`:324-356`) with their types (`:255-296`). This port mints, rotates
-/// and sends no key of its own, so the own-key rules (`due`, `nextGeneration`, `clampRestored`, `owed`, `departed`,
-/// `linkReset`) are not ported. Nothing here reads a clock, a store or a link, and nothing prints a key.
+/// The presence keys' rules (knit-next ADR 2026-11.xp6d, "The presence key"; ADR 2026-11.sv5t; ADR 2026-11.prsp), pure:
+/// knit-next's `PresenceKeyPolicy` (`mesh/crypto/PresenceKeyPolicy.kt` at `cad69c77b`). Here the receive half, `keysIn`
+/// (`:299-308`) and `receive` (`:324-356`) with their types (`:255-296`); our own keys' rules are in
+/// `PresenceKeyPolicy+Own.swift`. `linkReset` is not ported: nothing here owes a reset over a link (ADR 2026-11.prsp).
+/// Nothing here reads a clock, a store or a link, and nothing prints a key.
 ///
 /// A generation is the sender's own order for its keys, never a time of ours, and it is compared only with that sender's
 /// other generations held under the same era.

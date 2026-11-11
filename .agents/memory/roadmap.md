@@ -556,7 +556,11 @@ explicit direction.** Update this file in the change that ships an item.
       - **Vectors.** A blinded GATT value is the blinded advert's 24 bytes with the cue zeroed, and no shared vector moves
         for it unless the Android worker adds one, which Android then leads. iOS leads one addition:
         `ios-emitted-v1.json` gains the iPhone's ctl 11, padded to 128 bytes, for `IosEmittedVectorTest` to open.
-        That proves the padding matches `PresenceKeyFrame`'s.
+        That proves the padding matches `PresenceKeyFrame`'s. Phase 1 adds Carol's `carolPresenceKeysToBob`, its
+        `presenceKey` draws (195 and 196, with `iv` 197) and a step in Bob's replay that opens it. Its content carries
+        a `pk` object: `generation`, `key`, `nextGeneration`, `nextKey` and `padBytes`. `IosEmittedVectorTest.contentJson`
+        has to render `pk` (it fails today on a field the vector does not describe) before `sync-vectors.py --export`
+        hands it the file. The `presenceKey` draws are in `carolDraws`, which `drawOf` never reads.
       - **Trial.** A debug iPhone with the switch on, beside a blinding Pixel that is its contact and one that is not:
         the contact resolves the iPhone by key over GATT, both link in both orders across slot edges, and the read
         budget stays refunded.

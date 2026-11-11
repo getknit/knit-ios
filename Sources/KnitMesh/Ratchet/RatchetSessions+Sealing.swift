@@ -24,18 +24,28 @@ extension RatchetSessions {
     /// `v3` seals the compact form, for a peer whose pinned profile carries `CAP_CRYPTO_V3` (``CryptoScheme``), with
     /// `plaintext` already laid out for it, `MessageContentV2`; the envelope still carries an empty nonce, so a build
     /// before v3 decodes and carries it.
+    ///
+    /// `confirmedOnly` seals only under a session the unit reads as confirmed, and otherwise answers
+    /// ``Sealing/unavailable`` with nothing changed (`sealDmTagged`'s `confirmedOnly`, `RatchetSessions.kt:367-379` at
+    /// knit-next `cad69c77b`): decided here, inside the seal's own unit, never by a caller's read before it. A ctl 11 asks
+    /// it, so it never starts a session and never rides our own unanswered init or reset, an unflagged copy of which would
+    /// put the peer in its hour-long floor (knit-next #90, knit-next ADR 2026-10.j67x; ADR 2026-11.prsp).
     public func sealDm(
         to peer: PublicKeyBundle,
         prekey: PeerPrekey?,
         plaintext: [UInt8],
         aad: [UInt8],
         now: Int64,
-        v3: Bool = false
+        v3: Bool = false,
+        confirmedOnly: Bool = false
     ) -> Answer<Sealing> {
         let request = SealRequest(plaintext: plaintext, aad: aad, prekey: prekey, now: now, v3: v3)
         var unsealed = Sealing.unavailable
         let unit = transactor.atomically { () -> Sealing? in
             let held = store.session(peer.nodeId).map(RatchetRecords.session)
+            if confirmedOnly, held?.confirmed != true {
+                return nil
+            }
             do {
                 var initiation: RatchetEngine.Initiation?
                 if held == nil {

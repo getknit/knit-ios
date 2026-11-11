@@ -37,6 +37,17 @@ import Testing
         #expect(PeerCommand.usage.contains("[--ratchet | --no-ratchet]"))
     }
 
+    /// Our own presence keys (ADR 2026-11.prsp): on unless `--no-presence-keys`, as in the app.
+    @Test func theOwnPresenceKeysAreOnUnlessTurnedOff() throws {
+        #expect(try run([]).presenceKeys)
+        #expect(try !run(["--no-presence-keys"]).presenceKeys)
+        #expect(try !run(["run", "--no-ratchet", "--no-presence-keys"]).presenceKeys)
+        #expect(throws: UsageError.unknownFlag("--no-presence-keys")) {
+            try PeerCommand.parse(["keygen", "--above", "cswad43wmlont27jr4tyvu63i4", "--no-presence-keys"], environment: home)
+        }
+        #expect(PeerCommand.usage.contains("[--no-presence-keys]"))
+    }
+
     /// What one run of the peer left: the profile a far engine pinned from it, and its state directory.
     private struct Published {
         let pinned: PeerRecord

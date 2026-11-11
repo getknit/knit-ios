@@ -24,6 +24,11 @@ extension MeshEngine {
     /// clock's now, the facade's seal joined to the unit at our clock's now, signed once with the frame's `relay`, and an
     /// originated one taken into our custody, all inside it (`sealDeliveryTickEnvelope`, `MeshManager.kt:1868-1905`;
     /// `sendCtlDm`, `:2922-2949`). A signature that fails abandons the unit.
+    ///
+    /// A frame asked ``ControlFrame/confirmedOnly`` is sealed only under a confirmed session
+    /// (``RatchetSessions/sealDm(to:prekey:plaintext:aad:now:v3:confirmedOnly:)``), and then carries the tag of the root its
+    /// seal committed, read inside the same unit (``SealedControl/rootTag``; `sealDmTagged`, `RatchetSessions.kt:367-379` at
+    /// knit-next `cad69c77b`).
     func sealControl(
         _ content: MessageContent, to peer: NodeId, in frame: ControlFrame, plan readPlan: () -> RatchetOutbound.ReceiptPlan?
     ) -> ControlSealing {
@@ -39,15 +44,8 @@ extension MeshEngine {
             let now = clock.wallMilliseconds()
             let stamp = frame.sentAt ?? now
             let aad = MessageCrypto.header(id: id, senderId: nodeId.string, sentAt: stamp, thread: peer.string)
-            let bytes = content.sealBytes(v3: plan.readsCryptoV3)
-            let sealing = ratchet.sealDm(
-                to: plan.bundle,
-                prekey: plan.prekey,
-                plaintext: bytes.plaintext,
-                aad: aad,
-                now: now,
-                v3: bytes.scheme == EncEnvelope.Version.compactRatchet
-            )
+            let sealing = seal(
+                content.sealBytes(v3: plan.readsCryptoV3), under: plan, aad: aad, now: now, confirmedOnly: frame.confirmedOnly)
             // Joined is the one answer a seal inside our unit gives that may go, once our unit commits. The facade's
             // `unavailable` and `refusedKey` abandon it, and a store that failed has failed it already.
             guard case .joined(.sealed(let enc), let settlement) = sealing else {
@@ -60,7 +58,12 @@ extension MeshEngine {
                 let carried =
                     frame.relay
                     && custody.carryOwn(CarriedFrame(envelope: envelope, sig: wire.sig, signed: wire.signed), in: stores.custody, now: now)
-                return SealedControl(frame: SignedFrame(wire: wire, envelope: envelope), settlement: settlement, carried: carried)
+                return SealedControl(
+                    frame: SignedFrame(wire: wire, envelope: envelope),
+                    settlement: settlement,
+                    carried: carried,
+                    rootTag: sealedRootTag(peer, in: frame)
+                )
             }
         }
         switch unit {
@@ -73,6 +76,27 @@ extension MeshEngine {
         case .abandoned:
             return readable ? .unsealable : .unreadable
         }
+    }
+
+    /// `bytes` sealed by the facade under `plan`, joined to the caller's unit, at `now`.
+    private func seal(
+        _ bytes: SealBytes, under plan: RatchetOutbound.ReceiptPlan, aad: [UInt8], now: Int64, confirmedOnly: Bool
+    ) -> RatchetSessions.Answer<RatchetSessions.Sealing> {
+        ratchet.sealDm(
+            to: plan.bundle,
+            prekey: plan.prekey,
+            plaintext: bytes.plaintext,
+            aad: aad,
+            now: now,
+            v3: bytes.scheme == EncEnvelope.Version.compactRatchet,
+            confirmedOnly: confirmedOnly
+        )
+    }
+
+    /// The tag of the root a seal asked ``ControlFrame/confirmedOnly`` just committed toward `peer`, read in its unit: the
+    /// era a ctl 11's record names. `nil` for any other seal.
+    private func sealedRootTag(_ peer: NodeId, in frame: ControlFrame) -> Int64? {
+        frame.confirmedOnly ? stores.ratchet.session(peer).map { RatchetCrypto.rootTag($0.root) } : nil
     }
 
     /// After an originated ctl's unit committed: the floors its seal settles move, and it goes on the air at once to every
@@ -97,6 +121,9 @@ internal struct ControlFrame {
     let sentAt: Int64?
     /// The hash that rides beside the seal in the clear, or `nil`.
     let attachmentHash: String?
+    /// Whether it is sealed only under a confirmed session, never one our seal would start or our unanswered init or reset
+    /// would carry: a ctl 11's (ADR 2026-11.prsp).
+    var confirmedOnly = false
 
     /// A receipt's or a tick's (phase P5d): dated now, with nothing beside the seal.
     static func receipt(relay: Bool) -> Self {
@@ -107,6 +134,10 @@ internal struct ControlFrame {
     static func reaction(at stamp: Int64) -> Self {
         Self(relay: true, sentAt: stamp, attachmentHash: nil)
     }
+
+    /// A ctl 11's (ADR 2026-11.prsp): for the proven live link alone, signed `relay = false` and never carried, dated now,
+    /// with nothing beside the seal (`sealPresenceKeys`, `MeshManager.kt:4924-4949` at knit-next `cad69c77b`).
+    static let presenceKeys = Self(relay: false, sentAt: nil, attachmentHash: nil, confirmedOnly: true)
 
     /// The group form's machinery (phase P6a2): a seed's ack and a key request, originated and dated now with nothing beside
     /// the seal, as Kotlin's `ackGroupSeed` and `maybeRequestGroupKey` originate theirs (`InboundPipeline.kt:1576-1584`,
@@ -146,4 +177,6 @@ internal struct SealedControl {
     let settlement: RatchetSessions.Settlement
     /// Whether our custody stored it just now: an originated one, which is fresh.
     let carried: Bool
+    /// The tag of the root the seal committed, read in its unit, for a seal asked `confirmedOnly`; `nil` otherwise.
+    let rootTag: Int64?
 }

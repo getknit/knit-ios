@@ -21,7 +21,9 @@ public actor PeerNode {
     private var forwarding: Task<Void, Never>?
 
     /// A node for `identity` on `radio`, with the ratchet prekeys `prekeys` (``PeerState/loadPrekeys(for:)``), or none,
-    /// and the ratchet's switch at `ratchet` (on unless `--no-ratchet`), which publishes the newest prekey only when
+    /// and the ratchet's switch at `ratchet` (on unless `--no-ratchet`), our own presence keys at `presenceKeys` (on unless
+    /// `--no-presence-keys`), which records its generations in the item `prekeys` keeps, and the ratchet's switch
+    /// publishing the newest prekey only when
     /// `prekeys` keeps one. `stateDirectory`, when given, is where a profile lie left set by the last run is found at the
     /// start (``ProfileLies/recoverAtStart(stateDirectory:mesh:stores:log:)``), `--lying` or not. `lying` is what `--lying`
     /// wraps, which `stores` and `radio` must already be built over (``PeerLyingParts/wrapping(_:profileStore:localId:stateDirectory:random:log:)``);
@@ -31,6 +33,7 @@ public actor PeerNode {
         identity: IdentityKeys,
         prekeys: PrekeyRing? = nil,
         ratchet: Bool = false,
+        presenceKeys: Bool = false,
         stores: MeshStores,
         radio: any Radio,
         radioProfile: String,
@@ -58,7 +61,9 @@ public actor PeerNode {
             clock: clock,
             random: random,
             // The peer is a test bench, so it queries a blob's holders as a debug build does (knit-next ADR 2026-10.6e5t).
-            configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet),
+            // Our presence keys as the app sends them, with their trail logged: a bench's log is the trial's (ADR 2026-11.prsp).
+            configuration: MeshConfiguration(
+                queriesBlobHolders: true, ratchet: ratchet, sendsOwnPresenceKeys: presenceKeys, logsPresenceKeyTrail: true),
             linkConfiguration: linkConfiguration,
             log: log
         )

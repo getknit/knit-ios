@@ -19,7 +19,8 @@ import Testing
 /// both and replies under the session, which confirms it, and Carol's sealed receipt for the reply carries a second
 /// post's tick beside it. Carol edits her profile, which seals it to Bob, reacts to his reply and takes the reaction back.
 /// Then she makes a group of Alice, Bob and herself, whose first message seeds both and goes in the group form, and reacts
-/// to it in the group form.
+/// to it in the group form. Last, Bob links to her, and her presence keys' pass mints her first pair and seals both to him in
+/// a padded ctl 11 (ADR 2026-11.prsp).
 enum EmittedRatchetFrames {
     /// The run's first clock, after every v1 frame in the file.
     static let start: Int64 = 1_756_200_010_000
@@ -33,9 +34,10 @@ enum EmittedRatchetFrames {
 
     /// Carol's draws, by kind, in the order her engines take them (unused by every vector file before this one).
     static let keyPairSeeds = [184, 185, 186, 187, 188]
-    static let ivSeeds = [189, 190]
+    static let ivSeeds = [189, 190, 197]
     static let groupSeedSeeds = [191]
     static let groupIvSeeds = [192, 193]
+    static let presenceKeySeeds = [195, 196]
     /// Bob's one draw: his first epoch's key, for his reply.
     static let bobReplySeed = 194
     /// When Bob replies, after the run's first clock.
@@ -68,11 +70,12 @@ enum EmittedRatchetFrames {
         static let seedToBob = "carolGroupSeedToBob"
         static let groupChat = "carolGroupFormChat"
         static let groupReaction = "carolGroupFormReaction"
+        static let presenceKeys = "carolPresenceKeysToBob"
         static let bobReply = "bobRatchetReplyToCarol"
 
         /// Every frame Carol's engine makes, in the order it makes them.
         static let engineFrames = [
-            dm, inlineAcks, receipt, sealedProfile, reaction, retraction, seedToAlice, seedToBob, groupChat, groupReaction,
+            dm, inlineAcks, receipt, sealedProfile, reaction, retraction, seedToAlice, seedToBob, groupChat, groupReaction, presenceKeys,
         ]
     }
 
@@ -128,6 +131,14 @@ enum EmittedRatchetFrames {
         frames[Name.groupChat] = groupChat
         frames[Name.groupReaction] = try one(
             sent(fixture, at: wall + 10_000) { _ = fixture.engine.react(to: messageId, with: groupReaction) })
+        // Bob is linked, his HELLO carrying the bits, and her first pass of presence keys mints her pair and seals both to
+        // him over the proven link alone (ADR 2026-11.prsp). The link is the transport's alone: the engine's link-up would
+        // flush the seed he never acknowledged, a seal of its own.
+        frames[Name.presenceKeys] = try one(
+            sent(fixture, at: wall + 11_000) {
+                fixture.transport.neighbors.append(Neighbor(nodeId: bob.nodeId, capabilities: .local))
+                fixture.engine.feedPresenceKeys()
+            })
         #expect(draws.spent, "Carol's engines took every draw the file lists")
         return Made(frames: frames, bobReply: reply, draws: draws.taken, groupMessageId: messageId)
     }
@@ -138,13 +149,14 @@ enum EmittedRatchetFrames {
         let ring = try PrekeyRing.load(for: carol, from: KeptSecretStore(carol.storedForm)) { carolPrekey }
         let fixture = EngineFixture(
             TestPeer(keys: carol),
-            configuration: MeshConfiguration(ratchet: true),
+            configuration: MeshConfiguration(ratchet: true, sendsOwnPresenceKeys: true),
             prekeys: ring,
             wall: wall,
             seed: engineSeed,
             ratchetEngine: draws.engine,
             groupRatchetEngine: draws.groupEngine
         )
+        fixture.engine.mintPresenceKey = { draws.presenceKey() }
         let held = try #require(fixture.engine.prekeyRing?.newest, "the start minted carolSpk1")
         #expect(held.id == 1 && held.publicKey == carolPrekey.publicKey)
         return fixture
@@ -257,7 +269,7 @@ final class FixedDraws: Sendable {
     private let state = Lock(State())
     private let plan: [String: [Int]] = [
         "keyPair": EmittedRatchetFrames.keyPairSeeds, "iv": EmittedRatchetFrames.ivSeeds, "groupSeed": EmittedRatchetFrames.groupSeedSeeds,
-        "groupIv": EmittedRatchetFrames.groupIvSeeds,
+        "groupIv": EmittedRatchetFrames.groupIvSeeds, "presenceKey": EmittedRatchetFrames.presenceKeySeeds,
     ]
 
     /// The DM engine on this plan.
@@ -277,6 +289,11 @@ final class FixedDraws: Sendable {
 
     /// Whether every planned draw was taken.
     var spent: Bool { state.withLock { $0.taken.count } == plan.values.map(\.count).reduce(0, +) }
+
+    /// Carol's next presence key on this plan.
+    func presenceKey() -> PresenceKey {
+        bytes("presenceKey", PresenceKey.byteCount).flatMap { PresenceKey(bytes: $0) } ?? .generate()
+    }
 
     private func keyPair() -> RatchetCrypto.KeyPair {
         guard let bytes = bytes("keyPair", 32), let pair = try? RatchetCrypto.KeyPair(privateKey: bytes) else {

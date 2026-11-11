@@ -169,6 +169,7 @@ import Foundation
                 identity: identity.keys,
                 prekeys: prekeys,
                 ratchet: options.ratchet,
+                presenceKeys: options.presenceKeys,
                 stores: stores,
                 radio: nodeRadio,
                 radioProfile: host.profile,

@@ -1,7 +1,7 @@
-/// A contact's presence key: the 32 bytes its blinded Bluetooth advert's tag is a MAC under (``BlindTag``; knit-next ADR
-/// 2026-11.xp6d, "The presence key"; ADR 2026-11.sv5t). It reaches this port only in a ctl 11 a ratchet open accepted
-/// (`PresenceKeyPayload`), filed under that frame's signed sender; this port mints none of its own (receive only, ADR
-/// 2026-11.sv5t).
+/// A presence key: the 32 bytes a blinded Bluetooth advert's tag is a MAC under (``BlindTag``; knit-next ADR 2026-11.xp6d,
+/// "The presence key"; ADR 2026-11.sv5t). A contact's reaches this port only in a ctl 11 a ratchet open accepted
+/// (`PresenceKeyPayload`), filed under that frame's signed sender. Our own are minted by ``generate()`` and handed to our
+/// direct contacts the same way (ADR 2026-11.prsp).
 ///
 /// Whoever holds it can recognise its owner's adverts and forge its presence, so it is a secret: its `description`,
 /// `debugDescription` and mirror show its length only, never a byte, so neither a log line, `dump` nor a failed
@@ -20,6 +20,18 @@ public struct PresenceKey: Sendable, Hashable, CustomStringConvertible, CustomDe
         guard bytes.count == Self.byteCount else {
             return nil
         }
+        self.bytes = bytes
+    }
+
+    /// A fresh key from the system's secure generator, never an injected one (`BlindTag.newKey`, `BlindTag.kt` at knit-next
+    /// `cad69c77b`; `crypto.md`): a seeded generator in a test must never reach a key a contact holds.
+    public static func generate() -> Self {
+        // `secureRandomBytes` answers exactly `byteCount` bytes, so the key always makes one.
+        Self(checked: secureRandomBytes(byteCount))
+    }
+
+    /// `bytes`, which the caller made exactly ``byteCount`` long.
+    private init(checked bytes: [UInt8]) {
         self.bytes = bytes
     }
 

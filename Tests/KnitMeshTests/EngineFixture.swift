@@ -22,7 +22,7 @@ struct EngineFixture {
     /// An engine for `me`, keeping `prekeys` when given, its wall clock at `wall`, started unless told otherwise. It draws
     /// frame ids and jitter from `seed`, which two engines that talk to each other must not share, or their ids collide.
     /// Its ratchet draws from `ratchetEngine`, and its group form from `groupRatchetEngine`, when a vector passes them, and
-    /// from the system's generator otherwise.
+    /// from the system's generator otherwise. Fixtures share one device tag unless given another.
     init(
         _ me: TestPeer,
         stores: MeshStores = .inMemory(),
@@ -32,7 +32,8 @@ struct EngineFixture {
         started: Bool = true,
         seed: UInt64 = 7,
         ratchetEngine: RatchetEngine = RatchetEngine(),
-        groupRatchetEngine: GroupRatchetEngine = GroupRatchetEngine()
+        groupRatchetEngine: GroupRatchetEngine = GroupRatchetEngine(),
+        deviceTag: String = "0011223344556677"
     ) {
         self.me = me
         clock = ManualClock(wall: wall, monotonic: 1000)
@@ -41,7 +42,7 @@ struct EngineFixture {
         engine = MeshEngine(
             identity: me.keys,
             prekeys: prekeys,
-            deviceTag: "0011223344556677",
+            deviceTag: deviceTag,
             stores: stores,
             transport: transport,
             clock: clock,

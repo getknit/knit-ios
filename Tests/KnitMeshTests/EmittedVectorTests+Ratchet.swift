@@ -176,6 +176,22 @@ extension EmittedVectorTests {
         let retraction = try sealed(Name.retraction, in: built).content.rp
         #expect(retraction == .init(messageId: Frames.bobReplyId, emoji: nil), "no emoji takes it back")
         #expect(try [Name.reaction, Name.retraction].map { try sealed($0, in: built).content.ctl } == [6, 6])
+        // Her padded ctl 11 (ADR 2026-11.prsp): named v2 under the confirmed session, her first pair, 128 bytes of plaintext.
+        let keys = try sealed(Name.presenceKeys, in: built)
+        let generation = Frames.start + 11_000
+        #expect(keys.version == 2 && keys.form == "dm" && keys.initPrekey == nil && keys.plaintextSchema == "MessageContent")
+        #expect(keys.content.ctl == 11 && keys.content.body.isEmpty)
+        let expected = VectorContent.PresenceKeys(
+            generation: generation,
+            key: Hex.encode(fixtureBytes(32, seed: 195)),
+            nextGeneration: generation + 1,
+            nextKey: Hex.encode(fixtureBytes(32, seed: 196)),
+            padBytes: keys.content.pk?.padBytes
+        )
+        #expect(keys.content.pk == expected && (keys.content.pk?.padBytes ?? 0) > 0)
+        #expect(try #require(Hex.decode(keys.plaintext)).count == PresenceKeyFrame.plaintextBytes)
+        let entry = try #require(built.frames[Name.presenceKeys])
+        #expect(try EmittedRatchetReplay.written(entry.wire).wire.relay == false, "point to point")
         let profileEntry = try #require(built.frames[Name.profile])
         #expect(Frames.isCurrentProfile(profileEntry.wire, of: carol) && profileEntry.capabilities == 0x15F)
     }
@@ -203,8 +219,8 @@ extension EmittedVectorTests {
             reaction.content
                 == VectorContent(body: "", ctl: 6, rp: .init(messageId: built.made.groupMessageId, emoji: Frames.groupReaction)))
         #expect(
-            built.made.draws.map(\.seed) == [184, 185, 186, 191, 192, 187, 188, 189, 190, 193],
-            "every draw, in order: the group seal mints before its seeds go")
+            built.made.draws.map(\.seed) == [184, 185, 186, 191, 192, 187, 188, 189, 190, 193, 195, 196, 197],
+            "every draw, in order: the group seal mints before its seeds go, and the presence keys before their seal")
     }
 
     /// The ratchet checks must be able to fail: a run at another clock is another set of frames, a profile with other bits

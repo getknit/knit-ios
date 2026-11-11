@@ -1,7 +1,7 @@
 /// One or two of a contact's presence keys, ``MessageContent/pk`` under ``MessageContent/Control/presenceKey``
 /// (`PresenceKeyPayload`, `Wire.kt:828-848` at knit-next `cad69c77b`; knit-next ADR 2026-11.xp6d, "The presence key"; ADR
 /// 2026-11.sv5t). Each key is the 32 bytes the sender's blinded advert's tag is a MAC under (`BlindTag` in KnitCrypto).
-/// This port receives them and sends none (ADR 2026-11.sv5t), so nothing here is built to be sealed.
+/// This port receives them (ADR 2026-11.sv5t) and sends its own, padded by ``PresenceKeyFrame`` (ADR 2026-11.prsp).
 ///
 /// Read as kotlinx's `cryptoCbor` reads it (`Crypto.kt:95-100`): ``generation`` and ``key`` required, the rest nullable,
 /// every `Long` wrapped and every key a byte string, so a value of the wrong kind fails the whole content, as it fails

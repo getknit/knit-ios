@@ -1,3 +1,4 @@
+import Foundation
 import KnitSync
 
 /// The store unit over stores in memory, for knit-peer, the tests and the demo (``StoreTransactor``).
@@ -16,6 +17,8 @@ public final class MemoryTransactor: StoreTransactor {
         var depth = 0
         /// Whether a store failed inside the open unit.
         var failed = false
+        /// The thread running the open unit, while one is.
+        var thread: ObjectIdentifier?
     }
 
     private let stores: [any Checkpointing]
@@ -32,7 +35,11 @@ public final class MemoryTransactor: StoreTransactor {
             return .failed
         }
         let saved = stores.map { $0.checkpoint() }
+        let thread = ObjectIdentifier(Thread.current)
         let depth = unit.withLock { unit in
+            if unit.depth == 0 {
+                unit.thread = thread
+            }
             unit.depth += 1
             return unit.depth
         }
@@ -42,6 +49,7 @@ public final class MemoryTransactor: StoreTransactor {
             unit.depth -= 1
             if unit.depth == 0 {
                 unit.failed = false
+                unit.thread = nil
             }
             return failed
         }
@@ -54,6 +62,13 @@ public final class MemoryTransactor: StoreTransactor {
         }
         // Only the outermost unit's end makes the writes stand, so a nested unit has only joined it.
         return depth > 1 ? .joined(value) : .committed(value)
+    }
+
+    /// Whether the calling thread runs inside an open unit, as `KnitDatabase` answers it: what a store that must never
+    /// write inside one (the advertiser's mark) checks.
+    public var unitRunsOnThisThread: Bool {
+        let thread = ObjectIdentifier(Thread.current)
+        return unit.withLock { $0.depth > 0 && $0.thread == thread }
     }
 
     /// Fails the open unit, as a database error inside one does. Outside a unit it does nothing, as a store's error

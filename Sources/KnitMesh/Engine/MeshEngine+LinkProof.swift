@@ -66,10 +66,17 @@ extension MeshEngine {
     /// gained ``Capabilities/linkProof``: the bit came under the peer's own signature, so a link claiming the id must prove
     /// it from now on, and the links that claim it unproven go (contract R4; `LinkClaims.profileCapabilities` in
     /// knit-next). A row that keeps the bit, or lacks it, tells nothing.
+    ///
+    /// A linked peer whose row carries ``Capabilities/blindAdvert`` may be owed our presence keys now: the pass is marked
+    /// owed, and runs after this unit, never inside it (`onProfileCapabilities`, `MeshManager.kt:5003-5011` at knit-next
+    /// `cad69c77b`; ADR 2026-11.prsp).
     func writeProfileRow(_ record: PeerRecord, was before: PeerRecord?) {
         stores.peers.upsert(record)
         if Self.carriesLinkProof(record.capabilities), !Self.carriesLinkProof(before?.capabilities) {
             transport.peerProvesItself(record.nodeId)
+        }
+        if asksForPresenceKeys(record.capabilities), transport.isLinked(record.nodeId) {
+            notePresenceKeyInputsChanged()
         }
     }
 

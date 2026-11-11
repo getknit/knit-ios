@@ -23,6 +23,7 @@ enum EmittedRatchetReplay {
             .init(op: "open", frame: Names.reaction),
             .init(op: "open", frame: Names.retraction), .init(op: "open", frame: Names.seedToBob),
             .init(op: "openGroup", frame: Names.groupChat), .init(op: "openGroup", frame: Names.groupReaction),
+            .init(op: "open", frame: Names.presenceKeys),
         ],
         "alice": [
             .init(op: "open", frame: Names.seedToAlice), .init(op: "openGroup", frame: Names.groupChat),
@@ -33,7 +34,7 @@ enum EmittedRatchetReplay {
     static let about =
         "Carol's ratchet frames (A10): what the iOS port's mesh engine sends with the ratchet on, from fixed draws "
         + "(carolDraws; keyPair is an X25519 private key fixtureBytes(32, seed), iv fixtureBytes(12, seed), groupSeed "
-        + "fixtureBytes(32, seed), groupIv fixtureBytes(12, seed)). "
+        + "fixtureBytes(32, seed), groupIv fixtureBytes(12, seed), presenceKey fixtureBytes(32, seed)). "
         + "To check them, each reader in replay is a fresh RatchetSessions holding its prekey from "
         + "prekeys, beside a fresh GroupRatchetSessions, and takes its steps in order at each frame's sentAt: open is a "
         + "DM-form frame opened and committed through the session layer (peek, then commit), then for a CTL_GROUP_KEY its "
@@ -212,6 +213,15 @@ enum EmittedRatchetReplay {
                         VectorContent.Roster(
                             id: info.id, members: info.members.map { names[$0] ?? $0 }, createdBy: names[info.createdBy] ?? info.createdBy)
                     }
+                )
+            },
+            pk: content.pk.map { payload in
+                VectorContent.PresenceKeys(
+                    generation: payload.generation,
+                    key: Hex.encode(payload.key),
+                    nextGeneration: payload.nextGeneration,
+                    nextKey: payload.nextKey.map(Hex.encode),
+                    padBytes: payload.pad?.count
                 )
             }
         )

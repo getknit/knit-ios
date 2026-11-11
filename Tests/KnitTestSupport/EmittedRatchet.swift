@@ -144,6 +144,27 @@ public struct VectorContent: Codable, Sendable, Equatable {
         }
     }
 
+    /// A presence key payload (`pk`, ctl 11): the generations, the keys as hex, and the pad's length, whose bytes are zero.
+    public struct PresenceKeys: Codable, Sendable, Equatable {
+        /// The current key's generation (`g`) and bytes (`k`).
+        public let generation: Int64
+        public let key: String
+        /// The next key's generation (`ng`) and bytes (`nk`), when it rides.
+        public let nextGeneration: Int64?
+        public let nextKey: String?
+        /// How many zero bytes pad the plaintext to 128 (`p`).
+        public let padBytes: Int?
+
+        /// Makes a presence key payload's fields.
+        public init(generation: Int64, key: String, nextGeneration: Int64?, nextKey: String?, padBytes: Int?) {
+            self.generation = generation
+            self.key = key
+            self.nextGeneration = nextGeneration
+            self.nextKey = nextKey
+            self.padBytes = padBytes
+        }
+    }
+
     /// The body: empty for a control frame.
     public let body: String
     /// The control code, absent for a message.
@@ -158,11 +179,13 @@ public struct VectorContent: Codable, Sendable, Equatable {
     public let pr: Profile?
     /// A group seed.
     public let gk: GroupKey?
+    /// A presence key payload.
+    public let pk: PresenceKeys?
 
     /// Makes a content's fields.
     public init(
         body: String, ctl: Int? = nil, ack: String? = nil, acks: [String]? = nil, rp: Reaction? = nil, pr: Profile? = nil,
-        gk: GroupKey? = nil
+        gk: GroupKey? = nil, pk: PresenceKeys? = nil
     ) {
         self.body = body
         self.ctl = ctl
@@ -171,6 +194,7 @@ public struct VectorContent: Codable, Sendable, Equatable {
         self.rp = rp
         self.pr = pr
         self.gk = gk
+        self.pk = pk
     }
 }
 

@@ -122,6 +122,37 @@ public protocol MeshTransport: AnyObject {
     /// the keys a radio resolves a contact's blinded advert by. A contact missing from a listing is unlisted at once. No
     /// default, as ``peerProvesItself(_:)`` has none: a transport that forgot it would never recognise a blinding contact.
     func listPresenceKeys(_ listing: [NodeId: [PresenceKey]])
+
+    /// Writes `wire` to `peer` only over a live link that proved `peer`'s id (contract §5), and answers whether one took it
+    /// (ADR 2026-11.prsp). One call, never a check followed by ``send(_:to:)``, which writes to the first live link for the
+    /// id, proven or not: it guards against a claimant's unproven link, which must never read a ctl 11. A ctl 11 goes this
+    /// way alone: it is never flooded, custodied or cast. No default, as ``peerProvesItself(_:)`` has none.
+    func sendOverProvenLink(_ wire: WireEnvelope, to peer: NodeId) -> Bool
+
+    /// Whether a live link that proved `peer`'s id stands now: what the presence key pass reads before it spends a chain key
+    /// on a frame ``sendOverProvenLink(_:to:)`` would refuse. No default.
+    func hasProvenLink(to peer: NodeId) -> Bool
+
+    /// Our current presence key, or `nil` (ADR 2026-11.prsp): handed `nil` before every start and at each session start,
+    /// until that session's first committed pass, and handed again whenever it changes. A transport that airs no tag
+    /// ignores it.
+    func ownPresenceKeyChanged(_ key: OwnPresenceKey?)
+
+    /// The engine's readers of our presence keys, handed once, as the engine is made (``PresenceKeySource``). A transport
+    /// that airs no tag ignores them.
+    func attachPresenceKeys(_ source: PresenceKeySource)
+}
+
+extension MeshTransport {
+    /// Nothing: this transport airs no tag.
+    public func ownPresenceKeyChanged(_: OwnPresenceKey?) {
+        // No advert of ours is blinded here.
+    }
+
+    /// Nothing: this transport airs no tag.
+    public func attachPresenceKeys(_: PresenceKeySource) {
+        // No advert of ours is blinded here.
+    }
 }
 
 /// A file to stream on a link: its header's fields, its size, and a reader for its bytes, so a file waiting behind

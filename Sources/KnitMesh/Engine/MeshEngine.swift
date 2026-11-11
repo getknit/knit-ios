@@ -38,6 +38,9 @@ public final class MeshEngine {
     var resetReseal = ResetReseal()
     /// What the presence key feed keeps between listings, and its counts (ADR 2026-11.sv5t, ``feedPresenceKeys()``).
     var presenceKeyFeed = PresenceKeyFeed()
+    /// Where our presence keys' bytes come from: the system's generator (``KnitCrypto/PresenceKey/generate()``), never the
+    /// injected `random`, but for a vector, which fixes them as it fixes the ratchet's draws (ADR 2026-11.prsp).
+    var mintPresenceKey: () -> PresenceKey = { PresenceKey.generate() }
     let transport: any MeshTransport
     let clock: any MeshClock
     let configuration: MeshConfiguration
@@ -136,6 +139,8 @@ public final class MeshEngine {
         keyExchange = KeyExchange { [peers = stores.peers, custody = stores.custody] peer in
             peers.profileFrame(of: peer).flatMap { kept in kept.signed.count > custody.limits.maxProfileSignedBytes ? nil : kept }
         }
+        // The radio's readers of our presence keys, each reaching this engine weakly (ADR 2026-11.prsp).
+        transport.attachPresenceKeys(presenceKeySource())
     }
 
     /// This node's id.
@@ -180,8 +185,8 @@ public final class MeshEngine {
         let ratchetSweep = configuration.ratchet ? timers.ratchetSweep : nil
         let ticks = ackSync.nextBatchDue
         let rounds = heldDigests.nextCheck
-        return ([router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ticks, ratchetSweep, rounds] + blobs)
-            .compactMap(\.self).min()
+        let deadlines = [router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ticks, ratchetSweep, rounds]
+        return (deadlines + blobs + [nextPresenceLinkUp]).compactMap(\.self).min()
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): seeds our sealed profile's dedupe, brings our prekey in step with the
@@ -199,6 +204,7 @@ public final class MeshEngine {
         seedSealedProfileVersions()
         // Before anything signs our profile, so the frame custody seeds already carries a due prekey
         // (`MeshManager.kt:2548-2551`).
+        clampPresenceGenerationAtReinstall()
         syncPrekey(atStart: true)
         republishIfCapabilitiesChanged()
         republishIfStale()
@@ -247,6 +253,8 @@ public final class MeshEngine {
         sendOwedTicks(to: peer)
         // A partition's merge: the seeds it never acknowledged, with the switch on (`MeshManager.kt:2521`, phase P6b).
         flushPendingGroupKeys(for: peer, force: false)
+        // Our presence keys follow 2 to 20 s on, not in the link's first second (ADR 2026-11.prsp).
+        schedulePresenceLinkUp(peer)
         events.append(.neighborsChanged(transport.neighbors))
         log.log(.info, "mesh link up \(peer)")
     }
@@ -257,6 +265,7 @@ public final class MeshEngine {
     public func linkDown(_ nodeId: NodeId) {
         // Its round waits on a link that is gone: the next link's digest says what it lacks then.
         heldDigests.drop(nodeId)
+        cancelPresenceLinkUp(nodeId)
         // A newcomer is one only while its link stands (knit-next ADR 2026-10.2drc): a link-up that went pulls nobody later.
         blobExchange.unlinked([nodeId])
         stepBlobs(blobExchange.fetches(on: [nodeId]))
@@ -302,6 +311,8 @@ public final class MeshEngine {
         answerHeldDigests(now: now)
         lapseTyping(now: now)
         flushDueTickBatches(now: now)
+        firePresenceLinkUps(now: now)
+        fireOwnSettleRetry(now: now)
         if now >= due.reoffer {
             reoffer()
             due.reoffer = now + configuration.reofferMilliseconds
@@ -365,36 +376,5 @@ public final class MeshEngine {
     func sign(_ envelope: RelayEnvelope, relay: Bool) -> WireEnvelope? {
         let signed = envelope.encoded
         return (try? identity.signature(for: signed)).map { WireEnvelope(relay: relay, sig: $0, signed: signed) }
-    }
-}
-
-extension MeshEngine {
-    /// A node with `identity` and the prekeys it keeps, its repositories, and the transport, clock and randomness it runs
-    /// on. A ring another identity signs is not this node's, and is left out.
-    public convenience init(
-        identity: IdentityKeys,
-        prekeys: PrekeyRing? = nil,
-        deviceTag: String?,
-        stores: MeshStores,
-        transport: any MeshTransport,
-        clock: any MeshClock,
-        random: some RandomNumberGenerator,
-        configuration: MeshConfiguration = MeshConfiguration(),
-        log: any KnitLog = SilentLog()
-    ) {
-        self.init(
-            identity: identity,
-            prekeys: prekeys,
-            deviceTag: deviceTag,
-            stores: stores,
-            transport: transport,
-            clock: clock,
-            random: random,
-            configuration: configuration,
-            log: log,
-            ratchetEngine: RatchetEngine(),
-            groupRatchetEngine: GroupRatchetEngine(),
-            partials: MemoryPartialBlobStore()
-        )
     }
 }

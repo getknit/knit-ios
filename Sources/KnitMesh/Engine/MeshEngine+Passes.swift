@@ -74,6 +74,9 @@ extension MeshEngine {
         broadcastSealedProfile()
         retryWaitingDirectMessages()
         retryWaitingGroupMessages()
+        // Our presence keys' pass whatever the revision says: the weekly, clock and mark advances, and the resend under a
+        // root the peer's reset moved, which no hook here announces (ADR 2026-11.prsp).
+        noteOwnPresenceKeyPassOwed()
     }
 
     /// Wants every blob the stores name and the blob store lacks (`rewantMissingBlobs`, knit-next ADR 2026-09.ptv8): the

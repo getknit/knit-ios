@@ -85,6 +85,48 @@ final class RecordingTransport: MeshTransport {
         sequence.append(.frame(frame))
     }
 
+    /// The neighbours a link would say never proved their id, as a test sets them: every other neighbour has.
+    var unproven: Set<NodeId> = []
+    /// Every frame written over a proven link alone, in order (each is in ``written`` too).
+    private(set) var provenSends: [Written] = []
+    /// Every key the engine handed the radio as our own, in order.
+    private(set) var ownKeys: [OwnPresenceKey?] = []
+    /// The key the engine last handed the radio, or `nil` when it handed none or withdrew it.
+    var publishedKey: OwnPresenceKey? {
+        guard case .some(.some(let key)) = ownKeys.last else {
+            return nil
+        }
+        return key
+    }
+    /// The readers the engine handed the radio.
+    private(set) var presenceKeySource: PresenceKeySource?
+
+    /// Whether a proven link refuses what it is handed, as one that ended between the check and the write would.
+    var refusesProvenSends = false
+
+    func sendOverProvenLink(_ wire: WireEnvelope, to peer: NodeId) -> Bool {
+        guard hasProvenLink(to: peer), !refusesProvenSends else {
+            return false
+        }
+        send(wire, to: peer)
+        if let last = written.last {
+            provenSends.append(last)
+        }
+        return true
+    }
+
+    func hasProvenLink(to peer: NodeId) -> Bool {
+        isLinked(peer) && !unproven.contains(peer)
+    }
+
+    func ownPresenceKeyChanged(_ key: OwnPresenceKey?) {
+        ownKeys.append(key)
+    }
+
+    func attachPresenceKeys(_ source: PresenceKeySource) {
+        presenceKeySource = source
+    }
+
     func sendDigest(_ ids: [String], to peer: NodeId) {
         digests.append((ids, peer))
     }
@@ -176,6 +218,7 @@ final class RecordingTransport: MeshTransport {
     /// Forgets what was written so far.
     func clear() {
         written.removeAll()
+        provenSends.removeAll()
         sequence.removeAll()
         digests.removeAll()
         files.removeAll()

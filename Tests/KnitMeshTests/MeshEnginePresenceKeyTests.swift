@@ -349,6 +349,30 @@ final class RefusingPresenceKeys: PresenceKeyStore, @unchecked Sendable {
         }
         held.deleteKeys(of: peers)
     }
+
+    func ownKeys() -> [OwnPresenceKeyRecord] {
+        guard !refusesReads else {
+            unit.failCurrentUnit()
+            return []
+        }
+        return held.ownKeys()
+    }
+
+    func applyOwn(inserted: [OwnPresenceKeyRecord], updated: [OwnPresenceKeyRecord], keep: Set<Int64>) {
+        guard !refusesWrites else {
+            unit.failCurrentUnit()
+            return
+        }
+        held.applyOwn(inserted: inserted, updated: updated, keep: keep)
+    }
+
+    func mark(of generation: Int64) -> PresenceMark? {
+        refusesReads ? nil : held.mark(of: generation)
+    }
+
+    func writeMark(_ mark: PresenceMark, of generation: Int64) -> PresenceMarkWrite {
+        refusesWrites ? .failed : held.writeMark(mark, of: generation)
+    }
 }
 
 extension MeshStores {

@@ -8,7 +8,7 @@ public import KnitWire
 ///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
 ///           [--no-gatt-payload] [--gatt-reads | --no-gatt-reads] [--feed window|pace] [--ratchet | --no-ratchet]
-///           [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
+///           [--no-presence-keys] [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
 /// knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
 /// knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
 ///                [--advertise android|ios] [--instance NAME | --state DIR]
@@ -42,7 +42,8 @@ public enum PeerCommand: Equatable, Sendable {
                 [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
                 [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
                 [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--gatt-reads | --no-gatt-reads]
-                [--feed window|pace] [--ratchet | --no-ratchet] [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
+                [--feed window|pace] [--ratchet | --no-ratchet] [--no-presence-keys] [--stop-reading-after SECONDS]
+                [--flood BYTES_PER_SECOND] [--lying]
             knit-peer keygen [--above NODE_ID] [--below NODE_ID] [--instance NAME | --state DIR]
             knit-peer scan [--adapter-address ADDRESS] [--shared-adapter] [--seconds 20]
                 [--advertise android|ios] [--log debug|info|warning] [--instance NAME | --state DIR]
@@ -55,6 +56,8 @@ public enum PeerCommand: Equatable, Sendable {
         refused unless --shared-adapter says other devices use them too; the peer then leaves every link it did not
         make alone. The forward-secrecy ratchet is on, as in the app, and keeps the peer's prekeys beside its
         identity; --no-ratchet runs the peer as a build from before it, and --ratchet, the default, is still taken.
+        The peer mints its own presence keys and hands them to its linked contacts under the ratchet, as the app does;
+        --no-presence-keys mints and sends none.
         --stop-reading-after is for trials: that many seconds after it starts, the peer stops reading its channels.
         --flood is for trials too: while linked, the peer writes that many bytes a second of undecodable frames to
         every link, as a neighbour flooding it would, holding back while its own queue to that link is full.
@@ -73,7 +76,11 @@ public enum PeerCommand: Equatable, Sendable {
         }
         var flags = try Flags(
             parsing: rest,
-            switches: ["--shared-adapter", "--no-gatt-payload", "--gatt-reads", "--no-gatt-reads", "--ratchet", "--no-ratchet", "--lying"])
+            switches: [
+                "--shared-adapter", "--no-gatt-payload", "--gatt-reads", "--no-gatt-reads", "--ratchet", "--no-ratchet",
+                "--no-presence-keys",
+                "--lying",
+            ])
         switch verb {
         case nil, "run":
             let options = try RunOptions(flags: &flags, environment: environment)
@@ -157,6 +164,10 @@ public struct RunOptions: Equatable, Sendable {
     /// identity, publishes one with the ratchet's bits in its profile, and seals and opens DMs with the ratchet.
     /// `--no-ratchet` turns it off, and the peer is what it was before the ratchet.
     public var ratchet = true
+    /// Whether the peer mints, rotates and sends its own presence keys (`MeshConfiguration.sendsOwnPresenceKeys`, ADR
+    /// 2026-11.prsp): by default, as in the app; `--no-presence-keys` turns it off. They are sealed by the ratchet, so with
+    /// `--no-ratchet`, which keeps no prekeys and so no generation, none is minted either.
+    public var presenceKeys = true
     /// Seconds after start the radio stops reading its channels, a trial's switch (`--stop-reading-after`); `nil` never stops.
     public var stopReadingAfterSeconds: Int?
     /// Bytes a second of undecodable FRAME records written to every live link, a trial's switch (`--flood`); `nil`
@@ -206,6 +217,7 @@ public struct RunOptions: Equatable, Sendable {
             throw .invalid(flag: "--ratchet", value: "--no-ratchet")
         }
         ratchet = !ratchetOff
+        presenceKeys = !flags.take(switch: "--no-presence-keys")
         stopReadingAfterSeconds = try Self.stopReadingAfter(flags.take("--stop-reading-after"))
         floodBytesPerSecond = try Self.flood(flags.take("--flood"))
         lying = flags.take(switch: "--lying")
@@ -358,18 +370,6 @@ internal struct Flags {
         if let flag = values.keys.min() {
             throw .unknownFlag(flag)
         }
-    }
-}
-
-/// The adapters the environment names (`PeerCommand.adapterVariable`, `PeerCommand.reservedVariable`).
-internal enum AdapterEnvironment {
-    static func address(_ environment: [String: String]) -> String? {
-        environment[PeerCommand.adapterVariable].flatMap { $0.isEmpty ? nil : $0 }
-    }
-
-    static func reserved(_ environment: [String: String]) -> [String] {
-        (environment[PeerCommand.reservedVariable] ?? "").split(separator: ",").map { String($0.filter { $0 != " " }) }
-            .filter { !$0.isEmpty }
     }
 }
 

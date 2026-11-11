@@ -39,6 +39,10 @@ import KnitWire
 /// prekeys and an older build ignores and writes back as it was stored (``answeredInits``,
 /// ``keepAnswered(_:from:now:)``, ADR 2026-10.wcex): a reinstall keeps them with the prekeys, and so knows the peer's
 /// opener custody serves back to it for a day as an init it answered in a life whose sessions it has lost.
+///
+/// **Our presence keys' last generation** rides the same item as a fifth key, `presenceLast`, written the same way
+/// (``presenceLastGeneration()``, ``setPresenceLastGeneration(_:)``, ADR 2026-11.prsp): it survives a reinstall with the
+/// identity, so a generation number is never handed out twice under one identity.
 public struct PrekeyRing: Sendable {
     /// How old the newest prekey grows before a new one is minted: a week (`SPK_ROTATE_MS`).
     public static let rotationMilliseconds: Int64 = 604_800_000
@@ -67,6 +71,9 @@ public struct PrekeyRing: Sendable {
         /// The store keeps the inits it answered in a form this build cannot read as a list, a newer build's, which a
         /// write would lose.
         case unreadableAnswers
+        /// The store keeps our presence keys' last generation in a form this build cannot read as one integer: a damaged
+        /// item, read as no value, could hand a peer a generation it already holds (ADR 2026-11.prsp).
+        case unreadablePresenceGeneration
         /// The store answered the write, and then held something else.
         case readBack
         /// The identity's key would not sign.

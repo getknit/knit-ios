@@ -68,18 +68,29 @@ value survives while `knit.sqlite` stays out of backups. Four facts shape what t
       the pinned profile's) carry `CAP_BLIND_ADVERT` and `CAP_LINK_PROOF`, and whose pinned profile carries
       `CAP_RATCHET`. It is never custodied, flooded or cast.
     - **One call to send.** The send is `MeshTransport.sendOverProvenLink(_:to:) -> Bool`, which writes only to a channel
-      whose link has proved the id. It is not a check followed by `send(to:)`: that picks the first live link for the
-      id, and an unproven claimant's link can sit beside the proven one. A false answer forgets that peer's ledger
-      entry, as Android's `onSendFailed` does.
+      whose link has proved the id. `send(to:)` takes the first live link for the id, proven or not. A proof retires
+      every unproven link for its id before the proven one registers, so the two never stand together, but the send
+      does not rest on that. A false answer forgets that peer's ledger entry, as Android's `onSendFailed` does.
+    - **A frame lost in a drop goes again.** True means the record is queued in `LinkOutbox`, not delivered. The ledger
+      entry names the link it went out on. If that link ends within the write-stall bound of the queueing, the entry is
+      dropped, so the next link-up sends again. Android keeps its `sent` map through a drop, and its contact then waits
+      for a root change or a new generation. The receiver takes an equal generation as a no-op, so a duplicate costs one
+      ratchet step. The window is measured from the queueing on the monotonic clock. A suspension resets the stall
+      watch's baselines, so a frame can still sit in the outbox past 150 s while Knit sleeps and be lost with the link.
+      That contact then holds our older keys until the next rotation, a root change or a block: at most about a day.
   - **What each linked contact is owed** is kept in memory, per peer, under the root its last ctl 11 was sealed with
     (read in the seal's unit). The first pass of a session trims the ledger to the direct contacts. It is reconciled at
-    link-up after the 2 to 20 s delay, at a key change, at heal, and when a peer gains a bit it needs. The heal runs our
-    own key's pass whatever the feed's revision says. That catches the weekly, clock and mark advances, and also the
-    resend after a root change, which this port has no hook for.
+    link-up after the 2 to 20 s delay, at a key change, at heal, and when a peer gains a bit it needs. It is also
+    reconciled when an open, a reset's adoption or a race's resolution commits a root other than the ledger's, or
+    confirms our session. That mirrors Android's `rootChanges` (`MeshManager.kt:1401`). The heal runs our own key's
+    pass whatever the feed's revision says, which catches the weekly, clock and mark advances. While a failed
+    settle sits out its 60 s, no pass opens a unit unless a listing is due.
   - **A pass runs in this order:**
     1. One store unit settles: the direct contacts, `due` and its rows, the leavers' stored keys, and the departed set.
-    2. After `.committed`, our own key and the departed set are published, guarded by the session's epoch, so a pass
-       begun under an earlier session publishes nothing.
+    2. After `.committed`, our own key and the departed set are published. The pass and the session's start each run
+       to completion on the `Mesh` actor, with no `await` between the unit and the publish, so no session begins
+       between them. Kotlin's epoch guard exists because its pass can outlive `beginSession`; it has no Swift
+       counterpart here. If `feedPresenceKeys` ever gains an `await`, the guard has to come back.
     3. Then one outermost `sealControl` runs per owed peer. On `.sealed` it settles the ratchet, records the ledger,
        then sends. On `.joined`, `.failed` or `.unsealable` it records nothing and sends nothing.
     4. Hooks, the profile write's capability gain among them, only bump the feed's revision. They never seal or
@@ -246,7 +257,12 @@ iPhone with the switch on, a Pixel on API 31 or later and an older one if the la
   `dialHeld` for doorbell links. xp6d's worry that a held key outlives its link is bounded for an iPhone, which iOS
   moves to a new address about every 15 minutes even while Knit is suspended.
 - **A debug build dates removals and blocks.** The bridge reports rotations and key generations, as Android's debug
-  bridge does (xp6d, step 6). Debug builds are for development, not privacy.
+  bridge does (xp6d, step 6). `status.presenceKeys.ownGeneration` is a wall-clock time, so it dates our latest mint,
+  a block's fresh pair included. It reaches only the debug bridge and knit-peer. Debug builds are for development, not
+  privacy.
+- **A suspended iPhone's link-up delay** of 2 to 20 s does not run while Knit is suspended. A link that wakes it for
+  about 10 s may end the wake before the first ctl 11, which then waits for the next wake. Phase 2 weighs drawing the
+  delay from the low end in the background.
 - **One release log line already dates a block.** `MeshEngine+Blocks.swift:172` logs a block by device tag in every
   build, against xp6d's step-6 rule. It is outside this change and owed as a follow-up.
 - **A new phone starts over.** The Keychain item does not migrate to a new device, and neither does the identity, so
@@ -260,3 +276,31 @@ link beside a proven one that gets nothing); a padded ctl 11 in `ios-emitted-v1.
 `IosEmittedVectorTest` opens; ports of `TagScheduleTest`, `AdvertWriterTest`, `AdvertRotationTest`, `RotationTurnTest`,
 `TagNextSendsTest` and the blinding rows of `BleAdmissionPolicyTest`; the LinkRig wiring with two blinding iPhones and
 `BlindingPeer`; `check.sh release`'s marker for the debug gate; and the device trials A11 owes.
+
+Phase 1, our own keys (draft, 2026-11-11): `PresenceKeyPolicyOwnTests`, `PrekeyRingPresenceGenerationTests`,
+`OwnPresenceKeyStoreTests`, `SchemaTests` (v24), `PresenceKeyFrameTests`, `LinkManagerProvenSendTests`,
+`MeshEngineOwnPresenceKeyTests`, `OwnPresenceKeyLabTests`, and `carolPresenceKeysToBob` in `ios-emitted-v1.json`. Choices
+the phase made that the text above leaves open:
+
+- A pass spends no chain key toward a link that has not proved its id: `MeshTransport.hasProvenLink(to:)` is read before
+  the seal, and `sendOverProvenLink` stays the one call that writes. A proof retires every unproven link for its id, so
+  the call guards the time only a claimant's link stands.
+- A DM open, a reset's adoption or a race's resolution that commits marks our pass owed when the session is confirmed and
+  its root is not the one the ledger records for a linked peer that reads our keys, the answer to our own init among them
+  (Kotlin's `rootChanges` reconcile). The heal still runs the pass whatever the revision says.
+- Every committed seal settles the ratchet before anything else is decided.
+- The ledger records the link a ctl 11 was queued on and when. When that link ends within the write-stall bound
+  (`WriteStallWatch`'s stall plus one check), the record goes, so the next link's pass sends again; a copy that did arrive
+  is an equal generation, a no-op to the peer, for one ratchet step.
+- After a unit that held the settle failed, the settle sits out a minute: an owed pass opens no unit then unless the
+  listing is due, and the end of the sit-out is a deadline the mesh wakes for. A failing store so costs the Keychain no
+  write at every settle.
+- A mint numbers above the larger of the item's `last` and every row's generation, so a row a lost item left behind is
+  never inserted over.
+- `TAG_NEXT`'s blocked set is every blocked id, and every direct-contact candidate or linked peer whose pinned device tag
+  is blocked, read in the pass's unit.
+- The memory store refuses a mark inside an open unit as the SQL store does.
+- knit-peer with `--no-ratchet` keeps no prekeys, so no item to number in, and mints nothing.
+- The mark's `NORMAL` that fails to restore is reported to the database's failures, not counted in `status`.
+- `status.presenceKeys.ownGeneration` is a wall-clock millisecond value that dates our latest mint; it reaches only the
+  debug bridge and knit-peer.

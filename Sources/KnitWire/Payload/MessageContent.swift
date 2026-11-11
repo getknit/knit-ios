@@ -30,7 +30,8 @@ public struct MessageContent: CBORRepresentable, Equatable {
         /// A Wi-Fi Direct transfer offer or answer.
         public static let transfer = 9
         /// A contact's presence keys, in ``MessageContent/pk`` (`CTL_PRESENCE_KEY`, `MessageContent.kt:216`; knit-next ADR
-        /// 2026-11.xp6d). Received only: this port sends none (ADR 2026-11.sv5t).
+        /// 2026-11.xp6d). Received (ADR 2026-11.sv5t), and sent with our own keys, padded by ``PresenceKeyFrame`` (ADR
+        /// 2026-11.prsp).
         public static let presenceKey = 11
     }
 

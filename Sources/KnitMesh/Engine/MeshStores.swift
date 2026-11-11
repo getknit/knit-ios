@@ -85,6 +85,11 @@ public struct MeshStores: Sendable {
         let memoryRatchet = MemoryRatchetStore()
         let memoryGroupRatchet = MemoryGroupRatchetStore()
         let memoryPresenceKeys = MemoryPresenceKeyStore()
+        let unit = MemoryTransactor(stores: [
+            memoryCustody, memoryPeers, memoryMessages, memoryConversations, memoryBlocks, memoryGroups, ownProfileStore, memoryBlobs,
+            memoryRatchet, memoryGroupRatchet, memoryPresenceKeys,
+        ])
+        memoryPresenceKeys.commits(in: unit)
         return Self(
             custody: memoryCustody,
             peers: memoryPeers,
@@ -97,10 +102,7 @@ public struct MeshStores: Sendable {
             ratchet: memoryRatchet,
             groupRatchet: memoryGroupRatchet,
             presenceKeys: memoryPresenceKeys,
-            transactor: MemoryTransactor(stores: [
-                memoryCustody, memoryPeers, memoryMessages, memoryConversations, memoryBlocks, memoryGroups, ownProfileStore, memoryBlobs,
-                memoryRatchet, memoryGroupRatchet, memoryPresenceKeys,
-            ])
+            transactor: unit
         )
     }
 }
@@ -144,6 +146,15 @@ public struct MeshConfiguration: Sendable {
     /// card to a DM or a group toward us (`audienceCannotRenderCards`). The HELLO and the advert carry
     /// ``Capabilities/local`` either way, which never holds it: a release build must not claim it.
     public var linkPreviews: Bool
+    /// Whether this phone mints, rotates and sends its own presence keys (`BuildConfig.PRESENCE_KEYS`; ADR 2026-11.prsp): on
+    /// in the app, in every build, and in knit-peer unless `--no-presence-keys`; off, the default tests start from. Off,
+    /// nothing is minted, rotated or sealed, and the leavers' stored keys still go. On with the ratchet's switch off, our
+    /// keys are minted and rotated and never sent: a ctl 11 is sealed by the ratchet alone.
+    public var sendsOwnPresenceKeys: Bool
+    /// Whether the presence keys' per-decision trail is logged (`presenceDebugLog`, `MeshManager.kt:436-442` at knit-next
+    /// `cad69c77b`): a new generation, a sweep, a send, each naming ids and generations, never a key or a tag. Dated, these
+    /// say when the user blocked someone, so the app sets it in a debug build alone, and knit-peer, a test bench, always.
+    public var logsPresenceKeyTrail: Bool
     /// The label a quote rebuilt from its original carries for what the original carried with no words: a GIF, a file or
     /// a voice note, in the reader's language (`QuoteLabels`, knit-next ADR 2026-10.gpa3). The app passes its composer's
     /// own; without one, as in knit-peer and the tests, such a quote carries no words, and a photo reads as one.
@@ -176,6 +187,8 @@ public struct MeshConfiguration: Sendable {
         typingIntervalMilliseconds: Int64 = 8000,
         ratchet: Bool = false,
         linkPreviews: Bool = false,
+        sendsOwnPresenceKeys: Bool = false,
+        logsPresenceKeyTrail: Bool = false,
         quoteLabel: @escaping @Sendable (MessageAttachment) -> String? = { _ in nil }
     ) {
         self.router = router
@@ -188,6 +201,8 @@ public struct MeshConfiguration: Sendable {
         self.typingIntervalMilliseconds = typingIntervalMilliseconds
         self.ratchet = ratchet
         self.linkPreviews = linkPreviews
+        self.sendsOwnPresenceKeys = sendsOwnPresenceKeys
+        self.logsPresenceKeyTrail = logsPresenceKeyTrail
         self.quoteLabel = quoteLabel
     }
 }

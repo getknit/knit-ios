@@ -76,6 +76,36 @@ extension LinkManager {
         }
     }
 
+    /// Writes `wire` to `peer` on the live link that proved `peer`'s id, never on a claimant's unproven link, and answers
+    /// whether one took it (ADR 2026-11.prsp): ``send(_:to:)`` picks the first live link for the id, proven or not
+    /// (``liveChannel(to:)``). A proof retires every unproven link for its id before registering (``peerProvesItself(_:)``,
+    /// R3), so this guards the time only a claimant's link stands. A frame already crossing the link either way is not
+    /// written again, and counts as taken. True means queued, not delivered: the engine forgets a send whose link ends soon
+    /// after (``MeshEngine/cancelPresenceLinkUp(_:)``).
+    public func sendOverProvenLink(_ wire: WireEnvelope, to peer: NodeId) -> Bool {
+        guard let id = liveLinks.first(where: { $0.neighbor.nodeId == peer && $0.proven })?.channel else {
+            return false
+        }
+        guard let record = LinkRecord(.frame, payload: wire.encoded).encoded else {
+            log.log(.warning, "link dropped a frame too large for a record")
+            return false
+        }
+        let now = clock.monotonicMilliseconds()
+        if let key = FrameKey.ofSigned(wire), !crossings.firstCrossing(link: id, key: key, now: now) {
+            return true
+        }
+        write(record, on: id)
+        if Self.rings(wire) {
+            ringAfterFrame(on: id, now: now)
+        }
+        return true
+    }
+
+    /// Whether a live link that proved `peer`'s id stands now.
+    public func hasProvenLink(to peer: NodeId) -> Bool {
+        liveLinks.contains { $0.neighbor.nodeId == peer && $0.proven }
+    }
+
     /// The links ``peerProvesItself(_:)`` closed, once: ahead of anything an entry answers.
     func takeDeferredDowns() -> [Event] {
         defer { deferredDowns.removeAll() }

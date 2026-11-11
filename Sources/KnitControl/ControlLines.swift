@@ -154,9 +154,18 @@ internal enum ControlLines {
         ]
     }
 
-    /// What the presence keys' receive side did (ADR 2026-11.sv5t), counts only: never a key, a peer or a time.
+    /// What the presence keys did (ADR 2026-11.sv5t, ADR 2026-11.prsp), counts and our own current generation only: never
+    /// a key or a peer. `ownGeneration` is a wall-clock millisecond value that dates our latest mint, a block's fresh pair
+    /// included; it reaches only the debug bridge and knit-peer.
     static func describe(_ keys: PresenceKeyCounts) -> JSONValue {
-        ["stored": .int(Int64(keys.stored)), "replaced": .int(Int64(keys.replaced)), "leavers": .int(Int64(keys.leavers))]
+        [
+            "stored": .int(Int64(keys.stored)), "replaced": .int(Int64(keys.replaced)), "leavers": .int(Int64(keys.leavers)),
+            "ownGeneration": keys.ownGeneration.map(JSONValue.int) ?? .null, "rotations": .int(Int64(keys.rotations)),
+            "mintsFailed": .int(Int64(keys.mintsFailed)), "sent": .int(Int64(keys.sent)), "sendsFailed": .int(Int64(keys.sendsFailed)),
+            "markWrites": .int(Int64(keys.markWrites)), "marksDurable": .int(Int64(keys.marksDurable)),
+            "markRefused": .int(Int64(keys.markRefused)), "markNotFull": .int(Int64(keys.markNotFull)),
+            "markFailed": .int(Int64(keys.markFailed)),
+        ]
     }
 
     /// What the links did with FILE records: whole files in, files dropped as they streamed, files out, and of those the

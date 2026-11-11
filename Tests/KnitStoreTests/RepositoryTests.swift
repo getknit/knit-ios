@@ -50,6 +50,10 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
             let ratchet = MemoryRatchetStore()
             let groupRatchet = MemoryGroupRatchetStore()
             let presenceKeys = MemoryPresenceKeyStore()
+            let transactor = MemoryTransactor(stores: [
+                peers, messages, conversations, blocks, groups, ownProfile, custody, ratchet, groupRatchet, presenceKeys,
+            ])
+            presenceKeys.commits(in: transactor)
             return Stores(
                 peers: peers,
                 messages: messages,
@@ -61,9 +65,7 @@ enum RepositoryKind: CaseIterable, Sendable, CustomTestStringConvertible {
                 ratchet: ratchet,
                 groupRatchet: groupRatchet,
                 presenceKeys: presenceKeys,
-                transactor: MemoryTransactor(stores: [
-                    peers, messages, conversations, blocks, groups, ownProfile, custody, ratchet, groupRatchet, presenceKeys,
-                ])
+                transactor: transactor
             )
         case .sql:
             let database = try KnitDatabase.inMemory(failures: failures)

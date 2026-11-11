@@ -266,7 +266,14 @@
                 // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment); the ratchet too, unless a debug `-ratchet off`.
                 // A quote rebuilt from its original names a GIF, a file or a voice note as the composer does
                 // (knit-next ADR 2026-10.gpa3).
-                configuration: MeshConfiguration(queriesBlobHolders: true, ratchet: ratchet, linkPreviews: previews != nil) { attachment in
+                // Our presence keys go to our contacts in every build, their dated trail logged in debug alone (ADR 2026-11.prsp).
+                configuration: MeshConfiguration(
+                    queriesBlobHolders: true,
+                    ratchet: ratchet,
+                    linkPreviews: previews != nil,
+                    sendsOwnPresenceKeys: true,
+                    logsPresenceKeyTrail: logsPresenceKeyTrail
+                ) { attachment in
                     AttachmentKind.quoteLabel(of: attachment)
                 },
                 log: parts.log,
@@ -324,6 +331,16 @@
 
     // Apart from the class only to keep its body inside the lint's length.
     extension AppEnvironment {
+        /// Whether the presence keys' per-decision trail is logged: in a debug build alone, since a dated line says when the
+        /// user blocked someone (ADR 2026-11.prsp).
+        static var logsPresenceKeyTrail: Bool {
+            #if DEBUG
+                true
+            #else
+                false
+            #endif
+        }
+
         #if DEBUG
             /// Gives the debug bridge `launch`'s ways to the sample chats (``SampleCommand``) and to a thread (``ThreadCommand``).
             func offerSample(_ launch: Launch) {

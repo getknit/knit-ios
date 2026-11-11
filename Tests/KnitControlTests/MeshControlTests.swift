@@ -129,6 +129,10 @@ import Testing
         #expect(keys["stored"] as? Int == 0)
         #expect(keys["replaced"] as? Int == 0)
         #expect(keys["leavers"] as? Int == 0)
+        // Our own keys' counts (ADR 2026-11.prsp): none minted by a mesh that sends none, and never a key.
+        #expect(keys["sent"] as? Int == 0 && keys["rotations"] as? Int == 0 && keys["marksDurable"] as? Int == 0)
+        #expect(keys["ownGeneration"] is NSNull || keys["ownGeneration"] == nil)
+        #expect(keys["key"] == nil)
     }
 
     @Test func statusSaysWhenTheLinksSeek() async throws {

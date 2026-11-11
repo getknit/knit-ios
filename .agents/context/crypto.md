@@ -672,7 +672,7 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 | 8 | profile | `pr{name, status, avatarHash?, version, openToChat, loraNode?, loraKey?, badges?}`, no prekey | handle and send, presentation only; `badges` dropped (knit-ios #10) |
 | 9 | transfer | `xf`, only toward `CAP_DIRECT_TRANSFER` | unknown here |
 | 10 | call | `cl`, only toward a profile carrying `CAP_CALL` (knit-next ADR 2026-10.3tee) | unknown here |
-| 11 | presence key | `pk{g, k, ng?, nk?, p?}`, point to point, padded to 128 bytes, named layout only (knit-next ADR 2026-11.xp6d) | handle, never send (ADR 2026-11.sv5t): "Presence keys", below |
+| 11 | presence key | `pk{g, k, ng?, nk?, p?}`, point to point, padded to 128 bytes, named layout only (knit-next ADR 2026-11.xp6d) | handle (ADR 2026-11.sv5t) and send (ADR 2026-11.prsp): "Presence keys", below |
 
 - **A ctl is machinery:** never stored as a message, notified or acknowledged.
 - **An unknown code** still commits the chain advance and does nothing else (`InboundPipeline.kt:1191-1196`).
@@ -699,6 +699,25 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
   parsed with `NodeId(_:)`), deletes leavers' keys (at a session's first pass every non-contact's) and lists the rest
   through `MeshTransport.listPresenceKeys`, all in one store unit, doing nothing unless it commits. The sweeps count
   (`PresenceKeyCounts.leavers`) and never log; no line, status or diagnostic carries a key or a tag.
+- **Our own presence keys** (ADR 2026-11.prsp; knit-next `PresenceKeyEngine.kt`, `PresenceKeyPolicy.kt:21-213` at
+  `cad69c77b`), behind `MeshConfiguration.sendsOwnPresenceKeys`, on in the app in every build and in knit-peer unless
+  `--no-presence-keys`. The same pass (`feedPresenceKeys`) settles them in its store unit (`settleOwnKeys`: Android's
+  `due`, a week, a day, an hour's slack, `max(last + 1, now)`), in `own_presence_keys` (schema v24), the generation's
+  `last` written to the identity's Keychain item (`PrekeyRing.setPresenceLastGeneration`, key `presenceLast`) before the
+  row that uses it, and clamped only at a reinstall. Once the unit commits, our current key and the departed set are
+  published to the radio (`MeshTransport.ownPresenceKeyChanged`, `PresenceKeySource`), then each linked direct contact whose
+  HELLO or pinned profile carries `CAP_BLIND_ADVERT` and `CAP_LINK_PROOF` and whose pinned profile carries `CAP_RATCHET`
+  gets one outermost `sealControl(…, confirmedOnly: true)` with no prekey: `RatchetSessions.sealDm`'s `confirmedOnly`
+  refuses inside its unit unless the session is confirmed, so a ctl 11 never starts a session or rides our own unanswered
+  init or reset. Sealed, the ratchet settles, the in-memory ledger records the generations under the root the seal
+  committed (read in its unit), and it goes `relay = false` over `MeshTransport.sendOverProvenLink` alone, never
+  custodied, flooded or cast; `hasProvenLink(to:)` is read first, so no chain key is spent toward an unproven link. A
+  committed open that leaves a confirmed session on a root the ledger does not name (the answer to our init, a reset's
+  adoption) marks the pass owed (`notePresenceRootMoved`). A ledger entry whose link ends within the write-stall bound of
+  its queueing is forgotten, so the next link resends. After a unit that held the settle failed, the settle sits out a
+  minute, opening no unit unless the listing is due, with the end of the sit-out a deadline. The plaintext is `PresenceKeyFrame`'s, the named `MessageContent` padded to 128 bytes. A block
+  withdraws the published key at once; the next pass mints a fresh pair. The trail of decisions logs only where
+  `MeshConfiguration.logsPresenceKeyTrail` asks (a debug build, knit-peer); `status.presenceKeys` counts.
 
 ### Which scheme a send takes
 

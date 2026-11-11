@@ -186,6 +186,16 @@ final class CapturingTransport: MeshTransport {
         // No radio here to resolve a tag.
     }
 
+    func sendOverProvenLink(_ wire: WireEnvelope, to peer: NodeId) -> Bool {
+        // The one link here proved its id.
+        send(wire, to: peer)
+        return true
+    }
+
+    func hasProvenLink(to peer: NodeId) -> Bool {
+        peer == self.peer
+    }
+
     func fileTaken(from _: NodeId, hash _: BlobHash) {
         // Nothing streams in here.
     }
