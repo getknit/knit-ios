@@ -516,6 +516,50 @@ explicit direction.** Update this file in the change that ships an item.
     our own presence keys with it, and the generation number's backup rule while `knit.sqlite` stays out of backups.
     One cost the reader's review left: a suspended iPhone keeps only the newest `TAG_NEXT` of a read, which can swap a
     stranger's link once (ADR 2026-11.sv5t, "A locked hour's announcements").
+    - **The writer** (proposed on `feat/blind-writer`, ADR 2026-11.prsp, 2026-11-11). Our own keys are sent in every
+      build. The writer is debug-only behind a runtime switch, which defaults to off until A11 lands. The phases are:
+      - 0: the ADR, A11's spec and the design pass;
+      - 1: our own keys (crypto plane);
+      - 2: the link-layer writer (Bluetooth plane);
+      - 3: KnitBLE, KnitBlueZ and the device probe of the address and PSM;
+      - 4: the debug gate, the bridge and `interop.py`;
+      - 5: A11;
+      - 6: device trials;
+      - 7: the debug default flips to on.
+    - **A11 (Android reads a blinded GATT payload):** a paired change that iOS leads, knit-next's half of ADR
+      2026-11.prsp. At `cad69c77b` and at knit-next's HEAD, `BleGattPayloadReader.kt:86-88` reads a payload carrying
+      `FLAG_BLINDED` as `stranger(PHASE_BLINDED)`. So a blinding iPhone is never sighted, never resolved by a contact's
+      key, and never dialed, and every 10 minutes it costs a read that is never refunded. The contract:
+      - **The read.** A payload that carries `FLAG_BLINDED` and a valid `zzzz` prefix is a blinded sighting at the GATT
+        address, with its PSM and flags. It goes through the path a blinded advert takes (`offerBlind`, `readBlind`,
+        `AdvertAliases`): resolved by a contact's key, then a claim, then a hint, and otherwise held under a handle. A
+        flagged payload without the prefix stays a stranger, as now.
+      - **The payload's lifetime.** `GattPayloads.confirmed` refunds the read once a link to that address proves itself.
+        A tag dial takes the proven id. `forgetGattPayloadIfOther` (ADR 2026-09.kwq2's rule 2) compares a HELLO's `t`
+        with the payload's tag, or with a tag announced for that link, never with the id.
+      - **Who dials.** `AdvertOrder.iDial` on forms, as for any blinded advert, with no rule of its own for a GATT
+        source. So a clear Android leaves every dial to the blinding iPhone. The design pass of 2026-11.prsp may revise
+        this for a suspended iPhone; any revision goes to both workers.
+      - **The payload's slot.** A blinded payload is forgotten at the first slot edge after it was read, with jitter,
+        so a reader never keeps a rotated tag past the edge, and each address costs at most one read per slot.
+      - **The doorbell.**
+        - `doorbellTrusted`'s `sightedViaGatt` holds for a sighting held under a handle or resolved from a GATT tag.
+        - `BleDoorbell.lookUp` treats a lookup that finds no `0xFE30` service within a few seconds of a services change
+          as a failure to retry, never `absent`. A blinding iPhone adds its new service before it removes the old one at
+          each rotation, but `onServiceChanged` exists only from API 31, and a lookup can still land in that gap.
+        - Android's held-link row and `LinkSilence`'s probe stay inert toward a link whose HELLO carries
+          `CAP_DOORBELL`.
+        - `dialHeld` keeps working toward such a link. Without it, a stranger iPhone in the foreground could draw the
+          2026-11-06 claim burst again.
+      - **The seal flag.** The flags byte carries `FLAG_LINK_SEAL` as before, so knit-next ADR 2026-11.8mhs's worry
+        (`:122-123`) is met once the payload is read.
+      - **Vectors.** A blinded GATT value is the blinded advert's 24 bytes with the cue zeroed, and no shared vector moves
+        for it unless the Android worker adds one, which Android then leads. iOS leads one addition:
+        `ios-emitted-v1.json` gains the iPhone's ctl 11, padded to 128 bytes, for `IosEmittedVectorTest` to open.
+        That proves the padding matches `PresenceKeyFrame`'s.
+      - **Trial.** A debug iPhone with the switch on, beside a blinding Pixel that is its contact and one that is not:
+        the contact resolves the iPhone by key over GATT, both link in both orders across slot edges, and the read
+        budget stays refunded.
   - **Wire and crypto** (`crypto-owner`): type `lang`, `reads`, `md` and `pk` as kotlinx does (#43, done with the
     reader), and add the `link` frame type, never flooded and spending no key request (#44); the once-per-era receipt
     re-seal (knit-next #176, the item below; #48), the race loser's reclaim (4mjm, #49) and the floored reset (sfms,
