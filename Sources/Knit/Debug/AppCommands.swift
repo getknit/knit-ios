@@ -16,9 +16,18 @@
         let textClassifier: any TextClassifier
         let takes: ScreenRecording
         let door: SampleDoor
+        let threads: ThreadDoor
 
         /// The reply to `line`, or `nil` when it is none of these commands.
         func answer(_ line: String) async -> String? {
+            if let reply = await read(line) {
+                return reply
+            }
+            return await act(line)
+        }
+
+        /// The reply to a command that reads what the app holds: its radio, storage, photos, voice notes and filter.
+        private func read(_ line: String) async -> String? {
             if let probe = ScanProbeCommand.parse(line) {
                 return await probe.answer(radio)
             }
@@ -37,6 +46,12 @@
             if let ask = ScreenTextCommand.parse(line) {
                 return await ask.answer(textClassifier)
             }
+            return nil
+        }
+
+        /// The reply to a command that does something: records the screen, crashes, opens the sample chats or a thread, or
+        /// fetches a link's card.
+        private func act(_ line: String) async -> String? {
             if let ask = RecordCommand.parse(line) {
                 return await ask.answer(takes)
             }
@@ -45,6 +60,9 @@
             }
             if let ask = SampleCommand.parse(line) {
                 return await ask.answer(door)
+            }
+            if let ask = ThreadCommand.parse(line) {
+                return await ask.answer(threads)
             }
             if let ask = LinkPreviewCommand.parse(line) {
                 return await ask.answer(session, screening: screening)

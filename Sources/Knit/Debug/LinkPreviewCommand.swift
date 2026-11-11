@@ -6,9 +6,11 @@
     import KnitWire
 
     /// `{"cmd":"linkpreview","url":"https://example.com/"}`: fetches the card for a link as the composer would, and says
-    /// what came back (ADR 2026-11.hcvg), so a device check can try real sites and a hostile server without typing.
-    /// `"conv":"nearby"` screens it as a room post's. It asks the setting nothing: the bridge is a debug build's own. A card
-    /// fetched in the last ten minutes comes from the service's memo.
+    /// what came back (ADR 2026-11.hcvg), so a device check can try real sites and a hostile server without typing. A card's
+    /// reply carries its container as `blob`, which `dm`, `group-send` or `room` can send with
+    /// `"mime":"application/vnd.knit.link-preview"`, as the composer would. `"conv":"nearby"` screens it as a room post's.
+    /// It asks the setting nothing: the bridge is a debug build's own. A card fetched in the last ten minutes comes from
+    /// the service's memo.
     internal struct LinkPreviewCommand: Decodable {
         static let name = "linkpreview"
 
@@ -54,7 +56,9 @@
                 reply["description"] = .text(blob.description)
                 reply["imageBytes"] = .int(Int64(blob.image?.count ?? 0))
                 reply["imageMime"] = .text(blob.imageMime)
-                reply["blobBytes"] = .int(Int64(blob.encoded.count))
+                let encoded = blob.encoded
+                reply["blobBytes"] = .int(Int64(encoded.count))
+                reply["blob"] = .string(Base64.encode(encoded))
             case .offline:
                 reply["outcome"] = "offline"
             case .restricted:

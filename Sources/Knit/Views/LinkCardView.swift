@@ -32,6 +32,8 @@
         @State private var screened: LinkCard?
         /// The picture read, with the card it belongs to.
         @State private var picture: (card: LinkCard, image: UIImage)?
+        /// The card whose picture did not open: its well stays, empty, as Android's does.
+        @State private var unreadable: LinkCard?
 
         var body: some View {
             Group {
@@ -43,11 +45,17 @@
                             openURL(url)
                         }
                     } label: {
-                        CardFace(card: card, picture: picture?.card == card ? picture?.image : nil)
+                        CardFace(card: card, picture: picture?.card == card ? picture?.image : nil, reading: unreadable != card)
                     }
                     .buttonStyle(.plain)
                     .accessibilityLabel(Copy.LinkPreviews.card(title: card.title, host: card.host))
                     .accessibilityIdentifier(AccessibilityID.chatLinkCard)
+                } else {
+                    // A view of no size while the filter looks: a Group with nothing in it never appears, so the task
+                    // below would never run and the card would wait for good.
+                    Color.clear
+                        .frame(width: 0, height: 0)
+                        .accessibilityHidden(true)
                 }
             }
             .task(id: Drawing(card: card, filters: screening?.filtersContent ?? false)) {
@@ -60,6 +68,8 @@
                 let pixels = Int((Layout.linkCardWidth * scale).rounded(.up))
                 if let image = await photos?.picture(of: card, pixels: pixels) {
                     picture = (card, image)
+                } else {
+                    unreadable = card
                 }
             }
         }
@@ -69,11 +79,13 @@
     private struct CardFace: View {
         let card: LinkCard
         let picture: UIImage?
+        /// Whether the picture may still come: a spinner shows until it does or fails.
+        let reading: Bool
 
         var body: some View {
             VStack(alignment: .leading, spacing: 0) {
                 if card.hasImage {
-                    CardPicture(picture: picture)
+                    CardPicture(picture: picture, reading: reading)
                 }
                 VStack(alignment: .leading, spacing: Layout.hairline) {
                     Text(card.title)
@@ -108,9 +120,11 @@
         private static let descriptionLines = 3
     }
 
-    /// A card's picture across its top, cropped to fill, over a well with a spinner while it decodes.
+    /// A card's picture across its top, cropped to fill, over a well with a spinner while it decodes. A picture that does
+    /// not open leaves the well empty (`CardPicture`'s `onError` in knit-next).
     private struct CardPicture: View {
         let picture: UIImage?
+        let reading: Bool
 
         var body: some View {
             ZStack {
@@ -122,7 +136,7 @@
                         .resizable()
                         .scaledToFill()
                         .accessibilityIgnoresInvertColors()
-                } else {
+                } else if reading {
                     ProgressView()
                 }
             }

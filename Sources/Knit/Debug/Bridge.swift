@@ -19,8 +19,9 @@
     /// (``PhotosCommand``); `voice`, since only the app records, plays and decodes voice notes (``VoiceCommand``);
     /// `screen`, since only the app runs the content filter's model (``ScreenCommand``); the `record-` commands, since only
     /// the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq); `crash-now`, `hang-now` and `crash-reports`, since only
-    /// the app saves MetricKit's reports (``CrashCommand``, ADR 2026-10.qhsv); and `sample`, since only the launch holds the
-    /// sample chats (``SampleCommand``, ADR 2026-11.pydf).
+    /// the app saves MetricKit's reports (``CrashCommand``, ADR 2026-10.qhsv); `sample` and `open-thread`, since only the
+    /// launch holds the sample chats and the screens (``SampleCommand``, ADR 2026-11.pydf; ``ThreadCommand``); and
+    /// `linkpreview`, since only the app fetches a card (``LinkPreviewCommand``, ADR 2026-11.hcvg).
     /// Each `status` carries `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its
     /// memory grow.
     @MainActor
@@ -31,6 +32,8 @@
         private let wifi: WiFiGate
         /// The way to the sample chats, which the launch fills in.
         let sample = SampleDoor()
+        /// The way to a thread, which the launch fills in.
+        let threads = ThreadDoor()
 
         /// A bridge to `mesh`, driven through `session`, which it also taps for events, to `radio`'s scan probe, to
         /// `storage`, which a demo has none of, to the photos threads draw and what `screening` hides of them, and to the
@@ -69,7 +72,8 @@
                 classifier: classifier,
                 textClassifier: textClassifier,
                 takes: BridgeRecorder.start(clock: clock),
-                door: sample
+                door: sample,
+                threads: threads
             )
             let channel = BridgeListener(log: log) {
                 control.ready

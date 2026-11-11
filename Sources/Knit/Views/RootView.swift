@@ -201,6 +201,8 @@
         private func destination(_ route: Route) -> some View {
             switch route {
             case .chat(let conversationId):
+                // A thread's own identity: a notification's thread replaces the one open in the same place in the path, and
+                // without it SwiftUI would keep the open thread's model and draw that thread under the new one's route.
                 ChatView(
                     conversationId: conversationId,
                     session: environment.session,
@@ -209,6 +211,7 @@
                     demoPhoto: environment.demoPhoto,
                     shares: environment.shares
                 )
+                .id(conversationId)
             case .requests:
                 RequestsView(session: environment.session)
             case .groupInfo(let groupId):

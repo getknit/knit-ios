@@ -325,8 +325,9 @@
     // Apart from the class only to keep its body inside the lint's length.
     extension AppEnvironment {
         #if DEBUG
-            /// Gives the debug bridge `launch`'s way to the sample chats (``SampleCommand``).
+            /// Gives the debug bridge `launch`'s ways to the sample chats (``SampleCommand``) and to a thread (``ThreadCommand``).
             func offerSample(_ launch: Launch) {
+                bridge?.threads.open = { [weak launch] conversation in launch?.open(conversation: conversation) }
                 bridge?.sample.isOpen = { [weak launch] in launch?.sample != nil }
                 bridge?.sample.set = { [weak launch] open in
                     if open {
