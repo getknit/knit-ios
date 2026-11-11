@@ -2040,3 +2040,38 @@ through `devicectl`, never a lock.
   renamed it.
 - **Still owed:** trial (c), the stale-link replace after a rotation the Pixel does not announce, which needs a way to
   make one; and a 20-minute knit-peer run of `5951cbb` with a blinding Pixel denied.
+
+## What the blinded-advert writer showed
+
+On 2026-11-11 the iPhone 12 (iOS 27.0.1) ran `feat/blind-writer` at `6795964` (ADR 2026-11.prsp, Phases 1–4), installed
+over `main`'s v23 database (v24 applied with no `storeRefused`). The Pixel 9 (a direct contact both ways) and the Pixel 3
+(new id `b7ievz635gd64c2zywknwkndzm`, the iPhone's contact but not the other way round) ran knit-next debug builds that
+air tags without A11, so they read a blinded GATT payload as a stranger. The Pixel 7 and 8 were in range but not on adb.
+Neither nRF52840 dongle was plugged in, so `android-rings`, `iphone-forgets`, `iphone-rotate` and btmon could not run.
+The maintainer gave the go-ahead; nothing wiped a phone's data, and both phones' switches were back at their defaults
+after.
+
+| Trial | What it showed |
+| --- | --- |
+| Clear mode (the switch off, what ships), `interop.py iphone --device <Pixel 9>` | 21 of 21 steps. `advert` read `form: clear`, `gatt.layout: combined`, `appliedClear`, PSM 192. The iPhone guard moved nothing. |
+| Own presence keys | The Pixel 9 and the Pixel 3 each held the iPhone's current and next generation 6 to 22 s after the mint. The Pixel 9 listed them (`direct`), the Pixel 3 held them unlisted. |
+| A block of the Pixel 3 | A fresh pair at once (`rotations` 2, `leavers` 2): the Pixel 9 got it, the Pixel 3 kept only the old pair. After the unblock the Pixel 3 took the new pair within 45 s (the audience grew back). |
+| `advert blind on` with four links up | `applied` at once. Four `link chN closed: the advert flipped to a tag`, then `ble removed the combined service 2`, `ble serving the doorbell's service 3`, `ble serving the payload's service 4` 5 ms later: iOS takes a second `0xFE30` primary. Every link back within 19 s, each the iPhone's own dial. |
+| The pinned Pixel 9 on the split layout | `bt doorbell found` 5 s after link-up (its `getService` takes the first `0xFE30` service, which is the doorbell's), then rings. |
+| Rings to a backgrounded iPhone (`devicectl`) | Before any rotation, after three forced rotations (payload service 4→7, the doorbell's 3 throughout), and after the flip back: every DM from the Pixel 9 rang (`rung` 13→16, 17→22, 28→37) with no second `doorbell found` across the rotations and no `doorbell absent` anywhere. The doorbell handle the Pixel looked up once held. |
+| The 13:00 slot edge | `link tag next to …` for all four links at 12:56:30 (edge − 210 s), the payload service 7→8 at 13:00:00.05, the doorbell's 3 kept, `restartsLeft` back to 3. The Pixel 9 announced its own tag in the same second. |
+| `advert blind off` | Every link back within 41 s: the Pixel 7 at 9 s, the Pixel 3 at 25 s, the Pixel 8 and 9 at 41 s. The Pixel 9's first redial failed on the address's cached payload, forgot it (`bt gatt forget … (dial)`), re-read and linked. |
+| The guard, SIGKILLed mid-run with the switch stored on | The note held `{"stored": true}`. The next run restored it first (`leftover … applied: true`), held the switch off for 21 of 21 steps, restored it on with Knit brought forward (`opened`, 1.3 s) and deleted the note. |
+
+- **One link swap at an edge, the reader's.** At 13:00:28 the iPhone gave an unresolved `~zzzz…6` its head start and
+  tag-dialed it. It was the Pixel 3's new tag, which no key resolves here (the Pixel 3 sends the iPhone no key), and
+  `TAG_NEXT` from the Pixel 3 had not attributed it. The proof named the held id, so the safety net replaced the old
+  link (`replaced its stale link ch13 with ch20`). ADR 2026-11.sv5t accepts that swap; why the Pixel 3's announcement did
+  not attribute is not chased here.
+- **Forced rotations 20 s apart went through** after the first refusals: `throttled` held from the flip's own send for
+  about two minutes, then three rotations ran in a minute. The fourth would have aired a random tag (`restartsLeft` 0).
+- **SIGKILL leaves a Pixel's `ADVERT` switch off.** `ClearAdverts` keeps no note, and the next run leaves a switch stored
+  off alone by design, so the Pixel 9 needed `…debug.ADVERT --ez clear true` by hand.
+- **Still owed:** the dongle runs (`android-rings`, `iphone-forgets`, `iphone-rotate` with btmon for D's ATT handle and
+  Service Changed), `iphone-wake` (someone has to lock the iPhone), a restoration relaunch and a cold launch with the
+  switch on, and everything A11 owes.

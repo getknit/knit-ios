@@ -338,7 +338,13 @@ the blocked peer never gets; a relaunch's one resend above `last`; a failed stor
 link beside a proven one that gets nothing); a padded ctl 11 in `ios-emitted-v1.json` that Android's
 `IosEmittedVectorTest` opens; ports of `TagScheduleTest`, `AdvertWriterTest`, `AdvertRotationTest`, `RotationTurnTest`,
 `TagNextSendsTest` and the blinding rows of `BleAdmissionPolicyTest`; the LinkRig wiring with two blinding iPhones and
-`BlindingPeer`; `check.sh release`'s marker for the debug gate; and the device trials A11 owes.
+`BlindingPeer`; `check.sh release`'s marker for the debug gate; and the device trials A11 owes. On 2026-11-11, at
+`6795964`, the lab iPhone passed the clear-mode `interop.py iphone`, the presence-key and block trials, a manual probe
+of the split layout with the Pixel 9 (iOS took the second `0xFE30` primary; rings woke the backgrounded iPhone before,
+across three forced rotations and after the flip back, with no second doorbell lookup), a slot edge, both flips (relinks
+within 19 s and 41 s) and the guard's SIGKILL restore (`.agents/context/linux-peer.md`, "What the blinded-advert writer
+showed"). Still owed: the dongle runs, btmon's view of the doorbell's ATT handle and Service Changed, `iphone-wake`, a
+restoration relaunch and a cold launch with the switch on.
 
 Phase 1, our own keys (draft, 2026-11-11): `PresenceKeyPolicyOwnTests`, `PrekeyRingPresenceGenerationTests`,
 `OwnPresenceKeyStoreTests`, `SchemaTests` (v24), `PresenceKeyFrameTests`, `LinkManagerProvenSendTests`,
