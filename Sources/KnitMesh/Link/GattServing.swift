@@ -109,7 +109,8 @@ public struct GattServing: Sendable, Equatable {
     /// Whether the server holds only what this type knows of: false until the first power-on clears it, and again after a
     /// power-off or a stop.
     public private(set) var cleared = false
-    private var doorbellFailed = false
+    /// Whether the doorbell's service failed to add, so the listener was published without it (``mayPublish``).
+    public private(set) var doorbellFailed = false
     private var nextSerial: UInt64 = 1
 
     /// A server this process has not touched.

@@ -143,6 +143,7 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
 | `knit-peer run … --rssi-floor -100 --receive-mtu 247 --send-mtu 8192` | development knobs: a promotion floor below Android's −90 dBm, the L2CAP receive MTU (65535 by default), and the largest SDU written (247 by default, never above what the peer offers or 8192) |
 | `knit-peer run … --feed window\|pace` | the file feed's A/B switch (ADR 2026-10.xwjc): `window`, the default, clocks a file to a peer that reports by its reports and reports a file coming in at the window's cadence; `pace` feeds at the 4 KiB/s budget and reports every 2 s, as Android's `…debug.LINKTUNE --es feed pace` does |
 | `knit-peer run … --ratchet\|--no-ratchet` | the forward-secrecy ratchet's switch (ADR 2026-10.5sk9, ADR 2026-10.b4yk), on by default since the flip: the peer keeps its prekeys beside its identity, publishes the newest with the ratchet's bits (`0xC015F`, `CAP_LINK_PROOF` and `CAP_BLIND_ADVERT` included) in its profile, and seals and opens DMs and the group form with the ratchet. `--no-ratchet` makes it a v1 peer: its profile is `0xC000F` with no prekey, though its HELLO still carries `c215f` (`c315f` in the `ios` profile) and its advert the low byte, `0x5F`. `--ratchet` names the default; the two together are refused. `interop.py`'s `Peer(ratchet=False)` passes `--no-ratchet` |
+| `knit-peer run … --blind` | starts airing a rotating tag in place of the node id, as a debug iPhone with its switch on does (ADR 2026-11.prsp): the `ios` profile in its GATT payload under `FLAG_BLINDED`, the `android` profile as service data. The gate is always open, so `advert` turns the switch while the peer runs, `--blind` or not |
 | `knit-peer run … --lying` | the door-cap trial's lying switches, off unless given: five control commands that lie about a profile photo and our profile, and `impostor`, which claims another node's id on the links ("Lying on purpose") |
 | `knit-peer run … --never-sight NODE_ID[,NODE_ID…] --no-gatt-payload` | test switches, BlueZ only: never report those nodes as sighted, so the peer never dials them and admits their dials unsighted; and, in the `ios` profile, serve the doorbell without the payload characteristic, so a phone that reads payloads (A3) files the peer as a stranger and never sights it |
 | `knit-peer scan [--seconds 20] [--advertise android\|ios]` | lists the Knit nodes in range, never dialing, and links a node that advertises only the UUID just long enough to read its payload; `--advertise` also shows the advert |
@@ -211,6 +212,12 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   is accepted and their key asked for, as Add contact's preview does; `scan`, true, takes the scanner's path, which
   verifies them and sends nothing; `unblock`, true, unblocks them first; the reply names the `peer`, and refuses our own
   card, another key pinned for the id, and text that is no card, with Kotlin's reason; ADR 2026-10.tpr5),
+  `advert` (the blinded advert, ADR 2026-11.prsp: the gate and the switch, `form` `clear` or `tag` and never its bytes,
+  `epoch`, the last install's cause and tag facts, the turn, `restartsLeft`, `peers[]` by id or handle with `iDial` and
+  `linkedAs`, `links[]` with `dialedByMe`, `tagAware` and `blinded`, the writer's `counters`, and on the iPhone `gatt`, its
+  GATT server's layout and serials; `blind`, `on`, `off` or `clear`, stores the switch first and answers `applied` or a
+  `why` once the air follows, within about 6 s) and `advert-rotate` (one forced rotation, or its `why`: `radio down`,
+  `clear`, `announced`, `grace` or `throttled`; each spends one of the slot's four restarts),
   `stop` and `start` (the mesh, as Settings' Stop and Start do), and
   `quit` (the peer exits; the app's bridge only closes the connection).
 - **Group commands** (ADR 2026-09.n393):
@@ -335,6 +342,26 @@ run, and the run grades it at the end:
 The summary also gives the reads begun per minute, the count of `scan paused: connect in flight`, and the
 `gattBudget=` values seen. btmgmt quits at the end of its input before
 its replies arrive, so `_privacy` feeds `knit-hci b btmgmt` one command every 2 s and closes the input after the last.
+
+Every run that drives the iPhone and judges advertised ids holds the iPhone's own `advert` switch off, as each Pixel's
+`ADVERT` is (`IPhoneAdvert`, ADR 2026-11.prsp), unless `--keep-blind`: a switch already off is left alone; one on is noted in
+`~/.local/state/knit/interop-iphone-advert.json`, turned off for the run, and put back after with Knit brought to the front
+by the Mac's devicectl first. A run that died before it could is put right by the next run's first step, and a restore that
+cannot reach the bridge prints the `bridge` line to run by hand. With `--keep-blind` and the iPhone's switch on, `iphone`
+judges a blinding iPhone toward a clear phone: the iPhone dials it, neither side refuses the other as legacy, and with
+`--edge-wait N` it waits for the next slot edge (when it is within N seconds) and checks that the iPhone announced its tag in
+`TAG_NEXT` and rotated, and that the phone knows the iPhone by a tag from then on.
+
+`iphone-rotate` is the scriptable part of ADR 2026-11.prsp's Phase 3 probe. It turns the iPhone's switch on for the run,
+links the phone and knit-peer's `ios` profile on dongle B (with `--gatt-reads`, a GATT client of the iPhone), and forces
+`--rotations` rotations (10) through `advert-rotate`, waiting out `grace`, `throttled` (two minutes after each, since the
+rotation sends its form to both links) and `announced`. After each, both the phone and the peer post, which rings the
+iPhone. From the iPhone's log over USB it checks each rotation's `ble serving the payload's service <serial>` and a `ble
+removed the payload's service <serial>`, that the doorbell's service kept its serial, that no `ble matched an added service
+by order, not identity` appeared (counting `ble looks again at the services of`), that the iPhone logged as many `ble rung by`
+lines as the phone's `bt ring` lines and the peer's rings together with no `bt doorbell absent`, and that both links held.
+The summary lists each rotation's serials, source and whether it aired a random tag. `--btmon PATH` captures dongle B's HCI
+traffic through `knit-hci b btmon` for the handles and any Service Changed indication, which the script does not read.
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter

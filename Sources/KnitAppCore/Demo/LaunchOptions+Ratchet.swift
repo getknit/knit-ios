@@ -4,7 +4,8 @@ extension LaunchOptions {
     /// after it that names none, so a launch iOS makes by itself (after an install, at the first unlock after a reboot)
     /// keeps the switch where the trial put it; its start would otherwise republish the profile with the prekey the trial
     /// took away. With no choice made or kept, the switch is on. A release build reads no argument and keeps nothing (ADR
-    /// 2026-10.8cy5), so its switch is always on.
+    /// 2026-10.8cy5), so its switch is always on. `-blind on|off` takes the same words for the blinded advert's switch, kept
+    /// the same way, and off with none (ADR 2026-11.prsp).
     public enum Choice: Sendable, Equatable {
         /// The switch on.
         case on

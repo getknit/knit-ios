@@ -69,6 +69,7 @@
                 let services = state[CBPeripheralManagerRestoredStateServicesKey] as? [CBMutableService] ?? []
                 let knit = services.filter { $0.uuid == Self.serviceUUID }.count
                 serving.restored(knitServices: knit)
+                restoredServices = knit
                 log.log(.info, "ble restored the peripheral")
                 if knit > 1 {
                     // Only a blinding process's services: a clear restoration logs as it did.
@@ -116,6 +117,7 @@
             let owed = serving.oldestOwed
             awaitingAdd = awaitingAdd.filter { entry in owed.map { entry.key >= $0 } ?? false }
             let serial = awaitingAdd.keys.min()
+            matchedByOrder += 1
             log.log(.info, "ble matched an added service by order, not identity: \(serial.map { "\($0)" } ?? "none owed")")
             return serial
         }

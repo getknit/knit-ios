@@ -114,7 +114,7 @@ public final class LinkManager: MeshTransport {
     /// The reader's own counts, beside ``AdvertAliases/counters``.
     var blindCounts = BlindCounts()
     /// The blinded advert's writer (`LinkManager+Writer.swift`).
-    lazy var blindWriter = BlindWriter(localId: localId)
+    lazy var blindWriter = BlindWriter(localId: localId, switchOn: configuration.blindSwitchOn)
     var doorbells: [ChannelID: Doorbell] = [:]
     /// Each live link's incoming file, kept apart from ``channels`` so that reading a channel never copies a file's
     /// bytes.

@@ -11,7 +11,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py group   --device SERIAL [--radio-profile android|ios]
     scripts/interop.py ratchet --device SERIAL [--radio-profile android|ios]
     scripts/interop.py ratchet-group --device SERIAL --second-device SERIAL
-    scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline] [--links N] [--hold 60]
+    scripts/interop.py iphone  --device SERIAL [--udid UDID] [--skip-offline] [--links N] [--hold 60] [--edge-wait SECONDS]
     scripts/interop.py iphone-relay --device SERIAL [--udid UDID] [--expect-avatar] [--peer-avatar JPEG]
     scripts/interop.py iphone-group --device SERIAL [--udid UDID]
     scripts/interop.py iphone-peer [--order iphone-below|iphone-above] [--skip-offline] [--udid UDID]
@@ -32,6 +32,7 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
                                 [--mover devicectl|devicetest|prompts] [--minutes 10]
     scripts/interop.py iphone-reboot [--restart] [--locked 120] [--closed 60] [--skip-relaunch] [--udid UDID]
     scripts/interop.py iphone-rings [--udid UDID]
+    scripts/interop.py iphone-rotate --device SERIAL [--rotations 10] [--rotate-wait 300] [--btmon PATH] [--udid UDID]
     scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180] [--links N] [--hci0]
     scripts/interop.py android-forgets --device SERIAL [--link-timeout 180] [--quiet-timeout 600]
     scripts/interop.py android-strangers --device SERIAL --variant none|forged [--minutes 30] [--rotate 20] [--cycle 180] [--known IDS]
@@ -74,6 +75,8 @@ the doorbell rings an iPhone sends, and `android-rings` those an Android phone s
 `android-reads` is companion change A3's device gate: an Android phone reads the peer's GATT payload and dials it, or
 is dialed, by the id order. `android-strangers` is knit-next #154's: beside a device rotating its address under
 `0xFE30`, the phone's GATT reads stay within their budget and its dials never wait behind them (knit-ios #3).
+`iphone-rotate` is ADR 2026-11.prsp's Phase 3 probe: forced rotations of a blinding iPhone, with the phone and knit-peer's
+`ios` profile on hci0 linked and ringing it, judged from the iPhone's log.
 
 `--mac` runs the peer on the Mac instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
 2026-09.vcdk). It always runs the `ios` profile, in the Mac's desktop session through `scripts/mac-peer.sh`, and the
@@ -89,7 +92,9 @@ installs or launches anything: it wakes the phone, asks its bridge to scan, send
 Every phone a run names (`--device`, `--second-device`, `--quiet`, `--quiet-phone`) airs its node id for the run: a
 debug build since knit-next `b66cfa828` airs a rotating tag instead (ADR 2026-11.xp6d), and every judgment here reads
 advertised ids. The run turns the bridge's `ADVERT` switch off and puts it back when it ends, a Ctrl-C or a SIGTERM
-included; `--keep-blind`, before the command, leaves it as the build has it. A scan leaves out the tags other phones air,
+included; `--keep-blind`, before the command, leaves it as the build has it. The iPhone a run drives airs its id too:
+the run turns its bridge's `advert` switch off when it was on, and puts it back after with Knit brought forward by the
+Mac's devicectl, a note in ~/.local/state/knit/ covering a run that died first (ADR 2026-11.prsp). A scan leaves out the tags other phones air,
 and says how many it heard: such a phone dials every peer, so clear its advert too or take it away.
 `iphone` also brings Knit forward at the phone's Requests screen and taps Accept there, through uiautomator.
 `relay` and `group` also run a second peer on hci0, and `iphone-relay`, `iphone-group`, `iphone-peer` and
@@ -113,6 +118,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import contextlib
 import hashlib
 import io
 import json
@@ -361,6 +367,169 @@ class ClearAdverts:
             if attempt == 0:
                 time.sleep(3)
         raise RuntimeError(f"{phone.serial}'s advert did not go clear: {reply}")
+
+
+# Where a run notes the iPhone's advert switch it found before it moved it, until it has put it back: the next run puts
+# it back first when this one never could (a SIGKILL, a Wi-Fi bridge lost mid-run).
+IPHONE_ADVERT_LEFT = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local" / "state") / "knit" / "interop-iphone-advert.json"
+
+
+class IPhoneAdvert:
+    """Holds the iPhone's blinded advert switch where a run wants it, and puts back what it found after, whatever the run
+    did, as `ClearAdverts` does for each Pixel (ADR 2026-11.prsp, "The bridge and the harness"). `want=False` is every
+    legacy run's, since this script judges dials, orders and scans by advertised ids; `want=True` is `iphone-rotate`'s.
+
+    The switch lives in a debug build's defaults (`debug.launch.blind`), so the next launch, iOS's own among them, starts
+    where a run left it. A switch already where the run wants it, airing that form, is left alone, and so is a build
+    before `advert`. Otherwise the run notes what it found in `IPHONE_ADVERT_LEFT` before it stores the switch, and the
+    next run restores from that note first. The restore brings Knit to the front with the Mac's devicectl first, since a
+    suspended Knit's bridge answers nothing, and prints the bridge line to run by hand when it still cannot.
+
+    `connect` answers a started `IPhone`, a bridge connection of the guard's own; `front` brings Knit forward."""
+
+    # What a store answers when the air did not change and need not have: the mesh is stopped or the radio down, so the
+    # switch waits for the next bring-up.
+    SETTLED = frozenset({"transport not running", "radio down"})
+
+    def __init__(self, connect, want: bool, front=None, left: Path | None = None) -> None:
+        self.connect = connect
+        self.want = want
+        self.front = front
+        self.left = left or IPHONE_ADVERT_LEFT
+        self.restore: dict | None = None
+
+    def __enter__(self) -> Self:
+        try:
+            ios = self.connect()
+        except (RuntimeError, OSError, TimeoutError):
+            # A suspended Knit's bridge answers nothing: bring it forward once and try again.
+            if not self.front:
+                raise
+            self._forward()
+            ios = self.connect()
+        try:
+            self._hold(ios)
+        except BaseException:
+            # A switch already moved is put back before the error goes up.
+            ios.stop()
+            self.__exit__()
+            raise
+        ios.stop()
+        return self
+
+    def _hold(self, ios: IPhone) -> None:
+        """Notes what the switch holds and moves it where the run wants it, unless it is there already."""
+        self._leftover(ios)
+        reply = ios.advert()
+        if reply is None:
+            return
+        switch = reply.get("switch") or {}
+        if switch.get("value") is self.want and bool(reply.get("blinding")) is self.want:
+            return
+        self.restore = {"stored": switch.get("stored"), "nodeId": ios.node_id, "at": round(time.time())}
+        self.left.parent.mkdir(parents=True, exist_ok=True)
+        self.left.write_text(json.dumps(self.restore) + "\n", encoding="utf-8")
+        # A flip closes every link, and a backgrounded iPhone relinks only on seeking's schedule, not the run's (ADR
+        # 2026-10.mueg): Knit comes to the front before the switch moves.
+        self._forward()
+        self._store(ios, self.want)
+        print(json.dumps({"advert": "iphone", "blind": self.want, "stored": self.restore["stored"]}), flush=True)
+
+    def __exit__(self, *_: object) -> None:
+        if self.restore is None:
+            return
+        self._put_back(self.restore["stored"])
+
+    def _leftover(self, ios: IPhone) -> None:
+        """Puts back a switch an earlier run noted and never restored, before this run reads what it finds."""
+        if not self.left.exists():
+            return
+        try:
+            noted = json.loads(self.left.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            self.left.unlink(missing_ok=True)
+            return
+        if noted.get("nodeId") not in (None, ios.node_id):
+            # Another iPhone's note: it waits for that phone.
+            return
+        stored = noted.get("stored")
+        reply = ios.advert(clear=True) if stored is None else ios.advert(blind=stored)
+        self.left.unlink(missing_ok=True)
+        print(json.dumps({"advert": "iphone", "leftover": noted, "applied": (reply or {}).get("applied")}), flush=True)
+
+    def _store(self, ios: IPhone, blind: bool) -> None:
+        """Stores the switch and waits for the air, trying once more when a rotation was mid-install or the bridge's own
+        wait ran out."""
+        reply: dict = {}
+        for attempt in range(2):
+            reply = ios.advert(blind=blind) or {}
+            if reply.get("applied") or reply.get("why") in self.SETTLED:
+                return
+            if attempt == 0:
+                time.sleep(3)
+        raise RuntimeError(f"the iPhone's advert did not follow its switch to {'tag' if blind else 'clear'}: {reply.get('why')}")
+
+    def _forward(self) -> dict:
+        """Brings Knit to the front with the Mac's devicectl, when the guard has a way to; a failure is printed, not raised."""
+        if not self.front:
+            return {}
+        try:
+            return self.front() or {}
+        except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+            print(json.dumps({"advert": "iphone", "frontError": str(error)[:200]}), flush=True)
+            return {"frontError": str(error)[:200]}
+
+    def _put_back(self, stored: bool | None) -> None:
+        """Restores what the run found, with Knit brought to the front first, and forgets the note once it took."""
+        moved: dict = {}
+        if self.front:
+            try:
+                moved = self.front() or {}
+            except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+                moved = {"frontError": str(error)[:200]}
+        try:
+            ios = self.connect()
+            try:
+                reply = ios.advert(clear=True) if stored is None else ios.advert(blind=stored)
+            finally:
+                ios.stop()
+            self.left.unlink(missing_ok=True)
+            print(json.dumps({"advert": "iphone", "restored": stored, "applied": (reply or {}).get("applied"), **moved}), flush=True)
+        except (RuntimeError, OSError, TimeoutError, json.JSONDecodeError) as error:
+            word = "clear" if stored is None else "on" if stored else "off"
+            by_hand = f"""scripts/interop.py bridge '{{"cmd":"advert","blind":"{word}"}}'"""
+            print(json.dumps({"advert": "iphone", "restored": None, "error": str(error)[:200], "byHand": by_hand, **moved}), flush=True)
+
+
+def iphone_advert_guard(arguments: argparse.Namespace):
+    """The iPhone's switch held off for a run that drives the iPhone and judges ids (`IPhoneAdvert`), or nothing: with
+    `--keep-blind`, for the runs that set it themselves or never judge the air, and for every Android-only run."""
+    if arguments.keep_blind or arguments.command not in IPHONE_LEGACY_RUNS:
+        return contextlib.nullcontext()
+    udid, host = getattr(arguments, "udid", None), getattr(arguments, "host", None)
+    return IPhoneAdvert(lambda: _bridge_up(IPhone(udid, host)), want=False, front=lambda: _front(udid))
+
+
+def _bridge_up(ios: IPhone) -> IPhone:
+    """`ios`, started."""
+    ios.start()
+    return ios
+
+
+def _front(udid: str | None) -> dict:
+    """Brings Knit to the iPhone's front through the Mac's devicectl, in the same process (`KnitFront._open`)."""
+    return KnitFront("devicectl", 60, udid)._open(KnitFront.KNIT)  # noqa: SLF001 - the one devicectl call this script has
+
+
+# The runs that drive the iPhone and judge ids, which `IPhoneAdvert` holds clear. `bridge` and `record-pull` read or fix
+# by hand, `iphone-reboot` restarts the phone under the guard's connection, and `iphone-rotate` wants the switch on.
+IPHONE_LEGACY_RUNS = frozenset(
+    {
+        "iphone", "iphone-wake", "android-keeps-iphone", "iphone-photos", "iphone-resume", "iphone-block", "iphone-contact",
+        "iphone-delete", "iphone-react", "iphone-reply", "iphone-typing", "iphone-mention", "iphone-ratchet", "iphone-rings",
+        "iphone-peer", "iphone-forgets", "iphone-soak", "iphone-scan", "iphone-seek", "iphone-relay", "iphone-group",
+    }
+)
 
 
 def driven_phones(arguments: argparse.Namespace) -> list[Phone]:
@@ -639,6 +808,27 @@ class IPhone(Node):
             self.proxy = None
         with self.arrived:
             self.seen.clear()
+
+    def advert(self, blind: bool | None = None, clear: bool = False, timeout: float = 20) -> dict | None:
+        """The bridge's `advert` (ADR 2026-11.prsp): the blinded advert's switch and what is on the air, or None from a build
+        before it, whose advert always carries its node id. `blind=` stores the switch and `clear=True` puts the build's
+        default back (off until A11); the reply then says whether the air and the GATT server caught up (`applied`, else
+        `why`), after the bridge's own wait of about 6 s."""
+        fields: dict[str, str] = {"cmd": "advert"}
+        if clear:
+            fields["blind"] = "clear"
+        elif blind is not None:
+            fields["blind"] = "on" if blind else "off"
+        reply = self.command(timeout=timeout, **fields)
+        if not reply.get("ok") and str(reply.get("error", "")).startswith("unknown command"):
+            return None
+        if not reply.get("ok"):
+            raise RuntimeError(f"the iPhone's advert answered {reply.get('error')}")
+        return reply
+
+    def advert_rotate(self, timeout: float = 20) -> dict:
+        """The bridge's `advert-rotate`: one forced rotation, or the `why` it was refused, then `advert`'s fields."""
+        return self.command(timeout=timeout, cmd="advert-rotate")
 
 
 def first_usb_iphone() -> str:
@@ -920,7 +1110,15 @@ def iphone(arguments: argparse.Namespace) -> int:
     reads no GATT payload, seeking): such a link is reported as a tag dial, must find the doorbell and end at 5 s like
     any head start, and `--links` counts it, its head-start line naming the phone's id, or the tag's handle that its
     `link <handle> proved <id>` line ties to the phone. Against a reader, a single ` blind=legacy` refusal fails, and so
-    does a link whose HELLO the phone says carried no `CAP_BLIND_ADVERT`."""
+    does a link whose HELLO the phone says carried no `CAP_BLIND_ADVERT`.
+
+    With `--keep-blind` and an iPhone whose own switch is on (ADR 2026-11.prsp), toward a phone that airs its id, the
+    iPhone dials whatever the ids say, which its own `advert` shows (`peers[].iDial`, `links[].dialedByMe`). Its HELLO
+    carries `t` while it airs a tag, so the run checks that it does (`iphone-airs-tag`, its GATT server serving the tag),
+    and that neither side refused the other as legacy. `--edge-wait N`, when the next slot edge is within N seconds,
+    waits it out and checks that the iPhone announced its coming tag (`TAG_NEXT`) and rotated at the edge, that the
+    phone took it (its link to the iPhone is known by a tag), and that the link held. `--links` is skipped: the iPhone
+    has no head start to count toward a clear phone."""
     phone = Phone(arguments.device)
     phone.wakes = arguments.wake
     ios = IPhone(arguments.udid, arguments.host)
@@ -937,7 +1135,10 @@ def iphone(arguments: argparse.Namespace) -> int:
     # CAP_BLIND_ADVERT (knit-next ADR 2026-11.xp6d), whatever the ids' order: only with `--keep-blind`.
     blinding = bool((phone.advert() or {}).get("blinding"))
     reader = blinding and _reads_tags(ios)
-    order = "phone-blinds" if blinding else "iphone-above" if ios.node_id > phone_id else "iphone-below"
+    # An iPhone that airs a tag itself (ADR 2026-11.prsp), its switch left on: only with `--keep-blind` too.
+    ios_view = (ios.advert() or {}) if arguments.keep_blind else {}
+    ios_blinds = bool(ios_view.get("blinding"))
+    order = "phone-blinds" if blinding else "iphone-blinds" if ios_blinds else "iphone-above" if ios.node_id > phone_id else "iphone-below"
     above = order == "iphone-above"
     tally: list[dict] = []
     head_starts: list[dict] = []
@@ -954,7 +1155,8 @@ def iphone(arguments: argparse.Namespace) -> int:
                 "fresh": fresh,
                 "wakes": phone.wakes,
                 **({"readsTags": reader} if blinding else {}),
-                **({"skipped": ["links"]} if blinding and not reader else {}),
+                **({"iphoneBlinds": True} if ios_blinds else {}),
+                **({"skipped": ["links"]} if (blinding and not reader) or ios_blinds else {}),
             }
         )
     )
@@ -964,11 +1166,16 @@ def iphone(arguments: argparse.Namespace) -> int:
     def dialed_by() -> dict:
         if blinding:
             return _blind_dialed_by(phone, ios, phone_id=phone_id, knit=knit, since=cleared, reader=reader)
+        if ios_blinds:
+            return _ios_blind_dialed_by(ios, phone_id)
         return _dialed_by(phone, ios, phone_id, order)
 
     try:
         run.step("link", lambda: _ios_linked(ios, phone, phone_id))
         run.step("dialer", dialed_by)
+        if ios_blinds:
+            run.step("iphone-airs-tag", lambda: _airs_tag(ios.advert() or {}))
+            run.step("iphone-no-legacy", lambda: _ios_no_legacy(phone, ios, ios_view))
         run.step("profile-on-iphone", lambda: _ios_pinned(ios, phone_id, phone_name))
         run.step("profile-on-phone", lambda: _phone_pinned(phone, ios))
         body = f"interop room from iphone {nonce}"
@@ -1015,9 +1222,11 @@ def iphone(arguments: argparse.Namespace) -> int:
         # The iPhone back-fills a capped round per 60 s digest (ADR 2026-10.f5zs): a phone lacking a full custody of
         # 1,000 frames takes ceil(1000/200) + 1 = 6 digests, about 360 s.
         run.step("custody-converges", lambda: _converges(ios, phone, 420))
+        if ios_blinds and arguments.edge_wait:
+            run.step("tag-next-across-edge", lambda: _tag_next_across_edge(ios, phone, phone_id, arguments.edge_wait))
         if balanced and above:
             _relinks(run, ios, phone, phone_id, arguments.links, arguments.hold, 180, tally)
-        elif balanced and arguments.links > 1 and (reader or not blinding):
+        elif balanced and arguments.links > 1 and (reader or not blinding) and not ios_blinds:
             # A build before the reader has no head start to a tag to count: the phone refuses every one as legacy.
             _head_start_relinks(run, ios, phone, phone_id, arguments, tally, head_starts, knit, blinded=blinding)
     finally:
@@ -1109,6 +1318,60 @@ def _blind_dialed_by(
             return {"dialer": dialer, "outcome": "tag dial", "line": line, **detail}
         raise RuntimeError(f"the {dialer} dialed, and the phone's order said the {expected} should: {detail}")
     return {"dialer": dialer, **detail}
+
+
+def _ios_blind_dialed_by(ios: IPhone, phone_id: str) -> dict:
+    """Which side dialed the link between a blinding iPhone and a phone that airs its id, from the iPhone's `advert`: toward
+    a clear Android the blinding iPhone always dials (ADR 2026-11.prsp, "Who dials"), and a pinned Android reads a blinded
+    payload as a stranger, so the link must be the iPhone's own dial."""
+    reply = ios.advert() or {}
+    if not reply.get("blinding"):
+        raise Inconclusive(f"the iPhone stopped airing a tag: form={reply.get('form')}")
+    link = next((entry for entry in reply.get("links", []) if entry.get("nodeId") == phone_id), None)
+    if link is None:
+        raise RuntimeError(f"the iPhone reports no link to the phone: {[entry.get('nodeId') for entry in reply.get('links', [])]}")
+    sighting = next((peer for peer in reply.get("peers", []) if peer.get("peer") == phone_id), {})
+    detail = {"iDial": sighting.get("iDial"), "dialedByMe": link.get("dialedByMe"), "tagAware": link.get("tagAware")}
+    if not link.get("dialedByMe"):
+        raise RuntimeError(f"the phone dialed a blinding iPhone, whose payload it reads as a stranger's: {detail}")
+    if sighting and not sighting.get("iDial"):
+        raise RuntimeError(f"the iPhone's order says the phone dials a clear advert of its own: {detail}")
+    return {"dialer": "iphone", **detail}
+
+
+def _ios_no_legacy(phone: Phone, ios: IPhone, before: dict) -> dict:
+    """Neither side refused the other as legacy: the phone logged no ` blind=legacy` refusal of the iPhone, and the
+    blinding iPhone's `RefuseLegacy` count did not grow (a phone whose HELLO lacked `CAP_BLIND_ADVERT`)."""
+    refused = [line for line in _phone_lines(phone) if line.startswith(f"bt refused client {ios.node_id} ") and " blind=legacy" in line]
+    counted = ((ios.advert() or {}).get("counters") or {}).get("refusedLegacy", 0) - (before.get("counters") or {}).get("refusedLegacy", 0)
+    if refused or counted:
+        raise RuntimeError(f"a legacy refusal between the two: phone {len(refused)}, iPhone {counted}")
+    return {}
+
+
+def _tag_next_across_edge(ios: IPhone, phone: Phone, phone_id: str, wait: float) -> dict:
+    """Across the next slot edge, within `wait` seconds: the iPhone announced its coming tag and rotated at the edge, the
+    phone took the announcement (its link to the iPhone is known by a tag from the edge on, `links[].blinded`), and the
+    link held."""
+    before = ios.advert() or {}
+    edge = before.get("nextEdgeAtMs")
+    if edge is None:
+        raise RuntimeError("the iPhone's advert names no slot edge")
+    left = edge / 1000 - time.time() + 45
+    if left > wait:
+        raise Inconclusive(f"the next slot edge is {round(left)} s away, past --edge-wait")
+    time.sleep(max(0.0, left))
+    after = ios.advert() or {}
+    counted = {key: (after.get("counters") or {}).get(key, 0) - (before.get("counters") or {}).get(key, 0) for key in ("tagNextAnnounced", "rotationsBySlot")}
+    if not counted["tagNextAnnounced"] or not counted["rotationsBySlot"]:
+        raise RuntimeError(f"no announced rotation at the edge: {counted}")
+    if not any(entry.get("nodeId") == phone_id for entry in after.get("links", [])):
+        raise RuntimeError("the iPhone's link to the phone did not hold across the edge")
+    view = phone.advert()
+    link = next((entry for entry in (view or {}).get("links", []) if entry.get("nodeId") == ios.node_id), None)
+    if view is not None and (link or {}).get("blinded") is not True:
+        raise RuntimeError(f"the phone knows the iPhone by no tag after the edge: {link}")
+    return {**counted, "phoneKnowsTag": None if view is None else True}
 
 
 def _reads_tags(ios: IPhone) -> bool:
@@ -1735,6 +1998,199 @@ def _positive(status: dict, key: str) -> int:
     if not status.get(key):
         raise RuntimeError(f"{key} is {status.get(key)}")
     return status[key]
+
+
+# What a refused `advert-rotate` waits out: the grace after an install, the receiver's two-minute limit on forms sent to a
+# link, and an announcement standing until its edge (`ForcedRotation.Refusal`).
+ROTATE_WAITS = frozenset({"grace", "throttled", "announced"})
+# The iPhone's lines `iphone-rotate` reads, frozen in .agents/rules/interop.md (ADR 2026-11.prsp, "The Phase 3 probe").
+SERVING_PAYLOAD = re.compile(r"^ble serving the payload's service (\d+)$")
+REMOVED_PAYLOAD = re.compile(r"^ble removed the payload's service (\d+)$")
+MATCHED_BY_ORDER = "ble matched an added service by order"
+LOOKS_AGAIN = "ble looks again at the services of "
+RUNG_BY = "ble rung by "
+
+
+def iphone_rotate(arguments: argparse.Namespace) -> int:
+    """ADR 2026-11.prsp's Phase 3 probe, the part a script drives: `--rotations` forced rotations (`advert-rotate`) of a
+    blinding iPhone, linked to the phone and to knit-peer's `ios` profile on hci0 (dongle B), which reads the iPhone's
+    GATT payload and rings its doorbell as a GATT client. The run stores the iPhone's switch on and puts back what it
+    found after (`IPhoneAdvert`); `--keep-blind` leaves the phone's own switch as its build has it.
+
+    Each rotation waits out a refusal that time ends (the grace after an install, and the two minutes a form sent to the
+    phone holds the next), then waits for the GATT server to serve the new payload beside a doorbell's service that kept
+    its serial, and both the phone and the peer post to the room, which rings the iPhone. It records which rotations aired
+    a random tag (`resolvable` false): past the slot's four restarts, which bring-ups share. The iPhone's log over USB is
+    the oracle: each rotation's `ble serving the payload's service <serial>` and a `ble removed the payload's service`,
+    no `ble matched an added service by order, not identity`, and as many `ble rung by` lines as the phone's `bt ring`
+    lines and the peer's rings together, with no `bt doorbell absent` on the phone. Every link must hold through every
+    rotation. The doorbell's handle itself, and whether iOS indicates Service Changed, only btmon shows: `--btmon PATH`
+    captures dongle B's HCI traffic there through knit-hci, which needs its sudoers line (scripts/knit-hci.sh)."""
+    phone = Phone(arguments.device)
+    run = Run()
+    nonce = secrets.token_hex(3)
+    udid, host = arguments.udid, arguments.host
+    with IPhoneAdvert(lambda: _bridge_up(IPhone(udid, host)), want=True, front=lambda: _front(udid)):
+        ios = _bridge_up(IPhone(udid, host))
+        knit = _iphone_log(ios, f"interop-rotate-{nonce}.log")
+        if knit is None:
+            ios.stop()
+            raise SystemExit("iphone-rotate reads the iPhone's log over USB: connect it")
+        phone_id = phone.state()["self"]["nodeId"]
+        others = others_in_range(phone_id) - {ios.node_id}
+        peer_id = _keygen("iphone-rotate", "--above", max(others | {phone_id}))
+        print(json.dumps({"run": "iphone-rotate", "iphone": ios.node_id, "phone": phone_id, "peer": peer_id, "refused": sorted(others)}))
+        stop = threading.Event()
+        kept_off: set[str] = set()
+        threading.Thread(target=_keep_to, args=(ios, {phone_id, peer_id}, kept_off, stop, "iphone"), daemon=True).start()
+        peer = Peer("ios", f"knit-peer rotate {nonce}", others | {phone_id}, arguments.peer_log, arguments.rssi_floor, "iphone-rotate", hci0(), gatt_reads=True)
+        capture = _btmon("b", arguments.btmon) if arguments.btmon else None
+        rotations: list[dict] = []
+        try:
+            first = run.step("iphone-blinds", lambda: _airs_tag(ios.advert() or {}))
+            peer.start()
+            threading.Thread(target=_keep_to, args=(peer, {ios.node_id}, set(peer.refuse), stop, peer.instance), daemon=True).start()
+            run.step("link-iphone-phone", lambda: _ios_linked(ios, phone, phone_id))
+            run.step("link-iphone-peer", lambda: _timed(lambda: peer.lines(lambda line: _link(line, ios.node_id)), 180))
+            phone.shell("logcat -c")
+            since = time.time()
+            peer_rings = peer.command(cmd="status").get("rings", 0)
+            for index in range(arguments.rotations):
+                record = run.step(f"rotation-{index + 1}", lambda: _rotate_once(ios, arguments.rotate_wait))
+                if record:
+                    rotations.append(record)
+                body = f"interop rotate {nonce} {index + 1}"
+                phone.send(f"{body} from the phone")
+                peer.command(cmd="room", text=f"{body} from the peer")
+                run.step(f"posts-cross-{index + 1}", lambda: _arrivals_after_rotation(ios, body, 60))
+            peer_rings = peer.command(cmd="status").get("rings", 0) - peer_rings
+            entries = [entry for entry in IPhoneLog.entries(knit.path) if entry.get("ms", 0) >= since * 1000]
+            run.step("doorbell-kept-its-service", lambda: _doorbell_kept(first or {}, rotations))
+            run.step("payload-served-and-removed", lambda: _payloads_turned(entries, rotations))
+            run.step("no-match-by-order", lambda: _no_match_by_order(entries))
+            run.step("rings-heard", lambda: _rings_heard(entries, phone, ios.node_id, peer_rings))
+            run.step("links-held", lambda: _no_link_dropped(ios, {phone_id, peer_id}))
+            run.step("peer-link-held", lambda: _no_link_dropped(peer, {ios.node_id}))
+        finally:
+            stop.set()
+            peer.stop()
+            if capture:
+                capture.terminate()
+            for node in sorted(kept_off):
+                try:
+                    ios.command(cmd="allow-link", peer=node)
+                except (TimeoutError, OSError):
+                    pass
+            ios.stop()
+            knit.stop()
+    random_tags = [record["rotation"] for record in rotations if record.get("random")]
+    summary = {"summary": "iphone-rotate", "steps": run.steps, "failed": run.failed, "rotations": rotations, "randomTags": random_tags}
+    print(json.dumps(summary))
+    return run.failed
+
+
+def _airs_tag(reply: dict) -> dict:
+    """The iPhone airs a tag, served in the split layout: what its `advert` says once the switch is on."""
+    gatt = reply.get("gatt") or {}
+    if not reply.get("blinding") or reply.get("form") != "tag":
+        raise RuntimeError(f"the iPhone airs no tag: blinding={reply.get('blinding')} form={reply.get('form')} keyHeld={reply.get('keyHeld')}")
+    if not gatt.get("appliedTag"):
+        raise RuntimeError(f"the iPhone's GATT server does not serve its tag: {gatt}")
+    fields = ("keyHeld", "source", "resolvable", "restartsLeft", "bringUpsInSlot", "psm")
+    return {**{key: reply.get(key) for key in fields}, "doorbell": gatt.get("doorbell"), "payload": gatt.get("payload")}
+
+
+def _rotate_once(ios: IPhone, wait: float) -> dict:
+    """One forced rotation, a refusal that time ends waited out up to `wait` seconds, and the GATT server settled on it:
+    the tag served beside the doorbell's service, with no add in flight."""
+    deadline = time.monotonic() + wait
+    waited: Counter = Counter()
+    while True:
+        reply = ios.advert_rotate()
+        if reply.get("rotated"):
+            break
+        why = reply.get("why")
+        if why not in ROTATE_WAITS or time.monotonic() > deadline:
+            raise RuntimeError(f"advert-rotate refused: {why} (waited out {dict(waited)})")
+        waited[why] += 1
+        time.sleep(10)
+    settled = poll(lambda: _served_tag(ios.advert() or {}), 20, every=1)
+    gatt = settled.get("gatt") or {}
+    return {
+        "rotation": settled.get("epoch"),
+        "random": settled.get("resolvable") is False,
+        "source": settled.get("source"),
+        "restartsLeft": settled.get("restartsLeft"),
+        "doorbell": gatt.get("doorbell"),
+        "payload": gatt.get("payload"),
+        "waited": dict(waited),
+    }
+
+
+def _served_tag(reply: dict) -> dict | None:
+    """`reply` once the iPhone's server serves the tag on the air with nothing in flight, else None."""
+    gatt = reply.get("gatt") or {}
+    return reply if reply.get("form") == "tag" and gatt.get("appliedTag") and gatt.get("pendingAdd") is None else None
+
+
+def _arrivals_after_rotation(ios: IPhone, body: str, timeout: float) -> dict:
+    """Both posts after a rotation reach the iPhone, over links that kept running through it."""
+    started = time.monotonic()
+    for author in ("the phone", "the peer"):
+        ios.wait(lambda line, text=f"{body} from {author}": _message(line, text), max(1.0, timeout - (time.monotonic() - started)))
+    return {"seconds": round(time.monotonic() - started, 1)}
+
+
+def _doorbell_kept(first: dict, rotations: list[dict]) -> dict:
+    """The doorbell's service kept its serial through every rotation, and each rotation served a payload of its own."""
+    doorbells = {first.get("doorbell")} | {record.get("doorbell") for record in rotations}
+    if len(doorbells) != 1 or None in doorbells:
+        raise RuntimeError(f"the doorbell's service changed: {sorted(map(str, doorbells))}")
+    payloads = [first.get("payload")] + [record.get("payload") for record in rotations]
+    if len(set(payloads)) != len(payloads):
+        raise RuntimeError(f"a rotation served no payload of its own: {payloads}")
+    return {"doorbell": first.get("doorbell"), "payloads": payloads}
+
+
+def _payloads_turned(entries: list[dict], rotations: list[dict]) -> dict:
+    """Each rotation's payload service logged as served, and as many removed: the old payload goes by reference."""
+    served = {int(match[1]) for entry in entries if (match := SERVING_PAYLOAD.match(entry["message"]))}
+    removed = [int(match[1]) for entry in entries if (match := REMOVED_PAYLOAD.match(entry["message"]))]
+    unlogged = [record.get("payload") for record in rotations if record.get("payload") not in served]
+    if unlogged:
+        raise RuntimeError(f"no `ble serving the payload's service` line for {unlogged}")
+    if len(removed) < len(rotations):
+        raise RuntimeError(f"{len(rotations)} rotations removed {len(removed)} payload services")
+    return {"served": len(served), "removed": len(removed)}
+
+
+def _no_match_by_order(entries: list[dict]) -> dict:
+    """No `didAdd` was matched by order; the searches that started over for a services change are counted."""
+    matched = [entry["message"] for entry in entries if entry["message"].startswith(MATCHED_BY_ORDER)]
+    if matched:
+        raise RuntimeError(f"{len(matched)} adds matched by order: {matched[:3]}")
+    return {"looksAgain": sum(entry["message"].startswith(LOOKS_AGAIN) for entry in entries)}
+
+
+def _rings_heard(entries: list[dict], phone: Phone, ios_id: str, peer_rings: int) -> dict:
+    """Every ring the phone logged (`bt ring <iPhone>`) and the peer counted reached the iPhone as `ble rung by`, and the
+    phone never found the doorbell absent."""
+    heard = sum(entry["message"].startswith(RUNG_BY) for entry in entries)
+    rung = len(_phone_log(phone, f"bt ring {ios_id}"))
+    absent = [line for line in _phone_log(phone, "bt doorbell absent") if ios_id in line]
+    detail = {"phoneRings": rung, "peerRings": peer_rings, "heard": heard, "absent": len(absent)}
+    if absent:
+        raise RuntimeError(f"the phone found the iPhone's doorbell absent: {detail}")
+    if rung + peer_rings == 0:
+        raise Inconclusive("nobody rang the iPhone")
+    if heard < rung + peer_rings:
+        raise RuntimeError(f"rings went unheard: {detail}")
+    return detail
+
+
+def _btmon(adapter: str, path: str) -> subprocess.Popen:
+    """btmon on one of Knit's own adapters, writing a btsnoop file, through the root wrapper (scripts/knit-hci.sh)."""
+    return subprocess.Popen(["sudo", "-n", KNIT_HCI, adapter, "btmon", "-w", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
 
 def android_rings(arguments: argparse.Namespace) -> int:
@@ -6874,6 +7330,9 @@ IOS_CHANNEL_ENDINGS = [
     # proves itself, is closed; a link whose proof failed never came up, so it has no `link down` to explain.
     (re.compile(r"^link (ch\d+) displaced: \S+ proved itself on ch\d+$"), lambda _: "displaced: its id proved itself"),
     (re.compile(r"^link (ch\d+) closed: \S+ proves itself$"), lambda _: "closed: its id proves itself"),
+    # ADR 2026-11.prsp: a flip of the blinded advert's switch closes every open channel, so each peer relinks and looks
+    # the doorbell up afresh; a trial's lever, never a fault of either end.
+    (re.compile(r"^link (ch\d+) closed: the advert flipped to "), lambda _: "flipped: the advert's switch"),
     (re.compile(r"^link (ch\d+) proof failed for \S+: (.*)"), lambda m: f"proof failed: {m[2][:40]}"),
 ]
 
@@ -7823,6 +8282,9 @@ def main() -> int:
     )
     ios.add_argument("--away", type=float, default=95, help="below the phone, seconds the iPhone's mesh stays stopped before each extra link")
     ios.add_argument(
+        "--edge-wait", type=float, default=0, help="with --keep-blind and a blinding iPhone, seconds to wait for a slot edge to judge its TAG_NEXT; 0 skips"
+    )
+    ios.add_argument(
         "--wake",
         default="heal",
         choices=["heal", "screen", "none"],
@@ -7979,6 +8441,13 @@ def main() -> int:
     forgets.add_argument(
         "--stages", default="quiet,hello-accepted,dial,hello-dialed", help="which forget stages to run, comma-separated, in their fixed order"
     )
+    ios_rotate = commands.add_parser("iphone-rotate")
+    ios_rotate.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_rotate.add_argument("--rotations", type=int, default=10, help="forced rotations of the iPhone's tag")
+    ios_rotate.add_argument("--rotate-wait", type=float, default=300, help="seconds each rotation may wait out a refusal (a form's two minutes)")
+    ios_rotate.add_argument("--btmon", default="", help="a btsnoop file for dongle B's HCI traffic, through knit-hci (sudo)")
+    ios_rotate.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
+    ios_rotate.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
     ios_forgets = commands.add_parser("iphone-forgets")
     ios_forgets.add_argument("--stages", default="dialed,quiet,accepted", help="which stages to run, comma-separated, in their fixed order")
     ios_forgets.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
@@ -8021,6 +8490,7 @@ def main() -> int:
         ios_ratchet,
         ios_soak,
         ios_forgets,
+        ios_rotate,
         commands.choices["iphone-relay"],
         commands.choices["iphone-group"],
     ):
@@ -8039,7 +8509,7 @@ def main() -> int:
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     # A SIGTERM ends the run through its `finally`s, as Ctrl-C does, so every phone's advert switch is put back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
-    with ClearAdverts(driven_phones(arguments), keep=arguments.keep_blind):
+    with ClearAdverts(driven_phones(arguments), keep=arguments.keep_blind), iphone_advert_guard(arguments):
         return dispatch(arguments)
 
 
@@ -8076,6 +8546,8 @@ def dispatch(arguments: argparse.Namespace) -> int:
         return iphone_peer(arguments)
     if arguments.command == "iphone-forgets":
         return iphone_forgets(arguments)
+    if arguments.command == "iphone-rotate":
+        return iphone_rotate(arguments)
     if arguments.command == "iphone-soak":
         return iphone_soak(arguments)
     if arguments.command == "android-rings":

@@ -64,5 +64,9 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   (ADR 2026-10.7uyt). Node ids compare as ASCII strings, never as raw bytes.
 - **Changes stay additive** (`docs/WIRE_COMPAT.md` in knit-next). If a change can only be made by breaking
   the wire, don't make it: add it to knit-next's `docs/NEXT_WIRE_BREAK.md` and find the additive route.
+- **A log line a harness reads is frozen.** Reword no line that a pattern in `scripts/interop.py` or `scripts/soak.py`
+  matches; add a line instead. `iphone-rotate` reads `ble serving <the doorbell's|the payload's> service <serial>`, `ble removed
+  <…> service <serial>`, `ble matched an added service by order, not identity`, `ble looks again at the services of` and
+  `ble rung by`, and both channel-ending tables read `link chN closed: the advert flipped to …` (ADR 2026-11.prsp).
 - **A behaviour that needs Android to change** is a Track A item in `.agents/memory/roadmap.md`, made in
   knit-next under knit-next's own rules, never worked around silently here.

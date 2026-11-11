@@ -69,6 +69,14 @@ public enum ControlCommand: Equatable, Sendable {
     /// does: their key pins, their conversation is accepted and their key asked for. `"scan":true` takes the scanner's
     /// path instead, which verifies them and sends nothing; `"unblock":true` unblocks them first, as Unblock and add does.
     case addContact(String, scan: Bool, unblock: Bool)
+    /// `{"cmd":"advert"}`: the blinded advert (ADR 2026-11.prsp): the gates, the form on the air (`clear` or `tag`, never its
+    /// bytes), the turn, the restarts left, each sighting's order and each link's form, the writer's counts and, on an iPhone,
+    /// its GATT server. `"blind":"on"|"off"` stores the runtime switch and `"blind":"clear"` puts the build's default back,
+    /// then waits about 6 s for the air to follow and says `applied`, or a `why`. Android's bridge `ADVERT`.
+    case advert(AdvertSwitchChange?)
+    /// `{"cmd":"advert-rotate"}`: one unannounced rotation now, or a `why` (``ForcedRotation``), then `advert`'s fields. Each
+    /// spends one of the slot's restarts. Android's bridge `ADVERT_ROTATE`.
+    case advertRotate
     /// `{"cmd":"stop"}`: stop the mesh, closing every link, as Settings' Stop does.
     case stop
     /// `{"cmd":"start"}`: start it again.
@@ -178,6 +186,7 @@ public struct ControlRequest: Equatable, Sendable {
         var reset: String?
         var scan: Bool? // swiftlint:disable:this discouraged_optional_boolean
         var unblock: Bool? // swiftlint:disable:this discouraged_optional_boolean
+        var blind: String?
         var tag: String?
     }
 
@@ -236,7 +245,7 @@ public struct ControlRequest: Equatable, Sendable {
         case "ratchet":
             ratchetCommand(from: raw)
         default:
-            contactCommand(from: raw) ?? groupCommand(from: raw).map(ControlCommand.group)
+            contactCommand(from: raw) ?? advertCommand(raw.cmd, blind: raw.blind) ?? groupCommand(from: raw).map(ControlCommand.group)
         }
     }
 

@@ -46,10 +46,20 @@ public struct LaunchOptions: Sendable, Equatable {
     public var ratchet = true
     /// What this launch's `-ratchet` chose, for the app to keep, or `nil` when it chose nothing.
     public var ratchetChoice: Choice?
+    /// Whether a debug build's blinded advert starts with its runtime switch on (ADR 2026-11.prsp, "Two gates"): `-blind
+    /// on|off`, or the choice an earlier launch or the bridge's `advert` kept, else off, the debug default until companion
+    /// change A11 merges (``Choice``). It sets the writer's switch and the radio's expectation at construction, never the
+    /// gate, which a debug build always opens. A release build reads no choice, and its factory has no switch.
+    public var blind = Self.blindDefault
+    /// The blinded advert's switch with no choice made or kept: off until companion change A11 merges and its trial passes,
+    /// then on, by an amendment to ADR 2026-11.prsp (its Phase 7).
+    public static let blindDefault = false
+    /// What this launch's `-blind` chose, for the app to keep, or `nil` when it chose nothing.
+    public var blindChoice: Choice?
 
-    /// The options in `arguments`, the process's own, with `storedRatchet` the choice an earlier `-ratchet` kept, or `nil`
-    /// for none. Anything unknown is left for the system.
-    public init(arguments: [String], storedRatchet: Choice? = nil) {
+    /// The options in `arguments`, the process's own, with `storedRatchet` the choice an earlier `-ratchet` kept and
+    /// `storedBlind` the one an earlier `-blind` or `advert` kept, or `nil` for none. Anything unknown is left for the system.
+    public init(arguments: [String], storedRatchet: Choice? = nil, storedBlind: Choice? = nil) {
         seedDemo = arguments.contains("-seedDemo")
         if let flag = arguments.firstIndex(of: "-demoRadio"), arguments.indices.contains(flag + 1) {
             demoRadio = Self.radioStates[arguments[flag + 1]] ?? .on
@@ -72,6 +82,8 @@ public struct LaunchOptions: Sendable, Equatable {
         demoShare = arguments.firstIndex(of: "-demoShare").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
         ratchetChoice = Choice(after: "-ratchet", in: arguments)
         ratchet = (ratchetChoice ?? storedRatchet) != .off
+        blindChoice = Choice(after: "-blind", in: arguments)
+        blind = (blindChoice ?? storedBlind).map { $0 == .on } ?? Self.blindDefault
     }
 
     private static let radioStates: [String: RadioState] = [

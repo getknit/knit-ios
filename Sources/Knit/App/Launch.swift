@@ -66,10 +66,11 @@
         }
 
         /// The launch's options, read as each try builds the environment, once protected data can be read: from the
-        /// process's own arguments in a debug build (`-seedDemo`, the `-demo…` flags and `-ratchet on|off`), and from
-        /// none in a release one, which always runs live with the ratchet on (ADR 2026-10.8cy5). A debug build also keeps
-        /// `-ratchet`'s choice in its defaults for every launch after it that names none (ADR 2026-10.5sk9), the ones iOS
-        /// makes by itself after an install or a reboot among them. A running process keeps what its own start read, so a
+        /// process's own arguments in a debug build (`-seedDemo`, the `-demo…` flags, `-ratchet on|off` and `-blind on|off`),
+        /// and from none in a release one, which always runs live with the ratchet on and no blinded advert (ADR 2026-10.8cy5,
+        /// ADR 2026-11.prsp). A debug build also keeps `-ratchet`'s and `-blind`'s choices in its defaults for every launch
+        /// after it that names none (ADR 2026-10.5sk9), the ones iOS makes by itself after an install or a reboot among them,
+        /// and the bridge's `advert` keeps `-blind`'s there too. A running process keeps what its own start read, so a
         /// `devicectl` launch that brings it forward without `--terminate-existing` changes nothing. A release build reads
         /// and keeps nothing.
         nonisolated private static func options() -> LaunchOptions {
@@ -78,9 +79,14 @@
                 // `scripts/check.sh release` fails when a release build holds this key: it would mean the kept switch ships.
                 let key = "debug.launch.ratchet"
                 let stored = defaults.string(forKey: key).flatMap(LaunchOptions.Choice.init(word:))
-                let read = LaunchOptions(arguments: ProcessInfo.processInfo.arguments, storedRatchet: stored)
+                let blindKey = AppEnvironment.blindSwitchKey
+                let storedBlind = defaults.string(forKey: blindKey).flatMap(LaunchOptions.Choice.init(word:))
+                let read = LaunchOptions(arguments: ProcessInfo.processInfo.arguments, storedRatchet: stored, storedBlind: storedBlind)
                 if let choice = read.ratchetChoice {
                     defaults.set(choice.word, forKey: key)
+                }
+                if let choice = read.blindChoice {
+                    defaults.set(choice.word, forKey: blindKey)
                 }
                 return read
             #else

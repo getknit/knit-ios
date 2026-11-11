@@ -3,6 +3,14 @@ import KnitMesh
 import KnitWire
 
 extension MeshControl {
+    /// `contact-link` or `add-contact`.
+    func answerContact(_ command: ControlCommand) async -> Result<[String: JSONValue], ControlError> {
+        guard case .addContact(let text, let scan, let unblock) = command else {
+            return await contactLink()
+        }
+        return await addContact(text, scan: scan, unblock: unblock)
+    }
+
     /// Our contact link, signed now, in its three forms (ADR 2026-10.tpr5): what Android's bridge prints for
     /// `INTRO --ez card true` (`DebugBridgeReceiver.kt:1673-1700`).
     func contactLink() async -> Result<[String: JSONValue], ControlError> {

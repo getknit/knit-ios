@@ -1,10 +1,32 @@
 #if canImport(CoreBluetooth)
     import CoreBluetooth
     import Foundation
-    import KnitMesh
+    public import KnitMesh
     import KnitWire
 
     // MARK: The advert and its GATT payload
+
+    extension BLERadio {
+        /// The GATT server as it stands, read on the CoreBluetooth queue: what the debug bridge's `advert` reports beside the
+        /// link manager's status, and what its `advert blind` waits on (ADR 2026-11.prsp, "The bridge and the harness").
+        public func servingReport() async -> GattServingReport {
+            await withCheckedContinuation { continuation in
+                core.onQueue { core in
+                    continuation.resume(
+                        returning: GattServingReport(
+                            serving: core.serving,
+                            wanted: core.wanted,
+                            listenerPSM: core.listener.psm,
+                            wantedPSM: core.wantedPSM,
+                            expectsBlinding: core.expectsBlinding,
+                            restoredServices: core.restoredServices,
+                            matchedByOrder: core.matchedByOrder,
+                            poweredOn: core.reported == .on
+                        ))
+                }
+            }
+        }
+    }
 
     extension BLECore {
         /// Publishes the listener when none is live or asked for, and while blinding once the doorbell's service is served,

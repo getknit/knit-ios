@@ -48,6 +48,10 @@ extension ControlCommand {
             "contact-link"
         case .addContact:
             "add-contact"
+        case .advert:
+            "advert"
+        case .advertRotate:
+            "advert-rotate"
         case .stop:
             "stop"
         case .start:

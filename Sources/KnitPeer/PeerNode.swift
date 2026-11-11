@@ -73,7 +73,8 @@ public actor PeerNode {
             stores: stores,
             clock: clock,
             details: ["radioProfile": .string(radioProfile)],
-            keepAvatar: avatarPath.map { path in { @Sendable jpeg in Self.keep(jpeg, at: path) } }
+            keepAvatar: avatarPath.map { path in { @Sendable jpeg in Self.keep(jpeg, at: path) } },
+            advertHost: PeerAdvertSwitch(build: linkConfiguration.blindsAdvert, defaultSwitch: linkConfiguration.blindSwitchOn)
         )
         lies = lying.map { [mesh] parts in
             let profile = ProfileLies(

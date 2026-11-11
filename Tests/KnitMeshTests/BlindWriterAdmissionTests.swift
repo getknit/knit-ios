@@ -181,6 +181,10 @@ import Testing
         _ = try peer.dial(rig, on: held, told: peer.tag(wall: rig.wall))
         let tag = try #require(rig.airedTag)
         rig.links.setBlinding(false)
+        // The flip closed the held link, and the peer relinks to our id.
+        #expect(rig.radio.closed.contains(held))
+        #expect(rig.links.advance() == [.down(peer.id)])
+        _ = try peer.dial(rig, on: ChannelID(80), told: peer.tag(wall: rig.wall))
         // Our previous form is still a tag a dial may name: the row stands, with nothing to resend.
         _ = dial(rig, on: ChannelID(74), told: peer.tag(wall: rig.wall), addressed: tag)
         #expect(rig.links.writerCounters.refusedHeld == 1)

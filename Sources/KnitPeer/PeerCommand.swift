@@ -59,7 +59,8 @@ public enum PeerCommand: Equatable, Sendable {
         The peer mints its own presence keys and hands them to its linked contacts under the ratchet, as the app does;
         --no-presence-keys mints and sends none.
         --blind airs a rotating tag in place of the node id, as a debug iPhone with its switch on does: the ios profile in
-        its GATT payload, the android profile in its service data.
+        its GATT payload, the android profile in its service data. The advert and advert-rotate commands turn the switch
+        and force a rotation while the peer runs.
         --stop-reading-after is for trials: that many seconds after it starts, the peer stops reading its channels.
         --flood is for trials too: while linked, the peer writes that many bytes a second of undecodable frames to
         every link, as a neighbour flooding it would, holding back while its own queue to that link is full.
@@ -170,10 +171,10 @@ public struct RunOptions: Equatable, Sendable {
     /// 2026-11.prsp): by default, as in the app; `--no-presence-keys` turns it off. They are sealed by the ratchet, so with
     /// `--no-ratchet`, which keeps no prekeys and so no generation, none is minted either.
     public var presenceKeys = true
-    /// Whether the peer airs a rotating tag in place of its node id (`--blind`; ``LinkManager/Configuration/blindsAdvert``,
-    /// whose runtime switch starts on; ADR 2026-11.prsp): the `ios` profile serves it as a blinding iPhone's GATT payload,
-    /// with the advert's `FLAG_BLINDED`, and the `android` profile airs it as service data. Off by default, as in a release
-    /// build.
+    /// Whether the peer starts airing a rotating tag in place of its node id (`--blind`: the runtime switch,
+    /// ``LinkManager/Configuration/blindSwitchOn``, behind a gate knit-peer always opens; ADR 2026-11.prsp): the `ios` profile
+    /// serves it as a blinding iPhone's GATT payload, with the advert's `FLAG_BLINDED`, and the `android` profile airs it as
+    /// service data. Off by default, as in a debug build until A11; `advert` turns it while the peer runs.
     public var blind = false
     /// Seconds after start the radio stops reading its channels, a trial's switch (`--stop-reading-after`); `nil` never stops.
     public var stopReadingAfterSeconds: Int?

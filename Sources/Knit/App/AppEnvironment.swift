@@ -188,17 +188,20 @@
                 transactor: database // The store unit is the database itself, under every SQL store above (ADR 2026-10.5sk9).
             )
             let defaults = DefaultsPreferences()
+            // One switch, read once, sets the writer and the radio's expectation of the doorbell's own service (ADR 2026-11.prsp).
+            let blind = blindAdvert(options, log: log)
             var parts = Parts(
                 identity: identity,
                 // The ratchet's, kept in the identity's own item (ADR 2026-10.5sk9): read, never written, throwing as above.
                 prekeys: try PrekeyRing.load(for: identity, from: keyStore),
                 stores: stores,
-                radio: BLERadio(log: log),
+                radio: BLERadio(log: log, expectsBlinding: blind.switchOn),
                 log: log,
                 preferences: defaults,
                 classifier: DevicePhotoClassifier(log: log),
                 textClassifier: DeviceTextClassifier(log: log)
             )
+            parts.links = blind.links
             parts.shareInbox = ShareContainer.inbox()
             parts.partials = AppStorage.partials(in: directory, database: database, log: log)
             #if DEBUG
@@ -241,6 +244,9 @@
             var shareInbox: ShareInbox?
             /// Where cut attachments' prefixes are kept: on disk beside the blobs in a live launch, in memory otherwise.
             var partials: (any PartialBlobStore)?
+            /// The links' configuration: the blinded advert's gate and switch in a live launch (``blindAdvert(_:log:)``), the
+            /// defaults otherwise.
+            var links = LinkManager.Configuration()
             /// Whether this is the sample chats, which run beside the live environment (ADR 2026-11.pydf): they take no
             /// device tag, post no notification, set no badge and open no debug bridge, each of which is the live one's.
             var isSample = false
@@ -276,6 +282,7 @@
                 ) { attachment in
                     AttachmentKind.quoteLabel(of: attachment)
                 },
+                linkConfiguration: parts.links,
                 log: parts.log,
                 partials: parts.partials
             )
@@ -307,7 +314,10 @@
             #endif
             return environment
         }
+    }
 
+    // Apart from the class only to keep its body inside the lint's length.
+    extension AppEnvironment {
         #if DEBUG
             /// The debug bridge of `environment`, which only the live environment or a demo opens.
             private static func bridge(of environment: AppEnvironment, _ parts: Parts, mesh: Mesh, clock: SystemClock) -> Bridge {
@@ -323,23 +333,11 @@
                     photos: environment.photos,
                     screening: environment.screening,
                     classifier: parts.classifier,
-                    textClassifier: parts.textClassifier
+                    textClassifier: parts.textClassifier,
+                    advert: AdvertSwitchDefaults(build: parts.links.blindsAdvert, radio: environment.radio)
                 )
             }
         #endif
-    }
-
-    // Apart from the class only to keep its body inside the lint's length.
-    extension AppEnvironment {
-        /// Whether the presence keys' per-decision trail is logged: in a debug build alone, since a dated line says when the
-        /// user blocked someone (ADR 2026-11.prsp).
-        static var logsPresenceKeyTrail: Bool {
-            #if DEBUG
-                true
-            #else
-                false
-            #endif
-        }
 
         #if DEBUG
             /// Gives the debug bridge `launch`'s ways to the sample chats (``SampleCommand``) and to a thread (``ThreadCommand``).

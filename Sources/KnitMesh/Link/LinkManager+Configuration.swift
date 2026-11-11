@@ -73,10 +73,14 @@ extension LinkManager {
         /// the reader would send, so a scripted blinding peer's `RefuseLegacy` (`BleAdmissionPolicy.kt:115`) can be met,
         /// as Android's lab withholds a capability (`MeshManager.withheldCapabilities`). The app never sets it.
         public var withholdsBlindAdvert: Bool
-        /// Whether this build may air a rotating tag instead of its id (Android's `BLIND_ADVERT`; ADR 2026-11.prsp): set only by
-        /// a debug build's factory, false in release, which then has no switch. While it holds, ``LinkManager/setBlinding(_:)``
-        /// turns it on and off at runtime, on until told otherwise.
+        /// Whether this build may air a rotating tag instead of its id (Android's `BLIND_ADVERT`; ADR 2026-11.prsp), the build
+        /// gate: true in every debug build's factory and in knit-peer, false in release, which then has no switch. While it
+        /// holds, ``LinkManager/setBlinding(_:)`` turns the runtime switch on and off.
         public var blindsAdvert: Bool
+        /// The runtime switch at construction (``LinkManager/setBlinding(_:)``): a debug build's stored `-blind` choice or its
+        /// default, knit-peer's `--blind`. It never sets the gate, so a process started with it off can still be turned on
+        /// from the bridge (ADR 2026-11.prsp, "Two gates").
+        public var blindSwitchOn: Bool
         /// The notification that says the wall clock was set, which `Mesh` hands the links as ``LinkManager/wallClockChanged()``:
         /// `nil` for the system's `NSSystemClockDidChange`. A test names its own, so its post reaches no other mesh in the
         /// process.
@@ -107,6 +111,7 @@ extension LinkManager {
             presence: PresenceTracker.Configuration = PresenceTracker.Configuration(),
             withholdsBlindAdvert: Bool = false,
             blindsAdvert: Bool = false,
+            blindSwitchOn: Bool = true,
             clockChangeName: String? = nil
         ) {
             self.helloTimeoutMilliseconds = helloTimeoutMilliseconds
@@ -132,6 +137,7 @@ extension LinkManager {
             self.presence = presence
             self.withholdsBlindAdvert = withholdsBlindAdvert
             self.blindsAdvert = blindsAdvert
+            self.blindSwitchOn = blindSwitchOn
             self.clockChangeName = clockChangeName
         }
     }

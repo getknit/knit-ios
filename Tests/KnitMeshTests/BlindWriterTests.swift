@@ -55,7 +55,7 @@ import Testing
         #expect(!rig.links.blinds)
         rig.links.setBlinding(true)
         #expect(rig.radio.advertised.count == 1, "no switch in a build that may not blind")
-        #expect(!rig.links.forceRotation())
+        #expect(rig.links.forceRotation().refused == .clear)
         #expect(rig.links.nextDeadline == rig.clock.monotonicMilliseconds(), "only the key change waits, to be taken")
         _ = rig.advance(0)
         #expect(rig.links.nextDeadline == nil, "no turn")

@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitStore
 public import KnitWire
 
@@ -6,8 +7,9 @@ public import KnitWire
 /// its HELLO, and takes Android's two blinding admission rows (`LinkManager+Admission.swift`).
 ///
 /// - **The gate.** ``Configuration/blindsAdvert`` says whether this build may blind at all, and ``setBlinding(_:)`` is the
-///   runtime switch, on until a caller turns it off. With either off, or no ``PresenceKeySource`` attached, the forms are
-///   clear and nothing here runs: no slot turn, no `TAG_NEXT`, no `t`, no blinding row.
+///   runtime switch, starting where ``Configuration/blindSwitchOn`` puts it. With either off, or no ``PresenceKeySource``
+///   attached, the forms are clear and nothing here runs: no slot turn, no `TAG_NEXT`, no `t`, no blinding row. A flip with
+///   the radio up closes every open channel, so each peer relinks and looks the doorbell up afresh.
 /// - **One snapshot** (``AdvertWriter``): the form on the air, the one before it and the PSM, replaced whole. Every advert
 ///   push builds from it, and ``AdvertOrder/Mine`` is read from it.
 /// - **The turn** (``AdvertRotation``): the coming slot's tag reserved and announced 210 s before the edge, the rotation at
@@ -48,16 +50,24 @@ extension LinkManager {
         /// The announced tag that stands until its rotation, for a link that comes up meanwhile.
         var announcedTag: NodeId?
         /// The runtime switch (``setBlinding(_:)``).
-        var switchOn = true
+        var switchOn: Bool
         /// What each live link's peer advertises as far as we know: the form we dialed, an accepted dialer's honoured `t`, or
         /// the form its accepted `TAG_NEXT` named, from that form's edge (Kotlin's `linkForms`). The debug bridge reads it.
         var linkForms: [ChannelID: AdvertOrder.Form] = [:]
         /// The counts.
         var counts = WriterCounters()
+        /// What the last install was, for the debug bridge's `advert` (``AdvertStatus``).
+        var lastInstall: AdvertStatus.Install?
+        /// When the last install was, on the monotonic clock: a forced rotation waits out
+        /// ``LinkManager/forcedRotationGraceMilliseconds`` after it.
+        var lastInstallAt: Int64?
+        /// The bring-up rotations in the slot of the last one, which spend the slot's restart indexes beside forced rotations.
+        var bringUps = SlotCount()
 
-        init(localId: NodeId) {
+        init(localId: NodeId, switchOn: Bool) {
             writer = AdvertWriter(localId: localId)
             schedule = TagSchedule(owner: localId.bytes)
+            self.switchOn = switchOn
         }
     }
 
@@ -92,8 +102,11 @@ extension LinkManager {
     }
 
     /// Turns the runtime switch: a build whose configuration may blind airs a tag while it is on. A flip while the radio is up
-    /// is a rotation to the wanted form at once (``AdvertRotation/Cause/flip``); one while it is down takes effect at the next
-    /// bring-up. A build that may not blind ignores it.
+    /// closes every open channel, its cause logged, then rotates to the wanted form at once (``AdvertRotation/Cause/flip``): a
+    /// flip moves the doorbell between the combined service and the doorbell's own, so its handle changes, and a ring client
+    /// that looked it up once would write to a dead handle for the rest of the link (ADR 2026-11.prsp, "Two gates"). The
+    /// closed links go down at the next entry (``deferredDowns``), and each peer relinks and looks the doorbell up afresh. A
+    /// flip while the radio is down takes effect at the next bring-up. A build that may not blind ignores it.
     public func setBlinding(_ on: Bool) {
         guard configuration.blindsAdvert, on != blindWriter.switchOn else {
             return
@@ -103,21 +116,19 @@ extension LinkManager {
         guard writer.isUp, let aired = writer.aired, aired.form.blinded != blinds else {
             return
         }
+        // First, so the rotation sends its form to no link it is about to close.
+        closeChannelsAtFlip()
         rotate(.flip, announced: false, psm: aired.psm)
     }
 
-    /// One unannounced rotation now (``AdvertRotation/Cause/forced``), the debug bridge's `advert rotate` (`ForcedRotation`):
-    /// refused, rotating nothing, unless a tag is on the air, no announcement stands, and no link was sent a form within the
-    /// receiver's limit, whose send would then be throttled. Answers whether it rotated.
-    public func forceRotation() -> Bool {
-        let wall = clock.wallMilliseconds()
-        guard airsTag, let aired = blindWriter.writer.aired, blindWriter.announcedTag == nil, !blindWriter.rotation.announced,
-            !blindWriter.sends.sentWithin(wall: wall)
-        else {
-            return false
+    /// Closes every channel past its dial, live or in its handshake; a dial still opening writes its HELLO under the new form.
+    func closeChannelsAtFlip() {
+        let now = clock.monotonicMilliseconds()
+        let wanted = blinds ? "a tag" : "the id"
+        for id in channels.filter({ $0.value.stage != .connecting }).map(\.key).sorted(by: Self.inOrder) {
+            log.log(.info, "link \(id) closed: the advert flipped to \(wanted)")
+            deferredDowns += retire(id, backingOff: false, now: now)
         }
-        rotate(.forced, announced: false, psm: aired.psm)
-        return true
     }
 
     /// The wall clock was set (`NSSystemClockDidChange`): the slot turn, the reader's window and every wall-clock wait are
@@ -160,6 +171,7 @@ extension LinkManager {
             return
         }
         blindWriter.writer.install(form: .clear(localId), previous: nil, psm: psm)
+        noteInstall(.bringUp, choice: nil)
         aliases.setOwnTags(current: nil, previous: nil)
         blindWriter.rotation.onStopped()
         blindWriter.airedGeneration = nil
@@ -213,6 +225,10 @@ extension LinkManager {
         let form = choice?.form ?? .clear(localId)
         let previous = old == form ? nil : old
         blindWriter.writer.install(form: form, previous: previous, psm: psm)
+        noteInstall(cause, choice: choice)
+        if cause == .bringUp, form.blinded {
+            blindWriter.bringUps.count(slot: BlindTag.slotOf(wallMilliseconds: wall))
+        }
         aliases.setOwnTags(current: form.blinded ? form.advertised : nil, previous: previous.flatMap { $0.blinded ? $0.advertised : nil })
         blindWriter.airedGeneration = choice?.generation
         if form.blinded {

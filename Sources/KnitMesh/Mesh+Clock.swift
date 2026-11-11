@@ -29,10 +29,21 @@ extension Mesh {
         settle()
     }
 
-    /// Turns the advert's blinding on or off at runtime, in a build whose links may blind (``LinkManager/setBlinding(_:)``).
+    /// Turns the advert's blinding on or off at runtime, in a build whose links may blind (``LinkManager/setBlinding(_:)``). A
+    /// flip with the radio up closes every open channel; they go down at the timer's next run, which this aims at now.
     public func setBlinding(_ on: Bool) {
         links.setBlinding(on)
         settle()
+    }
+
+    /// The blinded advert as the debug bridge's `advert` reports it (``LinkManager/advertStatus()``).
+    public var advertStatus: AdvertStatus { links.advertStatus() }
+
+    /// One forced rotation now, or why not (``LinkManager/forceRotation(radioSettling:)``): the debug bridge's `advert-rotate`.
+    public func forceRotation(radioSettling: Bool = false) -> ForcedRotation.Result {
+        let result = links.forceRotation(radioSettling: radioSettling)
+        settle()
+        return result
     }
 
     /// Starts hearing the system's clock changes, while running.

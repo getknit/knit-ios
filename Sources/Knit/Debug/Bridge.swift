@@ -21,7 +21,9 @@
     /// the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq); `crash-now`, `hang-now` and `crash-reports`, since only
     /// the app saves MetricKit's reports (``CrashCommand``, ADR 2026-10.qhsv); `sample` and `open-thread`, since only the
     /// launch holds the sample chats and the screens (``SampleCommand``, ADR 2026-11.pydf; ``ThreadCommand``); and
-    /// `linkpreview`, since only the app fetches a card (``LinkPreviewCommand``, ADR 2026-11.hcvg).
+    /// `linkpreview`, since only the app fetches a card (``LinkPreviewCommand``, ADR 2026-11.hcvg). `advert` and
+    /// `advert-rotate` are ``MeshControl``'s, as knit-peer's are, with the switch kept in the defaults and the CoreBluetooth
+    /// server's state beside the link manager's (``AdvertSwitchDefaults``, ADR 2026-11.prsp).
     /// Each `status` carries `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its
     /// memory grow.
     @MainActor
@@ -36,8 +38,8 @@
         let threads = ThreadDoor()
 
         /// A bridge to `mesh`, driven through `session`, which it also taps for events, to `radio`'s scan probe, to
-        /// `storage`, which a demo has none of, to the photos threads draw and what `screening` hides of them, and to the
-        /// filter's `classifier` and `textClassifier`.
+        /// `storage`, which a demo has none of, to the photos threads draw and what `screening` hides of them, to the
+        /// filter's `classifier` and `textClassifier`, and to the blinded advert's switch through `advert`.
         init(
             session: AppSession,
             mesh: Mesh,
@@ -50,7 +52,8 @@
             photos: BlobImageCache,
             screening: PhotoScreening,
             classifier: any PhotoClassifier,
-            textClassifier: any TextClassifier
+            textClassifier: any TextClassifier,
+            advert: AdvertSwitchDefaults
         ) {
             let control = MeshControl(
                 bundle: bundle,
@@ -58,10 +61,10 @@
                 actions: SessionActions(session: session),
                 stores: session.stores,
                 clock: clock,
-                details: ["radioProfile": "ios", "host": "app", "version": .string(version)]
-            ) {
-                ["memoryAvailableKb": .int(Int64(os_proc_available_memory() / Self.bytesPerKilobyte))]
-            }
+                details: ["radioProfile": "ios", "host": "app", "version": .string(version)],
+                sample: { ["memoryAvailableKb": .int(Int64(os_proc_available_memory() / Self.bytesPerKilobyte))] },
+                advertHost: advert
+            )
             let gate = WiFiGate(log: log, defaults: .standard)
             let commands = AppCommands(
                 session: session,

@@ -465,8 +465,12 @@ Files cross a link as Android's do (ADR 2026-10.h6zz).
   - FILE records never ring a doorbell.
 
 The iPhone's writer (ADR 2026-11.prsp, Phase 2; `LinkManager+Writer.swift`, `+TagNext.swift`) airs a rotating tag in its
-GATT payload while `LinkManager.Configuration.blindsAdvert` holds and the runtime switch (`setBlinding`) is on; release
-passes false. One snapshot (`AdvertWriter`: the form on the air, the one before it and the PSM) is replaced whole at each
+GATT payload while `LinkManager.Configuration.blindsAdvert`, the build gate, holds and the runtime switch (`setBlinding`) is
+on. A debug build opens the gate and starts the switch where `-blind on|off` or the bridge's `advert` left it in the
+defaults (`blindSwitchOn`; off until A11), feeding the same value to `BLERadio(expectsBlinding:)`; release shuts the gate
+and has no switch. A flip with the radio up closes every channel past its dial (`link chN closed: the advert flipped to
+…`), so each peer relinks and looks the doorbell up again. The bridge's `advert` and `advert-rotate` read and move it
+(`AdvertStatus`, `ForcedRotation`; on the iPhone with `GattServingReport` beside them), never naming a tag. One snapshot (`AdvertWriter`: the form on the air, the one before it and the PSM) is replaced whole at each
 rotation and every push builds from it, the payload carrying `FLAG_BLINDED` beside `FLAG_DIALS_GATT_PEERS` and a zero cue;
 `AdvertOrder.Mine` is read from it. The tag comes from `TagSchedule` (the mark per key generation, written durably and only
 forward through `PresenceKeySource.writeMark` before the tag airs; a random prefixed tag with no key, a mark that will not

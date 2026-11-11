@@ -10,6 +10,7 @@ import collections
 import contextlib
 import importlib.util
 import io
+import json
 import os
 import sys
 import tempfile
@@ -488,6 +489,243 @@ class NoisePictureTest(unittest.TestCase):
         from PIL import Image  # noqa: PLC0415 - only this test needs it
 
         self.assertEqual(Image.open(io.BytesIO(interop._noise_jpeg("test"))).size, (320, 240))
+
+
+class FakeAdvertIPhone:
+    """The iPhone's bridge as `IPhoneAdvert` and the rotation helpers use it: `replies` answers each `advert` call in turn,
+    `rotations` each `advert-rotate`, and `calls` keeps what each asked."""
+
+    node_id = IPHONE
+
+    def __init__(self, replies: list[dict | None], rotations: list[dict] | None = None) -> None:
+        self.replies = replies
+        self.rotations = rotations or []
+        self.calls: list[dict] = []
+        self.stops = 0
+
+    def advert(self, blind: bool | None = None, clear: bool = False) -> dict | None:
+        self.calls.append({"clear": True} if clear else {} if blind is None else {"blind": blind})
+        return self.replies.pop(0)
+
+    def advert_rotate(self) -> dict:
+        self.calls.append({"rotate": True})
+        return self.rotations.pop(0)
+
+    def stop(self) -> None:
+        self.stops += 1
+
+
+def ios_advert(stored: bool | None, value: bool, blinding: bool) -> dict:
+    """An `advert` read, as `MeshControl+Advert.swift` shapes the fields the guard reads."""
+    return {"switch": {"value": value, "stored": stored, "default": False}, "blinding": blinding, "form": "tag" if blinding else "clear"}
+
+
+class IPhoneAdvertTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.left = Path(self.directory.name) / "left.json"
+        self.fronts = 0
+
+    def front(self) -> dict:
+        self.fronts += 1
+        return {"opened": "knit"}
+
+    def guard(self, ios: FakeAdvertIPhone, want: bool = False, connect=None) -> interop.IPhoneAdvert:
+        return interop.IPhoneAdvert(connect or (lambda: ios), want=want, front=self.front, left=self.left)
+
+    def run_guard(self, ios: FakeAdvertIPhone, want: bool = False, body=None, connect=None) -> str:
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), mock.patch.object(interop.time, "sleep"), self.guard(ios, want, connect):
+            if body:
+                body()
+        return out.getvalue()
+
+    def test_a_switch_stored_on_goes_off_for_the_run_and_on_again_with_knit_brought_forward(self) -> None:
+        ios = FakeAdvertIPhone([ios_advert(True, True, True), {"applied": True}, {"applied": True}])
+
+        def noted() -> None:
+            self.assertEqual(json.loads(self.left.read_text())["stored"], True, "noted before the run")
+
+        self.run_guard(ios, body=noted)
+        self.assertEqual(ios.calls, [{}, {"blind": False}, {"blind": True}])
+        self.assertEqual(self.fronts, 2, "brought forward before the flip and before the restore")
+        self.assertFalse(self.left.exists(), "forgotten once put back")
+
+    def test_a_bridge_that_does_not_answer_brings_knit_forward_once_and_connects_again(self) -> None:
+        ios = FakeAdvertIPhone([ios_advert(None, False, False)])
+        tries: list[int] = []
+
+        def connect() -> FakeAdvertIPhone:
+            tries.append(self.fronts)
+            if self.fronts == 0:
+                raise TimeoutError("a suspended Knit answers nothing")
+            return ios
+
+        self.run_guard(ios, connect=connect)
+        self.assertEqual((tries, ios.calls), ([0, 1], [{}]))
+
+    def test_the_default_switch_off_and_a_build_without_advert_are_left_alone(self) -> None:
+        off = FakeAdvertIPhone([ios_advert(None, False, False)])
+        self.run_guard(off)
+        old = FakeAdvertIPhone([None])
+        self.run_guard(old)
+        self.assertEqual((off.calls, old.calls, self.fronts), ([{}], [{}], 0))
+        self.assertFalse(self.left.exists())
+
+    def test_iphone_rotate_turns_the_default_on_and_clears_it_after(self) -> None:
+        ios = FakeAdvertIPhone([ios_advert(None, False, False), {"applied": True}, {"applied": True}])
+        self.run_guard(ios, want=True)
+        self.assertEqual(ios.calls, [{}, {"blind": True}, {"clear": True}])
+
+    def test_a_restore_that_cannot_reach_the_bridge_prints_the_line_and_the_next_run_restores_first(self) -> None:
+        ios = FakeAdvertIPhone([ios_advert(False, True, True), {"applied": True}])
+        connects = [ios]
+
+        def connect() -> FakeAdvertIPhone:
+            if not connects:
+                raise ConnectionError("nothing answers at the bridge")
+            return connects.pop(0)
+
+        out = self.run_guard(ios, connect=connect)
+        lines = [json.loads(line) for line in out.splitlines()]
+        self.assertIn("""scripts/interop.py bridge '{"cmd":"advert","blind":"off"}'""", [line.get("byHand") for line in lines])
+        self.assertTrue(self.left.exists(), "kept for the next run")
+        later = FakeAdvertIPhone([{"applied": True}, ios_advert(False, False, False)])
+        self.run_guard(later)
+        self.assertEqual(later.calls, [{"blind": False}, {}], "the leftover first, then the read")
+        self.assertFalse(self.left.exists())
+
+    def test_another_iphones_note_waits_for_that_phone(self) -> None:
+        self.left.write_text(json.dumps({"stored": True, "nodeId": PHONE}))
+        ios = FakeAdvertIPhone([ios_advert(None, False, False)])
+        self.run_guard(ios)
+        self.assertEqual(ios.calls, [{}])
+        self.assertTrue(self.left.exists())
+
+    def test_a_switch_that_will_not_follow_ends_the_run_with_the_switch_put_back(self) -> None:
+        timeout = {"applied": False, "why": "timeout"}
+        ios = FakeAdvertIPhone([ios_advert(None, True, True), timeout, timeout, {"applied": True}])
+        with self.assertRaises(RuntimeError):
+            self.run_guard(ios)
+        self.assertEqual(ios.calls[-1], {"clear": True})
+
+    def test_a_stopped_mesh_only_stores(self) -> None:
+        ios = FakeAdvertIPhone([ios_advert(True, True, True), {"applied": False, "why": "transport not running"}, {"applied": True}])
+        self.run_guard(ios)
+        self.assertEqual(ios.calls, [{}, {"blind": False}, {"blind": True}])
+
+    def test_the_guard_holds_only_the_runs_that_drive_the_iphone_and_judge_ids(self) -> None:
+        def arguments(command: str, keep: bool = False) -> mock.Mock:
+            return mock.Mock(command=command, keep_blind=keep, udid=None, host=None)
+
+        self.assertIsInstance(interop.iphone_advert_guard(arguments("iphone")), interop.IPhoneAdvert)
+        for left_alone in (arguments("iphone", keep=True), arguments("check"), arguments("bridge"), arguments("iphone-rotate")):
+            self.assertNotIsInstance(interop.iphone_advert_guard(left_alone), interop.IPhoneAdvert)
+
+
+class IPhoneAdvertCommandTest(unittest.TestCase):
+    def ios(self, reply: dict) -> interop.IPhone:
+        ios = interop.IPhone("udid")
+        ios.command = mock.Mock(return_value=reply)
+        return ios
+
+    def test_the_switch_words_and_a_build_before_the_command(self) -> None:
+        ios = self.ios({"ok": True, "reply": "advert"})
+        ios.advert(blind=True)
+        ios.advert(blind=False)
+        ios.advert(clear=True)
+        self.assertEqual([call.kwargs.get("blind") for call in ios.command.call_args_list], ["on", "off", "clear"])
+        self.assertIsNone(self.ios({"ok": False, "error": "unknown command advert"}).advert())
+        with self.assertRaises(RuntimeError):
+            self.ios({"ok": False, "error": "this node has no blinded advert"}).advert()
+
+
+class IPhoneRotateTest(unittest.TestCase):
+    def settled(self, payload: int, resolvable: bool = True) -> dict:
+        gatt = {"appliedTag": True, "pendingAdd": None, "doorbell": 1, "payload": payload}
+        return {"form": "tag", "epoch": payload, "resolvable": resolvable, "source": "slotted", "restartsLeft": 2, "gatt": gatt}
+
+    def test_a_refusal_time_ends_is_waited_out_and_the_rotation_recorded(self) -> None:
+        ios = FakeAdvertIPhone([self.settled(5, resolvable=False)], [{"rotated": False, "why": "throttled"}, {"rotated": True}])
+        with mock.patch.object(interop.time, "sleep"):
+            record = interop._rotate_once(ios, 300)
+        self.assertEqual((record["payload"], record["random"], record["waited"]), (5, True, {"throttled": 1}))
+
+    def test_a_refusal_no_wait_ends_fails(self) -> None:
+        ios = FakeAdvertIPhone([], [{"rotated": False, "why": "clear"}])
+        with self.assertRaises(RuntimeError):
+            interop._rotate_once(ios, 300)
+
+    def test_the_doorbell_keeps_its_service_and_each_payload_is_new(self) -> None:
+        first = {"doorbell": 1, "payload": 2}
+        self.assertEqual(interop._doorbell_kept(first, [{"doorbell": 1, "payload": 4}])["payloads"], [2, 4])
+        with self.assertRaises(RuntimeError):
+            interop._doorbell_kept(first, [{"doorbell": 3, "payload": 4}])
+        with self.assertRaises(RuntimeError):
+            interop._doorbell_kept(first, [{"doorbell": 1, "payload": 2}])
+
+    def test_the_logs_lines_are_read_as_frozen(self) -> None:
+        entries = [
+            {"message": "ble serving the payload's service 4"},
+            {"message": "ble removed the payload's service 2"},
+            {"message": "ble looks again at the services of 6F1E: they changed mid-search"},
+            {"message": "ble rung by 6F1E"},
+            {"message": "ble rung by 9A0C"},
+        ]
+        self.assertEqual(interop._payloads_turned(entries, [{"payload": 4}]), {"served": 1, "removed": 1})
+        with self.assertRaises(RuntimeError):
+            interop._payloads_turned(entries, [{"payload": 6}])
+        self.assertEqual(interop._no_match_by_order(entries), {"looksAgain": 1})
+        with self.assertRaises(RuntimeError):
+            interop._no_match_by_order([{"message": "ble matched an added service by order, not identity: 3"}])
+        phone = mock.Mock()
+        with mock.patch.object(interop, "_phone_log", side_effect=lambda _, needle: [needle] if needle.startswith("bt ring") else []):
+            self.assertEqual(interop._rings_heard(entries, phone, IPHONE, 1)["heard"], 2)
+            with self.assertRaises(RuntimeError):
+                interop._rings_heard(entries, phone, IPHONE, 2)
+        with mock.patch.object(interop, "_phone_log", return_value=[]), self.assertRaises(interop.Inconclusive):
+            interop._rings_heard(entries, phone, IPHONE, 0)
+
+    def test_the_flip_line_is_no_fault_of_ours(self) -> None:
+        message = "link ch4 closed: the advert flipped to a tag"
+        reasons = [describe(match) for pattern, describe in interop.IOS_CHANNEL_ENDINGS if (match := pattern.match(message))]
+        self.assertEqual(reasons, ["flipped: the advert's switch"])
+
+
+class BlindingIPhoneTest(unittest.TestCase):
+    """`iphone --keep-blind` with an iPhone whose own switch is on, toward a phone that airs its id."""
+
+    def reply(self, dialed_by_me: bool, i_dial: bool = True, blinding: bool = True) -> dict:
+        return {
+            "blinding": blinding,
+            "peers": [{"peer": PHONE, "iDial": i_dial}],
+            "links": [{"nodeId": PHONE, "dialedByMe": dialed_by_me, "tagAware": True}],
+        }
+
+    def test_the_blinding_iphone_dials_a_clear_phone(self) -> None:
+        ios = FakeAdvertIPhone([self.reply(dialed_by_me=True)])
+        self.assertEqual(interop._ios_blind_dialed_by(ios, PHONE)["dialer"], "iphone")
+        for reply in (self.reply(dialed_by_me=False), self.reply(dialed_by_me=True, i_dial=False)):
+            with self.assertRaises(RuntimeError):
+                interop._ios_blind_dialed_by(FakeAdvertIPhone([reply]), PHONE)
+        with self.assertRaises(interop.Inconclusive):
+            interop._ios_blind_dialed_by(FakeAdvertIPhone([self.reply(True, blinding=False)]), PHONE)
+
+    def test_an_edge_past_the_wait_is_inconclusive_and_one_within_it_is_judged(self) -> None:
+        far = {"nextEdgeAtMs": int((time.time() + 900) * 1000)}
+        with self.assertRaises(interop.Inconclusive):
+            interop._tag_next_across_edge(FakeAdvertIPhone([far]), mock.Mock(), PHONE, 60)
+        near = {"nextEdgeAtMs": int(time.time() * 1000), "counters": {"tagNextAnnounced": 0, "rotationsBySlot": 0}}
+        after = {"counters": {"tagNextAnnounced": 1, "rotationsBySlot": 1}, "links": [{"nodeId": PHONE}]}
+        phone = mock.Mock()
+        phone.advert.return_value = {"links": [{"nodeId": IPHONE, "blinded": True}]}
+        with mock.patch.object(interop.time, "sleep"):
+            judged = interop._tag_next_across_edge(FakeAdvertIPhone([near, after]), phone, PHONE, 60)
+        self.assertEqual(judged, {"tagNextAnnounced": 1, "rotationsBySlot": 1, "phoneKnowsTag": True})
+        phone.advert.return_value = {"links": [{"nodeId": IPHONE, "blinded": None}]}
+        with mock.patch.object(interop.time, "sleep"), self.assertRaises(RuntimeError):
+            interop._tag_next_across_edge(FakeAdvertIPhone([near, after]), phone, PHONE, 60)
 
 
 class TopLevelNamesTest(unittest.TestCase):

@@ -114,6 +114,24 @@ internal struct TagSchedule {
         reserved.removeAll()
     }
 
+    /// How many restart indexes `generation` has left in `wall`'s slot, read from the mark this schedule last read or wrote,
+    /// or `nil` before it read one: every index in a slot past the mark, none in a slot behind it, which a reservation for the
+    /// coming slot makes of the current one. Every bring-up and forced rotation spends one; past them, the slot airs random
+    /// tags no contact resolves until the edge (the debug bridge's `advert`).
+    func restartsLeft(_ generation: Int64, wall: Int64) -> Int? {
+        guard let cached = marks[generation] else {
+            return nil
+        }
+        guard let mark = cached else {
+            return BlindTag.restarts
+        }
+        let slot = BlindTag.slotOf(wallMilliseconds: wall)
+        if slot > mark.slot {
+            return BlindTag.restarts
+        }
+        return slot == mark.slot ? BlindTag.restarts - 1 - mark.restart : 0
+    }
+
     /// A random prefixed tag that no contact resolves, with no mark written (`random`, `:152`): what airs with no key, when
     /// a mark write failed, or when the key is no longer the engine's current one.
     static func randomTag(using generator: inout some RandomNumberGenerator) -> Next {

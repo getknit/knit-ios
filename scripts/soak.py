@@ -476,6 +476,9 @@ def link_endings(log: Path) -> tuple[list[dict], Counter]:
         # knit-ios #25: the link's proof. An unproven link claiming an id that proves itself is closed for it.
         (re.compile(r"^link (ch\d+) displaced: \S+ proved itself on ch\d+$"), lambda _: "displaced: its id proved itself"),
         (re.compile(r"^link (ch\d+) closed: \S+ proves itself$"), lambda _: "closed: its id proves itself"),
+        # ADR 2026-11.prsp: a flip of the blinded advert's switch closes every open channel, so each peer relinks and looks
+        # the doorbell up afresh; a trial's lever, never a fault of either end.
+        (re.compile(r"^link (ch\d+) closed: the advert flipped to "), lambda _: "flipped: the advert's switch"),
         (re.compile(r"^link (ch\d+) proof failed for \S+: (.*)"), lambda m: f"proof failed: {m[2][:40]}"),
     ]
     down = re.compile(r"^link down (\S+) on (ch\d+)$")

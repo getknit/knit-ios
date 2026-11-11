@@ -46,10 +46,20 @@ value survives while `knit.sqlite` stays out of backups. Four facts shape what t
     maintainer chose this on 2026-11-11, reversing sv5t's receive-only choice, so that contacts already hold the iPhone's
     keys on the day its writer ships. With it off, nothing is minted, rotated or sealed, but leavers' stored keys are
     still deleted.
-  - `LinkManager.Configuration.blindsAdvert`, Android's `BLIND_ADVERT`, is set only in a debug build (`#if DEBUG` in the
-    app's factory). A release build passes false and has no switch. A debug build has a runtime switch: the `-blind
-    on|off` launch flag, kept in UserDefaults, and the bridge's `advert` command. Its default is **off until A11 merges
-    and its trial passes**, then on, by an amendment here. The two gates are independent. A debug iPhone with the
+  - `LinkManager.Configuration.blindsAdvert`, Android's `BLIND_ADVERT`, is the build gate: true in every debug build
+    (`#if DEBUG` in the app's factory), false in release, which has no switch, no launch flag and no defaults key. A
+    debug build has a runtime switch on top of it: the `-blind on|off` launch flag, kept in UserDefaults under
+    `debug.launch.blind`, and the bridge's `advert blind`. The stored switch (or its default) sets the writer's state at
+    construction and feeds `BLERadio(expectsBlinding:)`; it never sets the gate, or a process launched with the switch
+    off could never be turned on from the bridge. The switch's default is **off until A11 merges and its trial
+    passes**, then on, by an amendment here.
+  - **A flip with the radio up closes every live link,** with its cause logged, so each peer relinks and looks the
+    doorbell up again. A flip moves the doorbell between the combined service and D, so its handle changes, and a ring
+    client that looked it up once would write to a dead handle for the rest of the link. The relink can be slow after a
+    flip from a tag to the id: a reader keeps the blinded payload until the next slot edge, so a clear peer above the
+    iPhone waits for the "blinded" iPhone to dial while the iPhone waits for it by id order, until the head start or
+    seeking dials. The flip trial times both directions; past about a minute, the iPhone should dial whatever the
+    order for one dwell after a flip, as seeking does. The two gates are independent. A debug iPhone with the
     switch off still sends keys, and one that blinds with keys off airs random tags no contact resolves.
 - **Our own keys** port the send half of `PresenceKeyPolicy` and `PresenceKeyEngine` with Android's constants: a week
   between rotations, a day's window for a new contact to join the current key, an hour's clock slack, a year's clamp,
@@ -439,6 +449,44 @@ wiring compiles only on the Mac and is proven only by the probe. Choices the pha
   answer a discovery asked of a service that went, and the lookup would otherwise hang for the connection's life.
 - KnitBlueZ's bound runs from `ServicesResolved`, from any GATT object BlueZ removes under the device and from any `0xFE30`
   service it adds there; either also forgets a doorbell found absent.
-- knit-peer's `--blind` sets `blindsAdvert`, whose switch starts on. The `ios` profile answers each read with the advert of
+- knit-peer's `--blind` sets `blindsAdvert`, whose switch starts on (superseded in Phase 4: the gate is always open and
+  `--blind` sets the switch). The `ios` profile answers each read with the advert of
   the moment, so a rotation moves the value under one characteristic and re-registers only the advert; no Linux run moves a
   handle. The `android` profile airs the tag as service data, with Android's flags.
+
+Phase 4, the gate, the bridge and the harness (draft, 2026-11-11): `BlindWriterBridgeTests`, `GattServingReportTests`,
+`MeshControlAdvertTests`, `PeerAdvertTests`, `LaunchBlindTests`, and `test_interop.py`'s `IPhoneAdvertTest`, `IPhoneRotateTest`
+and `BlindingIPhoneTest`. The app's factory and bridge compile only on the Mac. Choices the phase made that the text above
+leaves open:
+
+- The switch at construction is `LinkManager.Configuration.blindSwitchOn`, apart from the gate. A debug build passes the gate
+  open and the switch from `-blind on|off`, or the word `debug.launch.blind` keeps, or `LaunchOptions.blindDefault` (off), and
+  the same value to `BLERadio(expectsBlinding:)`, from the one branch that logs `the blinded advert writer is on in this debug
+  build`; `check_release_app` fails a store build holding that line or the key. knit-peer always opens the gate, and its
+  `--blind` sets the switch, which Phase 3 had set the gate from.
+- A flip with the radio up closes every channel past its dial, live or in its handshake, logging `link chN closed: the advert
+  flipped to a tag|the id`, before it rotates, so the rotation's form goes to no link it is about to close. The downs reach
+  the mesh at the next entry, as a proof's closes do. A dial still opening is left: its HELLO is written under the new form.
+  Both harnesses' channel-ending tables read the line as the switch's, never a fault of either end.
+- `advert` is `MeshControl`'s, so knit-peer answers it too; the host keeps the switch (`AdvertHost`: the app's defaults,
+  knit-peer's memory) and reports its radio. The app's report is `GattServingReport`, read on the CoreBluetooth queue: the
+  layout, the D, P, combined and pending serials, `advertising`, `retryAt`, `cleared`, `doorbellFailed`, whether the served
+  payload carries the wanted advert, the listener's and the advert's PSMs, `expectsBlinding`, the restored `0xFE30` count, and
+  the count of adds matched by order. Never a value. `advert blind on|off|clear` stores, flips, and waits up to about 6 s for
+  `applied`: the form on the air is what the writer should air, and the radio serves it (P and D with no add in flight, or the
+  combined service) and advertises; else `why` (`transport not running`, `radio down`, `no mark store`, `pending`,
+  `timeout`, or `build` from a host whose gate is shut).
+- `advert-rotate` refuses, in Android's order, `radio down`, `clear`, `announced`, `grace` (a payload add in flight on the
+  radio, or an install under 5 s ago, `LinkManager.forcedRotationGraceMilliseconds`) and `throttled`. Android's `pending`,
+  `settling` and `holding` have no iPhone counterpart (a tag is chosen and installed in one call), and the reply has no
+  `holding`. The reply carries `restartsLeft`, read
+  from the mark the schedule last read or wrote, and `bringUpsInSlot`.
+- A sighting is shown by its node id or its handle (`~zzzz…<n>`, a per-process counter); a link's form by its kind
+  (`blinded`, Android's name). The last install's cause, time and tag facts (source, resolvable, stale) are reported.
+- `interop.py` holds the iPhone's switch off for every run that drives it and judges ids (`IPhoneAdvert`), unless
+  `--keep-blind`; it leaves a switch already off alone, notes what it found in `~/.local/state/knit/interop-iphone-advert.json`
+  before it moves one, restores from that note first at the next run, brings Knit to the front with devicectl before it
+  restores, and prints the bridge line to run by hand when it cannot. `bridge`, `record-pull`, `iphone-reboot` and
+  `iphone-rotate` are left out: the last holds the switch on itself. With `--keep-blind`, a blinding iPhone toward a clear
+  phone must dial it, refuse nothing as legacy and be refused nothing, and `--edge-wait` judges an announced rotation the phone
+  took across an edge. `iphone-rotate` is the probe's scripted part.

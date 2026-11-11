@@ -108,6 +108,9 @@ document:
 - Your iPhone keeps linking with Android phones once they stop broadcasting who they are over Bluetooth,
   just as it does with any other phone, and still recognizes your contacts among them before they connect.
   Your iPhone's own Bluetooth signal names it, as before.
+- Your iPhone now gives each contact a private key that will let their phone recognize yours once Knit stops
+  showing your ID to Bluetooth scanners. Only people you've accepted, verified or written to get one, and
+  blocking someone gives everyone else a new key.
 
 ### Changed
 

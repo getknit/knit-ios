@@ -83,13 +83,15 @@ public actor MeshControl {
     private let details: [String: JSONValue]
     private let sample: (@Sendable () -> [String: JSONValue])?
     private let keepAvatar: (@Sendable ([UInt8]?) -> Void)?
+    /// Where `advert` keeps the blinded advert's switch and reads the host's radio (`nil` answers none), and how long it waits.
+    let advert: (host: (any AdvertHost)?, wait: AdvertWait)
     private var linked: [Neighbor] = []
 
     /// A control surface for `mesh`, whose keys are `bundle`. It changes the node through `actions`, the mesh itself
     /// when there are none. `details` join the `ready` event and the `status` reply, to say what kind of node answers.
     /// `sample`, read at each `status`, joins it too, for what only the host can measure, such as its memory.
     /// `keepAvatar` hears each photo an `avatar` command sets, so a host whose blobs live in memory can keep its own
-    /// across a restart.
+    /// across a restart. `advert` answers through `advertHost`, waiting for the air as `advertWait` says.
     @preconcurrency
     public init(
         bundle: PublicKeyBundle,
@@ -99,7 +101,9 @@ public actor MeshControl {
         clock: any MeshClock,
         details: [String: JSONValue] = [:],
         sample: (@Sendable () -> [String: JSONValue])? = nil,
-        keepAvatar: (@Sendable ([UInt8]?) -> Void)? = nil
+        keepAvatar: (@Sendable ([UInt8]?) -> Void)? = nil,
+        advertHost: (any AdvertHost)? = nil,
+        advertWait: AdvertWait = AdvertWait()
     ) {
         self.bundle = bundle
         nodeId = bundle.nodeId
@@ -110,6 +114,7 @@ public actor MeshControl {
         self.details = details
         self.sample = sample
         self.keepAvatar = keepAvatar
+        advert = (advertHost, advertWait)
     }
 
     /// The `ready` event: who answers, with the `details`.
@@ -226,10 +231,10 @@ public actor MeshControl {
             return await answer(command)
         case .ratchet(let reset):
             return .success(await ratchet(resetting: reset))
-        case .contactLink:
-            return await contactLink()
-        case .addContact(let text, let scan, let unblock):
-            return await addContact(text, scan: scan, unblock: unblock)
+        case .contactLink, .addContact:
+            return await answerContact(command)
+        case .advert, .advertRotate:
+            return await answerAdvert(command)
         case .stop, .start:
             await (command == .stop ? actions.stop() : actions.start())
             return .success(["running": .bool(await mesh.isRunning)])

@@ -222,6 +222,12 @@
         var awaitingAdd: [UInt64: CBMutableService] = [:]
         /// The services the server holds, by serial, which a removal names.
         var served: [UInt64: CBMutableService] = [:]
+        /// What the factory said at construction (``BLERadio/init(log:expectsBlinding:)``), for ``BLERadio/servingReport()``.
+        let expectsBlinding: Bool
+        /// How many `0xFE30` services a restoration handed back, `nil` when this process was not restored.
+        var restoredServices: Int?
+        /// How many `didAdd` answers were matched by order, not identity (``oldestAwaited()``), which the probe expects never.
+        var matchedByOrder = 0
         #if DEBUG
             var probe = ScanProbe()
         #endif
@@ -232,6 +238,7 @@
         ) {
             self.emit = emit
             serving = GattServing(expectsBlinding: expectsBlinding)
+            self.expectsBlinding = expectsBlinding
             self.levels = levels
             self.credits = credits
             self.log = log
