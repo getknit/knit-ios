@@ -2073,5 +2073,45 @@ after.
 - **SIGKILL leaves a Pixel's `ADVERT` switch off.** `ClearAdverts` keeps no note, and the next run leaves a switch stored
   off alone by design, so the Pixel 9 needed `…debug.ADVERT --ez clear true` by hand.
 - **Still owed:** the dongle runs (`android-rings`, `iphone-forgets`, `iphone-rotate` with btmon for D's ATT handle and
-  Service Changed), `iphone-wake` (someone has to lock the iPhone), a restoration relaunch and a cold launch with the
-  switch on, and everything A11 owes.
+  Service Changed), which ran the same afternoon (next section), `iphone-wake` (someone has to lock the iPhone), a
+  restoration relaunch and a cold launch with the switch on, and everything A11 owes.
+
+## What the writer's dongle runs showed
+
+From 13:40 on 2026-11-11 both nRF52840 dongles were back, dongle A on `hci2` and dongle B on `hci1`. The iPhone kept
+`6795964`, and knit-peer was rebuilt from `bd739bd` (`6795964` plus docs). The maintainer gave the go-ahead, the Intel
+was left alone, and the guard put both phones' switches back after each run.
+
+| Run | Steps | What it showed |
+| --- | --- | --- |
+| `iphone-forgets`, the peer on dongle A in the `ios` profile | 10 of 10 | The iPhone, in clear mode, read the peer's payload at every stage and forgot it by each rule: the HELLO of the node it dialed, a minute of quiet, and the HELLO on a link it accepted. |
+| `android-rings --link accepted`, the Pixel 9 | 10 of 10 | The Pixel found the doorbell in the peer's combined service 7 s after link-up with no failed lookup. It rang for the link-up, then 1.7 s after the post and 0.8 s after the DM. Custody converged at 538 ids in 436 s. |
+| `android-rings` (`--link dialed`), the Pixel 9 twice and the Pixel 3 once | 2 of 3 each | The phone never dialed the peer (below). |
+| `iphone-rotate --device <Pixel 9> --btmon`, the peer on dongle B | 28 of 29 | Ten forced rotations and the 14:15 edge. The payload service went from 21 to 32, 11 served and 11 removed, while the doorbell's stayed 20. Rotations 4 to 8 aired random tags (`restartsLeft` 0), and the edge brought the restarts back. No `ble matched an added service by order` and no `ble looks again`. Both links held throughout. |
+
+- **The doorbell's ATT handle stays put.** btmon on dongle B shows every one of the peer's ten rings written to handle
+  `0x0067`, from 14:08:12 to 14:17:13, across all ten rotations and the edge.
+- **iOS indicates Service Changed at every rotation, twice.** The first indication covers the new payload service
+  (`0x006f–0x0071` at the first), the second, 0.1 to 1.5 s later, the one removed (`0x006c–0x006e`). The edge's
+  rotation did the same. Each new payload service took the three handles above the last, from `0x006c` up to
+  `0x008a`, and none was reused. No indication covered the doorbell's service. BlueZ subscribed only when its discovery
+  ended at 14:08:12, so the first rotation, 11 s earlier, sent that link none. Handles climb by three a rotation for the
+  process's life. No Pixel HCI snoop was taken, so what the Pixel 9 was told is still open. Its rings all landed.
+- **`rings-heard` failed on a count, not a lost ring.** The iPhone logged `ble rung by` for all 29 of the Pixel's `bt
+  ring` lines and for each of the peer's ten writes. The peer's status counted eleven: `LinkManager.rings` counts each
+  ring it decides on, while BlueZ keeps the rings that wait on a doorbell lookup in a set and writes them once. The
+  link-up's ring and the first rotation's post waited out the 10 s settle together and went as one write. The run's
+  oracle has to count the peer's writes (`bluez ringing`, a debug line) instead.
+- **Forced rotations inside two minutes of an announcement tell nobody.** Rotations 2 to 8 ran 11 s apart with no
+  `throttled`. The 14:15 slot's announcement was due at 14:11:30, and `TagNextSends` holds a `current` send that
+  close to it (`beforeAnnounce`), so no link was sent a form and nothing throttled the next rotation. Rotation 9 waited
+  out the standing announcement (210 s), told the Pixel, and rotation 10 waited out the throttle.
+- **`--link dialed` lost to the head start.** Each phone's first GATT read of dongle A failed. The Pixel 9's stack
+  logged `Disconnecting … due to out of resources` with five links up, and the Pixel 3's failed twice at connect, then
+  `timeout@discover`. The peer's 24 s head start ran out before the phone read again, 38 to 44 s later, so the peer
+  dialed. The branch leaves the head start alone, and first reads failed this way in A3's runs too ("What A3's gate
+  showed").
+- **Still owed:** `iphone-wake`, a restoration relaunch and a cold launch with the switch on, the `rings-heard`
+  oracle, a Pixel HCI snoop for Service Changed, the plan's knit-peer trials (`RefuseLegacy` against a peer that
+  withholds `CAP_BLIND_ADVERT`, and the iPhone beside a blinding knit-peer), which no run scripts yet, and everything
+  A11 owes.

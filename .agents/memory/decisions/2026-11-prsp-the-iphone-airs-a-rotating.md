@@ -343,8 +343,12 @@ link beside a proven one that gets nothing); a padded ctl 11 in `ios-emitted-v1.
 of the split layout with the Pixel 9 (iOS took the second `0xFE30` primary; rings woke the backgrounded iPhone before,
 across three forced rotations and after the flip back, with no second doorbell lookup), a slot edge, both flips (relinks
 within 19 s and 41 s) and the guard's SIGKILL restore (`.agents/context/linux-peer.md`, "What the blinded-advert writer
-showed"). Still owed: the dongle runs, btmon's view of the doorbell's ATT handle and Service Changed, `iphone-wake`, a
-restoration relaunch and a cold launch with the switch on.
+showed"). The same afternoon the dongle runs passed: `iphone-forgets`, `android-rings --link accepted` and
+`iphone-rotate`, whose one failure was its ring count. btmon on dongle B showed the doorbell at handle `0x0067`
+through ten forced rotations and a slot edge. It also showed iOS indicating Service Changed twice at each rotation, for
+the new payload service's handles and then the old one's, never the doorbell's ("What the writer's dongle runs
+showed"). Still owed: `iphone-wake`, a restoration relaunch and a cold launch with the switch on, and whether the Pixel
+is told of Service Changed (an HCI snoop on the phone).
 
 Phase 1, our own keys (draft, 2026-11-11): `PresenceKeyPolicyOwnTests`, `PrekeyRingPresenceGenerationTests`,
 `OwnPresenceKeyStoreTests`, `SchemaTests` (v24), `PresenceKeyFrameTests`, `LinkManagerProvenSendTests`,
