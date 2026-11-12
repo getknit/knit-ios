@@ -2141,8 +2141,17 @@ was left alone, and the guard put both phones' switches back after each run.
     dial off only while its own link is held, so the hint the new link's HELLO gave never counts. The same reader
     rule redials a blinding Android that dials back in. Since 2026-11-11 a claim whose link has ended yields to the
     same id's hint on its live link (ADR 2026-11.sv5t, amended), and `iphone-rotate` fails `no-redial-while-linked`
-    on any `link head start over for <the iPhone>` while the peer holds a link to it. A run that crosses an address
-    change still owes the check on air.
+    on any `link head start over for <the iPhone>` while the peer holds a link to it.
+  - **The fix held on air (`2e82f18`, 17:45 to 18:55).** `iphone-rotate` alone did not reach the case. Its first
+    relink followed a tag that was never announced to the peer, so no claim stood. At its second relink the peer's
+    own dial won, and that dial records a fresh claim. After the slot's restarts its forced rotations air random
+    tags, which are never announced. A 45-minute hold followed instead: the iPhone's switch on, no forced rotations,
+    the same line, and posts every 2 minutes. It crossed four address changes. The iPhone dialed back in each time,
+    once more after a link that lasted a second. Its links then held 625, 686 and 618 seconds, and its last held 12
+    seconds until the run stopped. The peer made no dial to the iPhone while any of them held, and
+    `no-redial-while-linked` passed. Just before the 625-second link, the peer's head start had resolved the
+    iPhone by the dead claim three times while unlinked. Before the fix, that relink brought the first redial within
+    8 ms to 7 s.
   - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
     after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
     `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.
