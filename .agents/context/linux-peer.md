@@ -2211,12 +2211,12 @@ was left alone, and the guard put both phones' switches back after each run.
   - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
     after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
     `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.
-- **Still owed:** a Pixel HCI snoop for Service Changed (`iphone-wake` and both relaunches passed on 2026-11-12, in
-  the next section), a rule for the readers' second connection at the iPhone's address change (above, not the
+- **Still owed:** a rule for the readers' second connection at the iPhone's address change (above, not the
   writer's: it breaks the line `iphone-rotate`'s `links-held` judges once a run crosses an address change, and it
   drops Android links too), the plan's knit-peer trials (`RefuseLegacy` against a peer that
   withholds `CAP_BLIND_ADVERT`, and the iPhone beside a blinding knit-peer), which no run scripts yet, and everything
-  A11 owes.
+  A11 owes. `iphone-wake`, both relaunches and the Pixel's snoop for Service Changed came on 2026-11-12, in the next
+  section.
 
 ## What the writer's relaunches and the locked wake showed
 
@@ -2259,5 +2259,15 @@ clear`).
   one of those sets. The Pixel's sets were not read. That fits the swaps at its edges. At 00:45:14 the iPhone tag-dialed
   the Pixel 3's new, unresolved tag while it held their link. The Pixel refused it (`heldProven=true`), and the held link
   ended 67 ms later. The 13:00:28 swap on 2026-11-11 fits too ("What the blinded-advert writer showed").
-- **Still owed:** a Pixel HCI snoop for Service Changed, the knit-peer trials the dongle section lists, and everything
-  A11 owes.
+- **The Pixel 9 is never told of Service Changed.** Its HCI snoop, pulled with a bugreport, ran from 00:32 to 01:25. It
+  held 23 connections to the iPhone's four addresses, across the 00:45 and 01:00 slot turns and both relaunches. A later
+  run from 01:14 added the switch flipped on, the 01:15 edge, three forced rotations and the flip back. The Pixel wrote
+  the iPhone no ATT Write Request at all, only the doorbell's Write Commands. So it never set the CCCD of the iPhone's
+  Service Changed (value handle `0x0008`, CCCD `0x0009`), and no indication reached it. BlueZ subscribes and was told
+  twice per rotation ("What the writer's dongle runs showed"), and the iPhone subscribes to the Pixel's. The Pixel
+  instead discovers the whole database at each new connection and reads its Database Hash. Within a connection it keeps
+  the handles it found. The doorbell's never moved, so on one connection, from 00:47:02 to 01:03:37, its rings landed at
+  `0x0067` across the 01:00 turn. So `onServiceChanged` never fires toward an iPhone, and a payload read on a connection
+  held across a rotation would go to a handle from before it. Why Android does not subscribe to a peer it has not bonded
+  with was not checked in its source.
+- **Still owed:** the knit-peer trials the dongle section lists, and everything A11 owes.

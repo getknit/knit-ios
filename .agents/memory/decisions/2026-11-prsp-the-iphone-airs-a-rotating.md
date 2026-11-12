@@ -352,8 +352,9 @@ the same, so blinding is not the cause. On 2026-11-12 a cold launch and a restor
 removed the two restored services at the first power-on and served the doorbell's within 0.6 s, and `iphone-wake`
 passed 10 of 10 with the iPhone locked across a slot edge ("What the writer's relaunches and the locked wake showed").
 Both relaunches were forced, and they used two of the slot's three restarts. How often iOS relaunches Knit unprompted
-is still unmeasured, so a relaunch still rotates. Still owed: whether the Pixel is told of Service Changed (an HCI
-snoop on the phone).
+is still unmeasured, so a relaunch still rotates. The Pixel 9's HCI snoop that night showed that the Pixel is told
+of no rotation. It never subscribes to the iPhone's Service Changed, and it finds the handles again at each new
+connection. For rings, the doorbell's fixed handle makes that safe.
 
 Phase 1, our own keys (draft, 2026-11-11): `PresenceKeyPolicyOwnTests`, `PrekeyRingPresenceGenerationTests`,
 `OwnPresenceKeyStoreTests`, `SchemaTests` (v24), `PresenceKeyFrameTests`, `LinkManagerProvenSendTests`,

@@ -573,6 +573,10 @@ explicit direction.** Update this file in the change that ships an item.
         - `BleDoorbell.lookUp` treats a lookup that finds no doorbell within `doorbellSettleMilliseconds` (10 s) of the
           link's open or of `onServiceChanged` as a failure the next ring retries, never `absent`; past it `absent`
           stands.
+        - **No Service Changed reaches a Pixel.** A Pixel never subscribes to an iPhone's Service Changed, so
+          `onServiceChanged` never fires toward one (`linux-peer.md`, "What the writer's relaunches and the locked wake
+          showed"). The settle bound counts from the link's open alone. A payload read never uses a handle found before
+          a rotation: it reads on a fresh connection, or reads the Database Hash first.
         - Android's held-link row and `LinkSilence`'s probe stay inert toward a link whose HELLO carries
           `CAP_DOORBELL`.
         - `dialHeld` keeps working toward such a link. Without it, a stranger iPhone in the foreground could draw the
