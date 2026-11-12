@@ -75,7 +75,15 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   <…> service <serial>`, `ble matched an added service by order, not identity`, `ble looks again at the services of` and
   `ble rung by` from the iPhone, and knit-peer's `bluez ringing`, `bluez could not ring`, `link up <id> on chN`, `link down
   <id> on chN` and `link head start over for <id> `. Both channel-ending tables
-  read `link chN closed: the advert flipped to …` (ADR 2026-11.prsp).
+  read `link chN closed: the advert flipped to …` (ADR 2026-11.prsp). `iphone-blind-reads` reads these Android lines
+  (knit-next `BtLines.kt` at `ee8609502`, the `blind-gatt-reads` contract, §9), so ask knit-next to add a line rather
+  than reword one: `bt gatt read <address> blinded (psm <n>)`, `bt gatt blinded <address> → <id|~handle> (<how>)`,
+  `bt gatt forget <address> (<reason>)` with `edge` among the reasons, `bt gatt confirmed <address> (tag) → <id>`,
+  `bt gatt read <address> → <id> (psm …)` with its `failed (` and `stranger (` forms, `bt gatt confirmed <address> →
+  <id>`, `bt doorbell settling <id> (<n>ms since link up)`, `bt doorbell found <id> `, `bt doorbell absent <id>`,
+  `bt ring <id>`, `bt state … gattBudget=<used>/<n>`, `bt link up: <id> `, `bt link down: <id> (<why>)`,
+  `bt connect ok <id> … sealed=<bool>`, `bt accepted client <id> `, `bt initiating to <key> ` and
+  `bt refused client <id> … blind=legacy`. From the iPhone it reads `ble rung by`.
 - **Admit a relinking dialer out of order, and only then.** For 30 s after the radio closes a proven link, a dialer
   proving that id is admitted whatever the order, unless our own dial or proof to it is open (ADR 2026-09.6es2, amended
   2026-11-11). Android does not do this, so toward an Android above the iPhone a relink still waits for Android's

@@ -106,6 +106,7 @@ python3 scripts/interop.py ratchet --device <serial>              # the ratchet 
 python3 scripts/interop.py iphone-ratchet --device <serial>       # the same with the iPhone, whose ratchet is on unless a Debug launch said -ratchet off; Knit open on both
 python3 scripts/interop.py iphone-rotate --device <serial>        # the blinded advert's probe (ADR 2026-11.prsp): ten forced rotations with the phone and a peer on hci0 linked; iPhone on USB
 python3 scripts/interop.py --keep-blind iphone --device <serial> --edge-wait 900   # a blinding iPhone (its switch on) toward a clear phone, and its TAG_NEXT across a slot edge
+python3 scripts/interop.py iphone-blind-reads --device <Pixel 9> --second-device <Pixel 3>   # A11's trial: two blinding phones, a contact and a stranger, read a blinding iPhone's GATT payload across slot edges; iPhone on USB, unlocked
 python3 scripts/interop.py iphone-soak --device <serial> --peer --extras   # MVP item 11 on the iPhone: an hour, the peer on hci0; Auto-Lock off
 python3 scripts/interop.py iphone-wake --device <serial>          # MVP item 9 from the phone: someone locks the iPhone, a DM a minute
 python3 scripts/interop.py iphone-wake --device <serial> --expect-wakes   # the same from an A4 build, which must ring and wake Knit for every DM

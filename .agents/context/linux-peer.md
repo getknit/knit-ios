@@ -368,6 +368,23 @@ every check after it would pass with nothing to judge.
 The summary lists each rotation's serials, source and whether it aired a random tag. `--btmon PATH` captures dongle B's HCI
 traffic through `knit-hci b btmon` for the handles and any Service Changed indication, which the script does not read.
 
+`iphone-blind-reads` is companion change A11's trial (the `blind-gatt-reads` contract, step 5). It needs no dongle. The
+iPhone's switch goes on for the run, and so do both phones' switches: the contact phone (`--device`, the iPhone's contact
+both ways) and the stranger phone (`--second-device`, which has the iPhone in its contacts but not the other way round).
+It reads each phone's logcat through `LogcatCapture` and the iPhone's log over USB, so Knit has to stay in front and the
+iPhone unlocked. First it stops the iPhone's mesh until both phones forget its payload, then starts it, so the first read
+on each phone is of a tag no link has announced. After that it goes slot by slot. Both phones post every three minutes,
+which rings the iPhone. At each edge it checks that the iPhone announced and turned its tag with both links up. Ninety
+seconds past the edge it cycles each link (`deny-link`, then `allow-link` on the iPhone), so the pair relinks by the new
+slot's tag order. It stops once both dial orders have shown for both phones and `--edges` edges (2) have passed, or after
+`--max-edges` (6). The captures decide the rest. Each read resolves by key on the contact, and under a handle on the
+stranger until its first link. Each link's dialer must match the phone's order, links up 40 s before an edge must still be
+up 70 s after it, and no phone may dial a linked iPhone. The `(tag)` refunds must square with `gattBudget`, rule 4's
+forgets must land 35 to 65 s past each edge, and the seal counters, legacy refusals and rings are checked on all three. A
+lookup before the doorbell's service is up only happens by chance, because a blinding iPhone publishes its listener only
+once that service is served, so `doorbell-settles` stays inconclusive unless one happened. The tag order is random each
+slot, so a run that never saw one side dial counts as inconclusive rather than failed.
+
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter
 cannot be a central and a peripheral at once. It then sends traffic by phase, the way knit-next's lab soak does:

@@ -751,6 +751,252 @@ class BlindingIPhoneTest(unittest.TestCase):
             interop._tag_next_across_edge(FakeAdvertIPhone([near, after]), phone, PHONE, 60)
 
 
+# A slot edge on the wall clock (1 800 000 000 is a multiple of 900 s), and an iPhone's address.
+EDGE = 1_800_000_000.0
+ADDRESS = "4D:93:1A:2B:3C:4D"
+HANDLE = "~zzzz…3"
+
+
+def capture(*lines: tuple[float, str], end: float | None = None) -> list[tuple[float, str]]:
+    """A phone's capture as `LogcatCapture.lines` gives it, ending at `end` with a state line."""
+    return [*lines, *([(end, "bt state links=[] gattBudget=0/12")] if end is not None else [])]
+
+
+def blinded_read(at: float, address: str = ADDRESS) -> tuple[float, str]:
+    return (at, f"bt gatt read {address} blinded (psm 192)")
+
+
+def link(up: float, down: float | None, dialer: str = "phone") -> list[tuple[float, str]]:
+    opened = f"bt connect ok {IPHONE} durMs=700 sealed=true" if dialer == "phone" else f"bt accepted client {IPHONE} (accept, sighted=true)"
+    lines = [(up - 0.5, opened), (up, f"bt link up: {IPHONE} (2 live)")]
+    return lines + ([(down, f"bt link down: {IPHONE} (closed)")] if down is not None else [])
+
+
+class BlindedGattLinesTest(unittest.TestCase):
+    """The harness's reading of Android's blinded GATT lines (the `blind-gatt-reads` contract, §9, at knit-next `ee8609502`)."""
+
+    def test_a_blinded_read_ends_a_read_and_names_no_node(self) -> None:
+        blinded = interop.GATT_READ_END.match(f"bt gatt read {ADDRESS} blinded (psm 192)")
+        clear = interop.GATT_READ_END.match(f"bt gatt read {ADDRESS} → {IPHONE} (psm 192)")
+        self.assertEqual(blinded and (blinded.group(1), blinded.group(2), blinded.group(3)), (ADDRESS, None, "blinded"))
+        self.assertEqual(clear and (clear.group(2), clear.group(3)), (IPHONE, None))
+        for line in (f"bt gatt read {ADDRESS} failed (connect)", f"bt gatt read {ADDRESS} stranger (malformed-blinded)"):
+            self.assertIsNotNone(interop.GATT_READ_END.match(line))
+
+    def test_the_refunds_keep_apart(self) -> None:
+        tagged = f"bt gatt confirmed {ADDRESS} (tag) → {IPHONE}"
+        self.assertIsNone(interop.GATT_CONFIRMED.match(tagged))
+        self.assertIsNotNone(interop.GATT_CONFIRMED_TAG.match(tagged))
+        lines = [blinded_read(EDGE), (EDGE + 1, f"bt gatt confirmed {ADDRESS} → {IPHONE}")]
+        self.assertEqual(len(interop._charged_reads(lines)), 1, "a clear refund never takes a blinded charge")
+        self.assertEqual(interop._charged_reads([*lines, (EDGE + 2, tagged)]), [])
+        clear = [(EDGE, f"bt gatt read {ADDRESS} → {IPHONE} (psm 192)"), (EDGE + 1, tagged)]
+        self.assertEqual(len(interop._charged_reads(clear)), 1, "a tag refund never takes a clear charge")
+
+    def test_a_blinded_read_holds_its_address(self) -> None:
+        phone = mock.Mock()
+        lines = [f"bt gatt read {ADDRESS} blinded (psm 192)"]
+        with mock.patch.object(interop, "_phone_log", return_value=lines), mock.patch.object(interop.time, "sleep"):
+            with self.assertRaises(TimeoutError):
+                interop._address_released(phone, ADDRESS, 0)
+            lines.append(f"bt gatt forget {ADDRESS} (edge)")
+            interop._address_released(phone, ADDRESS, 0)
+
+    def test_the_payloads_held_for_the_iphone(self) -> None:
+        lines = [
+            f"bt gatt read {ADDRESS} blinded (psm 192)",
+            f"bt gatt read 11:22:33:44:55:66 → {IPHONE} (psm 192)",
+            "bt gatt read 77:88:99:AA:BB:CC blinded (psm 193)",
+            "bt gatt forget 77:88:99:AA:BB:CC (dial)",
+            f"bt gatt read 11:22:33:44:55:66 → {PHONE} (psm 131)",
+        ]
+        self.assertEqual(interop._ios_payloads_held(lines, IPHONE), {ADDRESS})
+
+
+class EdgeForgetsTest(unittest.TestCase):
+    """Rule 4 judged from a phone's capture: 35 to 65 s past the first edge after the read."""
+
+    def judge(self, *lines: tuple[float, str], end: float = EDGE + 2000) -> dict:
+        return interop._edge_forgets(capture(*lines, end=end), IPHONE)
+
+    def forget(self, past: float) -> tuple[float, str]:
+        return (EDGE + 900 + past, f"bt gatt forget {ADDRESS} (edge)")
+
+    def test_a_forget_inside_the_window_is_on_time(self) -> None:
+        self.assertEqual(self.judge(blinded_read(EDGE + 100), self.forget(50))["onTime"], 1)
+
+    def test_an_early_a_late_and_a_second_forget_fail(self) -> None:
+        for lines in ((self.forget(20),), (self.forget(100),), (self.forget(40), self.forget(50))):
+            with self.subTest(lines=lines), self.assertRaises(RuntimeError):
+                self.judge(blinded_read(EDGE + 100), *lines)
+
+    def test_a_late_forget_a_link_spared_passes(self) -> None:
+        detail = self.judge(blinded_read(EDGE + 100), *link(EDGE + 200, EDGE + 900 + 110), self.forget(115))
+        self.assertEqual(detail["spared"], 1)
+
+    def test_a_payload_never_forgotten_past_its_window_fails_unless_read_again_or_spared(self) -> None:
+        with self.assertRaises(RuntimeError):
+            self.judge(blinded_read(EDGE + 100), end=EDGE + 900 + 100)
+        again = self.judge(blinded_read(EDGE + 100), blinded_read(EDGE + 960), self.forget(900 + 50), end=EDGE + 2000)
+        self.assertEqual(again["onTime"], 1)
+        spared = self.judge(blinded_read(EDGE + 100), *link(EDGE + 200, None), self.forget(300), end=EDGE + 1300)
+        self.assertEqual(spared["spared"], 1)
+
+    def test_nothing_to_judge_is_inconclusive(self) -> None:
+        with self.assertRaises(interop.Inconclusive):
+            self.judge(blinded_read(EDGE + 100), end=EDGE + 300)
+
+
+class BlindedRefundsTest(unittest.TestCase):
+    def judge(self, *lines: tuple[float, str]) -> dict:
+        return interop._blinded_refunds(capture(*lines, end=EDGE + 800), IPHONE)
+
+    def refund(self, at: float) -> tuple[float, str]:
+        return (at, f"bt gatt confirmed {ADDRESS} (tag) → {IPHONE}")
+
+    def test_a_link_refunds_its_slots_read(self) -> None:
+        self.assertEqual(self.judge(blinded_read(EDGE + 100), *link(EDGE + 130, None), self.refund(EDGE + 130.2))["refunded"], 1)
+
+    def test_a_link_that_leaves_its_read_charged_fails(self) -> None:
+        with self.assertRaises(RuntimeError):
+            self.judge(blinded_read(EDGE + 100), *link(EDGE + 130, None))
+
+    def test_a_read_at_the_slots_start_is_excused_and_a_relink_from_a_refunded_read_skipped(self) -> None:
+        with self.assertRaises(interop.Inconclusive):
+            self.judge(blinded_read(EDGE + 20), *link(EDGE + 60, None))
+        detail = self.judge(blinded_read(EDGE + 100), *link(EDGE + 130, EDGE + 200), self.refund(EDGE + 130.2), *link(EDGE + 260, None))
+        self.assertEqual(detail["refunded"], 1)
+
+
+class BudgetAgreesTest(unittest.TestCase):
+    def state(self, at: float, used: int) -> tuple[float, str]:
+        return (at, f"bt state links=[] gattReads=3 gattBudget={used}/12")
+
+    def test_the_budget_counts_charges_less_refunds(self) -> None:
+        lines = [
+            (EDGE, "bt state links=[] gattBudget=0/12"),
+            blinded_read(EDGE + 10),
+            (EDGE + 11, f"bt gatt confirmed {ADDRESS} (tag) → {IPHONE}"),
+            (EDGE + 20, "bt gatt read 01:02:03:04:05:06 stranger (no-service)"),
+            self.state(EDGE + 300, 1),
+            self.state(EDGE + 700, 0),
+        ]
+        self.assertEqual(interop._budget_agrees(lines)["checked"], 3)
+
+    def test_a_budget_that_disagrees_fails_and_reads_before_the_capture_may_add(self) -> None:
+        with self.assertRaises(RuntimeError):
+            interop._budget_agrees([(EDGE, "bt state x"), blinded_read(EDGE + 10), self.state(EDGE + 300, 0)])
+        self.assertEqual(interop._budget_agrees([self.state(EDGE, 4)])["mostUsed"], 4)
+
+
+class BlindResolutionsTest(unittest.TestCase):
+    def resolved(self, at: float, key: str, how: str) -> tuple[float, str]:
+        return (at, f"bt gatt blinded {ADDRESS} → {key} ({how})")
+
+    def test_the_contact_resolves_by_key_alone(self) -> None:
+        self.assertEqual(interop._contact_resolves(interop._gatt_resolutions([self.resolved(EDGE, IPHONE, "key")]), IPHONE, False)["resolutions"], {"key": 1})
+        held = interop._gatt_resolutions([self.resolved(EDGE, IPHONE, "key"), self.resolved(EDGE + 1, HANDLE, "handle")])
+        with self.assertRaises(RuntimeError):
+            interop._contact_resolves(held, IPHONE, False)
+        self.assertEqual(interop._contact_resolves(held, IPHONE, True)["resolutions"], {"key": 1, "handle": 1})
+
+    def test_the_stranger_holds_a_handle_until_its_first_link_and_never_resolves_by_key(self) -> None:
+        good = interop._gatt_resolutions([self.resolved(EDGE, HANDLE, "handle"), self.resolved(EDGE + 500, IPHONE, "claim")])
+        self.assertEqual(interop._stranger_resolves(good, IPHONE, EDGE + 100)["laterByClaimOrHint"], 1)
+        for lines, first in (
+            ([self.resolved(EDGE, IPHONE, "key")], None),
+            ([self.resolved(EDGE, IPHONE, "claim")], EDGE + 100),
+            ([self.resolved(EDGE, HANDLE, "handle"), self.resolved(EDGE + 500, PHONE, "hint")], EDGE + 100),
+        ):
+            with self.subTest(lines=lines), self.assertRaises(RuntimeError):
+                interop._stranger_resolves(interop._gatt_resolutions(lines), IPHONE, first)
+
+
+class BlindLinksTest(unittest.TestCase):
+    def test_each_link_and_its_dialer(self) -> None:
+        links = interop._ios_links([*link(EDGE, EDGE + 10), *link(EDGE + 20, None, dialer="iphone")], IPHONE)
+        self.assertEqual([(entry["dialer"], entry["why"]) for entry in links], [("phone", "closed"), ("iphone", None)])
+
+    def test_a_link_held_across_an_edge_and_one_dropped_there(self) -> None:
+        held = capture(*link(EDGE - 600, None), end=EDGE + 900 + 100)
+        self.assertEqual(interop._held_across_edges(interop._ios_links(held, IPHONE), held, 2)["edgesHeld"], 2)
+        dropped = capture(*link(EDGE - 600, EDGE + 30), end=EDGE + 100)
+        with self.assertRaises(RuntimeError):
+            interop._held_across_edges(interop._ios_links(dropped, IPHONE), dropped, 1)
+        with self.assertRaises(interop.Inconclusive):
+            interop._held_across_edges(interop._ios_links(held, IPHONE), held, 3)
+
+    def test_a_dial_to_the_linked_iphone_by_id_or_handle_is_a_redial(self) -> None:
+        resolved = (EDGE - 10, f"bt gatt blinded {ADDRESS} → {HANDLE} (handle)")
+        crossing = (EDGE - 1, f"bt initiating to {HANDLE} (psm 192 rssi=-60 a2dp=false links=1)")
+        self.assertEqual(interop._no_android_redials([resolved, crossing, *link(EDGE, None)], IPHONE), {"keys": 2})
+        for key in (IPHONE, HANDLE):
+            dial = (EDGE + 5, f"bt initiating to {key} (psm 192 rssi=-60 a2dp=false links=1)")
+            with self.subTest(key=key), self.assertRaises(RuntimeError):
+                interop._no_android_redials([resolved, *link(EDGE, None), dial], IPHONE)
+
+    def test_both_orders_wants_a_dial_each_way_by_the_order(self) -> None:
+        self.assertEqual(interop._both_orders([{"dialer": "phone"}, {"dialer": "iphone"}])["headStarts"], 0)
+        with self.assertRaises(interop.Inconclusive):
+            interop._both_orders([{"dialer": "phone"}, {"dialer": "iphone", "outcome": "tag dial"}])
+
+
+class BlindDoorbellAndSealTest(unittest.TestCase):
+    def test_a_settle_must_find_the_doorbell(self) -> None:
+        settle = (EDGE, f"bt doorbell settling {IPHONE} (3100ms since link up)")
+        found = (EDGE + 7, f"bt doorbell found {IPHONE} ({ADDRESS})")
+        self.assertEqual(interop._doorbell_settles([settle, found], IPHONE), {"settles": 1})
+        with self.assertRaises(RuntimeError):
+            interop._doorbell_settles([settle], IPHONE)
+        with self.assertRaises(RuntimeError):
+            interop._doorbell_settles([settle, (EDGE + 10, f"bt doorbell absent {IPHONE}")], IPHONE)
+        with self.assertRaises(interop.Inconclusive):
+            interop._doorbell_settles([found], IPHONE)
+
+    def test_every_phone_ring_is_heard(self) -> None:
+        rings = {"contact": [(EDGE, f"bt ring {IPHONE}")] * 3, "stranger": [(EDGE, f"bt ring {IPHONE}")]}
+        self.assertEqual(interop._blind_rings_heard(rings, IPHONE, 5)["heard"], 5)
+        with self.assertRaises(RuntimeError):
+            interop._blind_rings_heard(rings, IPHONE, 3)
+
+    def test_the_seal_on_both_ends(self) -> None:
+        before = {"linksSealed": 2, "linkSealFailed": 0, "linkSealRefused": 0}
+        after = {"linksSealed": 5, "linkSealFailed": 0, "linkSealRefused": 0}
+        self.assertEqual(interop._ios_sealed(after, before, 3)["linkUps"], 3)
+        with self.assertRaises(RuntimeError):
+            interop._ios_sealed(after, before, 4)
+        with self.assertRaises(RuntimeError):
+            interop._ios_sealed({**after, "linkSealRefused": 1}, before, 3)
+        plain = [(EDGE, f"bt connect ok {IPHONE} durMs=500 sealed=false")]
+        with self.assertRaises(RuntimeError):
+            interop._phone_sealed(after, before, plain, IPHONE)
+        self.assertEqual(interop._phone_sealed(after, before, [], IPHONE)["linksSealed"], 3)
+
+    def test_a_legacy_refusal_on_either_side_fails(self) -> None:
+        refused = {"contact": [(EDGE, f"bt refused client {IPHONE} (refuse, blind=legacy)")]}
+        with self.assertRaises(RuntimeError):
+            interop._no_legacy(refused, IPHONE, {}, {})
+        with self.assertRaises(RuntimeError):
+            interop._no_legacy({"contact": []}, IPHONE, {"refusedLegacy": 1}, {"refusedLegacy": 2})
+        self.assertEqual(interop._no_legacy({"contact": []}, IPHONE, {}, {}), {})
+
+
+class BlindingAdvertsTest(unittest.TestCase):
+    """`ClearAdverts` with `blind`, as `iphone-blind-reads` holds both its phones."""
+
+    def test_a_clear_phone_blinds_for_the_run_and_a_blinding_one_is_left_alone(self) -> None:
+        clear = FakeAdvertPhone("p3", [advert(False, False), {"applied": True}, {"applied": True}])
+        blinding = FakeAdvertPhone("p9", [advert(None, True)])
+        with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(interop.time, "sleep"), interop.ClearAdverts([clear, blinding], blind=True):
+            pass
+        self.assertEqual(clear.calls, [{}, {"blind": True}, {"blind": False}])
+        self.assertEqual(blinding.calls, [{}])
+
+    def test_the_run_holds_its_own_iphone_switch(self) -> None:
+        self.assertIn("iphone-blind-reads", interop.BLINDING_RUNS)
+        self.assertNotIn("iphone-blind-reads", interop.IPHONE_LEGACY_RUNS)
+
+
 class TopLevelNamesTest(unittest.TestCase):
     """A second `def` of a module-level name silently replaces the first for every caller, as the ratchet's `_counted`
     once replaced the link counter and crashed every `--links` run."""

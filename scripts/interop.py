@@ -33,6 +33,8 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-reboot [--restart] [--locked 120] [--closed 60] [--skip-relaunch] [--udid UDID]
     scripts/interop.py iphone-rings [--udid UDID]
     scripts/interop.py iphone-rotate --device SERIAL [--rotations 10] [--rotate-wait 300] [--btmon PATH] [--udid UDID]
+    scripts/interop.py iphone-blind-reads --device SERIAL --second-device SERIAL [--edges 2] [--max-edges 6] [--no-relink]
+                                [--udid UDID]
     scripts/interop.py android-reads --device SERIAL [--order peer-below|peer-above] [--link-timeout 180] [--links N] [--hci0]
     scripts/interop.py android-forgets --device SERIAL [--link-timeout 180] [--quiet-timeout 600]
     scripts/interop.py android-strangers --device SERIAL --variant none|forged [--minutes 30] [--rotate 20] [--cycle 180] [--known IDS]
@@ -76,7 +78,9 @@ the doorbell rings an iPhone sends, and `android-rings` those an Android phone s
 is dialed, by the id order. `android-strangers` is knit-next #154's: beside a device rotating its address under
 `0xFE30`, the phone's GATT reads stay within their budget and its dials never wait behind them (knit-ios #3).
 `iphone-rotate` is ADR 2026-11.prsp's Phase 3 probe: forced rotations of a blinding iPhone, with the phone and knit-peer's
-`ios` profile on hci0 linked and ringing it, judged from the iPhone's log.
+`ios` profile on hci0 linked and ringing it, judged from the iPhone's log. `iphone-blind-reads` is companion change A11's:
+two blinding phones, a contact of the blinding iPhone's and a stranger to it, read its blinded GATT payload, resolve it,
+link to it in both dial orders across slot edges, and are refunded, forget it and ring it by the contract's rules.
 
 `--mac` runs the peer on the Mac instead of hci1, on CoreBluetooth, the iPhone's own radio: checklist M (ADR
 2026-09.vcdk). It always runs the `ios` profile, in the Mac's desktop session through `scripts/mac-peer.sh`, and the
@@ -92,7 +96,8 @@ installs or launches anything: it wakes the phone, asks its bridge to scan, send
 Every phone a run names (`--device`, `--second-device`, `--quiet`, `--quiet-phone`) airs its node id for the run: a
 debug build since knit-next `b66cfa828` airs a rotating tag instead (ADR 2026-11.xp6d), and every judgment here reads
 advertised ids. The run turns the bridge's `ADVERT` switch off and puts it back when it ends, a Ctrl-C or a SIGTERM
-included; `--keep-blind`, before the command, leaves it as the build has it. The iPhone a run drives airs its id too:
+included; `--keep-blind`, before the command, leaves it as the build has it. `iphone-blind-reads` holds both its phones'
+switches on instead, and the iPhone's, and puts back what it found the same way. The iPhone a run drives airs its id too:
 the run turns its bridge's `advert` switch off when it was on, and puts it back after with Knit brought forward by the
 Mac's devicectl, a note in ~/.local/state/knit/ covering a run that died first (ADR 2026-11.prsp). A scan leaves out the tags other phones air,
 and says how many it heard: such a phone dials every peer, so clear its advert too or take it away.
@@ -320,15 +325,18 @@ class ClearAdverts:
     only `iphone` judges a blinding phone's links, and the rest still expect ids.
 
     A switch the phone already holds off (`switch.stored` false, left there by an earlier harness) stays off, and a
-    phone whose transport is down stores the switch for its next start (`why: transport not running`)."""
+    phone whose transport is down stores the switch for its next start (`why: transport not running`). `blind=True`
+    holds each phone's switch on instead, for `iphone-blind-reads`, the run that judges two blinding phones (companion
+    change A11): a phone already airing a tag is left alone."""
 
     # What a store answers when the air did not change and need not have: the switch waits for the next start or
     # bring-up, or this build or controller never blinds.
     SETTLED = frozenset({"transport not running", "radio down", "no extended advertising", "no mark store", "build"})
 
-    def __init__(self, phones: list[Phone], keep: bool = False) -> None:
+    def __init__(self, phones: list[Phone], keep: bool = False, blind: bool = False) -> None:
         self.phones = phones
         self.keep = keep
+        self.blind = blind
         self.restore: list[tuple[Phone, bool | None]] = []
 
     def __enter__(self) -> Self:
@@ -338,11 +346,11 @@ class ClearAdverts:
                 if reply is None:
                     continue
                 stored = (reply.get("switch") or {}).get("stored")
-                if stored is False and not reply.get("blinding"):
+                if bool(reply.get("blinding")) is self.blind and (self.blind or stored is False):
                     continue
                 self.restore.append((phone, stored))
-                self._store(phone, blind=False)
-                print(json.dumps({"advert": phone.serial, "blind": False, "stored": stored}), flush=True)
+                self._store(phone, blind=self.blind)
+                print(json.dumps({"advert": phone.serial, "blind": self.blind, "stored": stored}), flush=True)
         except BaseException:
             # The phones already turned off are put back before the error goes up.
             self.__exit__()
@@ -367,7 +375,7 @@ class ClearAdverts:
                 return
             if attempt == 0:
                 time.sleep(3)
-        raise RuntimeError(f"{phone.serial}'s advert did not go clear: {reply}")
+        raise RuntimeError(f"{phone.serial}'s advert did not go {'blind' if blind else 'clear'}: {reply}")
 
 
 # Where a run notes the iPhone's advert switch it found before it moved it, until it has put it back: the next run puts
@@ -531,6 +539,10 @@ IPHONE_LEGACY_RUNS = frozenset(
         "iphone-peer", "iphone-forgets", "iphone-soak", "iphone-scan", "iphone-seek", "iphone-relay", "iphone-group",
     }
 )
+
+
+# The runs that judge blinding phones, whose switches `ClearAdverts` holds on instead of off.
+BLINDING_RUNS = frozenset({"iphone-blind-reads"})
 
 
 def driven_phones(arguments: argparse.Namespace) -> list[Phone]:
@@ -1350,10 +1362,10 @@ def _ios_no_legacy(phone: Phone, ios: IPhone, before: dict) -> dict:
     return {}
 
 
-def _tag_next_across_edge(ios: IPhone, phone: Phone, phone_id: str, wait: float) -> dict:
+def _tag_next_across_edge(ios: IPhone, phone: Phone, phone_id: str, wait: float, pause: Callable[[float], None] = time.sleep) -> dict:
     """Across the next slot edge, within `wait` seconds: the iPhone announced its coming tag and rotated at the edge, the
     phone took the announcement (its link to the iPhone is known by a tag from the edge on, `links[].blinded`), and the
-    link held."""
+    link held. `pause` waits out the edge, so a run can post while it does (`iphone-blind-reads`)."""
     before = ios.advert() or {}
     edge = before.get("nextEdgeAtMs")
     if edge is None:
@@ -1361,7 +1373,7 @@ def _tag_next_across_edge(ios: IPhone, phone: Phone, phone_id: str, wait: float)
     left = edge / 1000 - time.time() + 45
     if left > wait:
         raise Inconclusive(f"the next slot edge is {round(left)} s away, past --edge-wait")
-    time.sleep(max(0.0, left))
+    pause(max(0.0, left))
     after = ios.advert() or {}
     counted = {key: (after.get("counters") or {}).get(key, 0) - (before.get("counters") or {}).get(key, 0) for key in ("tagNextAnnounced", "rotationsBySlot")}
     if not counted["tagNextAnnounced"] or not counted["rotationsBySlot"]:
@@ -2246,6 +2258,605 @@ def _rings_heard(entries: Callable[[], list[dict]], phone: Phone, ios_id: str, p
     return detail
 
 
+# Android's lines for a blinded GATT payload that `iphone-blind-reads` reads (the `blind-gatt-reads` contract, §9;
+# knit-next `BtLines.kt` at `ee8609502`), all at info, none printing a tag, frozen in .agents/rules/interop.md: a blinded
+# read's end, how its sighting resolved, a payload's forget with its reason (`edge` for rule 4), and the doorbell's settle.
+# `<how>` is `key`, `claim`, `hint`, `handle`, `own`, `replayed` or `malformed`; a blinded form never reaches `clear`.
+GATT_READ_BLINDED = re.compile(r"^bt gatt read (\S+) blinded \(psm (\d+)\)")
+GATT_BLINDED = re.compile(r"^bt gatt blinded (\S+) → (\S+) \((\w+)\)$")
+GATT_FORGET = re.compile(r"^bt gatt forget (\S+) \((.+)\)$")
+DOORBELL_SETTLING = "bt doorbell settling "
+# A tag's slot on the wall clock (`BlindTag.SLOT_MS`), and rule 4's forget past the first edge after a read: 30 s, an
+# announced rotation's least lead, and 5 s of a writer's clock, then up to 30 s of jitter (`GattPayloads.swift`).
+SLOT_SECONDS = 900
+EDGE_FORGET_FROM = 35.0
+EDGE_FORGET_TO = 65.0
+# How late past that window a forget may land with nothing sparing the address: rule 4 runs at an advert from the address
+# or at the end of a scan window, whichever comes first.
+EDGE_FORGET_GRACE = 20.0
+# How long past an edge `iphone-blind-reads` cycles its links: past rule 4's window, and 20 s clear of the 70 s past the
+# edge that `_held_across_edges` judges on the phone's clock.
+RELINK_AFTER_EDGE = 90.0
+# How long before an edge the iPhone's counters are read, so that its `TAG_NEXT`, sent about 210 s ahead ("What the
+# blinded-advert writer showed"), counts at that edge.
+EDGE_LEAD = 300.0
+
+
+def iphone_blind_reads(arguments: argparse.Namespace) -> int:
+    """Companion change A11's device trial (the `blind-gatt-reads` contract, step 5; ADR 2026-11.prsp): a blinding iPhone
+    beside two blinding Android phones that read its blinded GATT payload as a blinded sighting. `--device` is the contact
+    phone, the iPhone's contact both ways, and `--second-device` the stranger phone, in the iPhone's contacts while the
+    iPhone is not in its own. The run holds the iPhone's switch on (`IPhoneAdvert`) and each phone's on too
+    (`ClearAdverts`, `blind`), and puts back what it found after. It reads the phones' logcat through `LogcatCapture` and
+    the iPhone's log over USB, so the iPhone must be on USB with Knit in front and unlocked for the whole run, which
+    crosses at least `--edges` slot edges and stops after `--max-edges`.
+
+    It stops the iPhone's mesh until each phone forgets the payloads it held for the iPhone (rule 3), then starts it, so
+    each phone's first read of the run is of a bring-up's tag that no link announced. Then, slot by slot, both phones post
+    to the room every `--post-every` seconds, which rings the iPhone; the iPhone announces its next tag and turns it at
+    the edge with both links held; and 90 s past the edge each link is cycled (the iPhone denies the phone, then allows
+    it), so it comes back by the new slot's tag order. The run ends once both phones have linked in both dial orders and
+    `--edges` edges have passed. Only an iPhone serves a GATT payload, and the lab has one, so every blinded read the
+    phones log is taken to be its.
+
+    It judges, from the phones' captures unless named otherwise:
+    - **Resolution:** the contact phone resolved every read by key, to the iPhone (a random tag, past the slot's restarts,
+        may be held under a handle); the stranger phone never by key, and under a handle until its first link to the iPhone.
+    - **Links:** each one's dialer against the phone's own order (`_blind_dialed_by`, a head start reported), both dial
+        orders for each phone, each link up 40 s before an edge still up 70 s past it, no dial to the iPhone (its id or a
+        handle a blinded read gave it) while linked, and no legacy refusal on either side.
+    - **The refund:** each link that came up in the slot of the last blinded read before it, while that read's charge
+        stood, refunded it (`bt gatt confirmed <address> (tag) → <iPhone>`), and every `bt state` line's `gattBudget`
+        agrees with the charges and refunds the capture shows. Everything else that charges the budget (strangers under
+        `0xFE30`, knit-peer, the iPhone's address changes, rule 1, 2 and 4's re-reads) logs a read the count includes.
+    - **Rule 4:** each `bt gatt forget <address> (edge)` 35 to 65 s past the first edge after the address's last blinded
+        read, or later while a link or a dial to the iPhone spared it; none twice for one edge; none missed.
+    - **The seal:** `linksSealed` rose on all three, by at least the iPhone's links to the phones on the iPhone, with no
+        `linkSealFailed` or `linkSealRefused` anywhere, and no plain `bt connect ok` to the iPhone.
+    - **The doorbell:** the iPhone logged `ble rung by` at least as often as the phones logged `bt ring` for it, and no
+        phone found its doorbell absent. A `bt doorbell settling` line must be followed by `bt doorbell found`. The run
+        cannot make one: a blinding iPhone publishes its listener only once it serves the doorbell's service
+        (`GattServing.mayPublish`), so a phone looks the doorbell up before it is served only by chance, and the step is
+        inconclusive without one."""
+    phones = {"contact": Phone(arguments.device), "stranger": Phone(arguments.second_device)}
+    run = Run()
+    nonce = secrets.token_hex(3)
+    udid, host = arguments.udid, arguments.host
+    ids = {label: phone.state()["self"]["nodeId"] for label, phone in phones.items()}
+    for label, phone in phones.items():
+        run.step(f"{label}-blinds", lambda phone=phone: _phone_blinds(phone))
+        run.step(f"{label}-budgets-reads", lambda phone=phone: _budgets_gatt_reads(phone))
+    captures = {label: LogcatCapture(phone, ROOT / ".build" / f"interop-blind-reads-{nonce}-{label}.log") for label, phone in phones.items()}
+    with IPhoneAdvert(lambda: _bridge_up(IPhone(udid, host)), want=True, front=lambda: _front(udid)):
+        ios = _bridge_up(IPhone(udid, host))
+        knit = _iphone_log(ios, f"interop-blind-reads-{nonce}.log")
+        if knit is None:
+            ios.stop()
+            raise SystemExit("iphone-blind-reads reads the iPhone's log over USB: connect it")
+        print(json.dumps({"run": "iphone-blind-reads", "iphone": ios.node_id, **ids}), flush=True)
+        stop = threading.Event()
+        kept_off: set[str] = set()
+        threading.Thread(target=_keep_to, args=(ios, set(ids.values()), kept_off, stop, "iphone"), daemon=True).start()
+        held = {label: _ios_payloads_held(_phone_lines(phone), ios.node_id) for label, phone in phones.items()}
+        for label, phone in phones.items():
+            phone.shell("logcat -c")
+            captures[label].start()
+        poster = _Poster(phones, nonce, arguments.post_every)
+        records: dict[str, list[dict]] = {label: [] for label in phones}
+        edges: list[float] = []
+        random_tags = False
+        try:
+            run.step("iphone-blinds", lambda: _airs_tag(ios.advert() or {}))
+            before = _blind_counters(ios, phones)
+            started = time.time()
+            mark = time.monotonic()
+            run.step("fresh-reads", lambda: _fresh_reads(ios, phones, captures, held, arguments.quiet_timeout))
+            for label, phone in phones.items():
+                record = run.step(f"link-{label}", lambda label=label, phone=phone: _blind_link(ios, phone, ids[label], knit, started, arguments.link_timeout))
+                if record:
+                    records[label].append(record)
+            while len(edges) < arguments.max_edges:
+                if ios.lost is not None:
+                    run.step("bridge-held", lambda: _fail("the iPhone's bridge closed: Knit was suspended or crashed"))
+                    break
+                random_tags |= (ios.advert() or {}).get("resolvable") is False
+                edge = _next_edge(ios)
+                poster.hold(edge - EDGE_LEAD - time.time())
+                index = len(edges) + 1
+                run.step(f"edge-{index}-turned", lambda edge=edge: _edge_turned(ios, phones, ids, edge, poster.hold))
+                poster.hold(edge + RELINK_AFTER_EDGE - time.time())
+                edges.append(edge)
+                random_tags |= (ios.advert() or {}).get("resolvable") is False
+                if not arguments.no_relink:
+                    for label, phone in phones.items():
+                        cycled = time.time()
+                        step = f"edge-{index}-relink-{label}"
+                        record = run.step(step, lambda label=label, phone=phone, cycled=cycled: _relink(ios, phone, ids[label], knit, cycled, arguments.link_timeout))
+                        if record:
+                            records[label].append(record)
+                if len(edges) >= arguments.edges and all(_by_order(records[label]) == {"phone", "iphone"} for label in phones):
+                    break
+            poster.hold(30)
+            after = run.step("counters-after", lambda: _blind_counters(ios, phones)) or {}
+            lines = {label: capture.lines() for label, capture in captures.items()}
+            ups = len(ios.lines(lambda line: line.get("event") == "link" and line.get("up") and line.get("peer") in ids.values() and line["_at"] > mark))
+            knit.file.flush()
+            rung_by = sum(entry["message"].startswith(RUNG_BY) for entry in IPhoneLog.entries(knit.path) if entry.get("ms", 0) >= started * 1000)
+            first_link = next((link["up"] for link in _ios_links(lines["stranger"], ios.node_id)), None)
+            run.step("contact-resolves-by-key", lambda: _contact_resolves(_gatt_resolutions(lines["contact"]), ios.node_id, random_tags))
+            run.step("stranger-holds-a-handle", lambda: _stranger_resolves(_gatt_resolutions(lines["stranger"]), ios.node_id, first_link))
+            for label in phones:
+                ours = lines[label]
+                run.step(f"{label}-both-orders", lambda label=label: _both_orders(records[label]))
+                run.step(f"{label}-held-across-edges", lambda ours=ours: _held_across_edges(_ios_links(ours, ios.node_id), ours, arguments.edges))
+                run.step(f"{label}-no-redial-while-linked", lambda ours=ours: _no_android_redials(ours, ios.node_id))
+                run.step(f"{label}-refunds", lambda ours=ours: _blinded_refunds(ours, ios.node_id))
+                run.step(f"{label}-budget-agrees", lambda ours=ours: _budget_agrees(ours))
+                run.step(f"{label}-edge-forgets", lambda ours=ours: _edge_forgets(ours, ios.node_id))
+                run.step(f"{label}-sealed", lambda label=label, ours=ours: _phone_sealed(after.get(label, {}), before[label], ours, ios.node_id))
+                run.step(f"{label}-doorbell-settles", lambda ours=ours: _doorbell_settles(ours, ios.node_id))
+            run.step("iphone-sealed", lambda: _ios_sealed(after.get("iphone", {}), before["iphone"], ups))
+            run.step("no-legacy", lambda: _no_legacy(lines, ios.node_id, before["advert"], after.get("advert", {})))
+            run.step("rings-heard", lambda: _blind_rings_heard(lines, ios.node_id, rung_by))
+        finally:
+            stop.set()
+            for node in sorted(kept_off):
+                try:
+                    ios.command(cmd="allow-link", peer=node)
+                except (TimeoutError, OSError):
+                    pass
+            for capture in captures.values():
+                capture.stop()
+            ios.stop()
+            knit.stop()
+    links = {label: [{key: record.get(key) for key in ("dialer", "expected", "outcome")} for record in records[label]] for label in phones}
+    summary = {"summary": "iphone-blind-reads", "steps": run.steps, "failed": run.failed, "inconclusive": run.inconclusive, "edges": len(edges)}
+    print(json.dumps({**summary, "links": links, "posts": poster.count}))
+    return run.failed
+
+
+def _phone_blinds(phone: Phone) -> dict:
+    """The phone airs a tag: what its `ADVERT` says once `ClearAdverts` held its switch on."""
+    reply = phone.advert()
+    if reply is None or not reply.get("blinding"):
+        raise RuntimeError(f"the phone airs no tag: form={(reply or {}).get('form')} extendedAdvertising={(reply or {}).get('extendedAdvertising')}")
+    return {"form": reply.get("form"), "keyHeld": reply.get("keyHeld")}
+
+
+class _Poster:
+    """Keeps both phones awake through a wait, and has each post to the room every `every` seconds, which rings the
+    iPhone over each link that is up. A phone adb cannot reach for one post is noted, not failed."""
+
+    def __init__(self, phones: dict[str, Phone], nonce: str, every: float) -> None:
+        self.phones = phones
+        self.nonce = nonce
+        self.every = every
+        self.count = 0
+        self.next_at = 0.0
+
+    def hold(self, seconds: float) -> None:
+        end = time.monotonic() + seconds
+        while (left := end - time.monotonic()) > 0:
+            posting = time.monotonic() >= self.next_at
+            if posting:
+                self.count += 1
+                self.next_at = time.monotonic() + self.every
+            for label, phone in self.phones.items():
+                try:
+                    phone.wake()
+                    if posting:
+                        phone.send(f"interop blind reads {self.nonce} {self.count} from the {label} phone")
+                except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError) as error:
+                    print(json.dumps({"note": f"the {label} phone missed a post", "error": str(error)[:200]}), flush=True)
+            time.sleep(max(0.0, min(left, 30.0, self.next_at - time.monotonic())))
+
+
+def _blind_counters(ios: IPhone, phones: dict[str, Phone]) -> dict:
+    """The seal counts of the iPhone (`status`) and each phone (`STATE`'s metrics), and the iPhone's writer counts."""
+    counts = {label: _phone_metrics(phone) for label, phone in phones.items()}
+    return {**counts, "iphone": ios.command(cmd="status"), "advert": (ios.advert() or {}).get("counters") or {}}
+
+
+def _ios_payloads_held(lines: list[str], node: str) -> set[str]:
+    """The addresses whose GATT payload the phone holds for the iPhone `node`, from its log: a clear read naming it, or a
+    blinded read, with no forget or read of another node after it."""
+    held: set[str] = set()
+    for message in lines:
+        if blinded := GATT_READ_BLINDED.match(message):
+            held.add(blinded.group(1))
+        elif ended := GATT_READ_END.match(message):
+            (held.add if ended.group(2) == node else held.discard)(ended.group(1))
+        elif forgot := GATT_FORGET.match(message):
+            held.discard(forgot.group(1))
+    return held
+
+
+def _fresh_reads(ios: IPhone, phones: dict[str, Phone], captures: dict[str, LogcatCapture], held: dict[str, set[str]], timeout: float) -> dict:
+    """Stops the iPhone's mesh until each phone has forgotten every payload it held for the iPhone, a minute of scanning
+    without hearing its address at the least (rule 3), then starts it: a bring-up airs a new restart's tag, which no link
+    announced. A payload still held at `timeout` is reported, and the run goes on."""
+    stopped = time.time()
+    ios.command(cmd="stop")
+    left: dict[str, list[str]] = {}
+
+    def forgotten() -> bool:
+        for phone in phones.values():
+            phone.wake()
+        for label, capture in captures.items():
+            gone = {match.group(1) for at, message in capture.lines() if at >= stopped - 5 and (match := GATT_FORGET.match(message))}
+            left[label] = sorted(held[label] - gone)
+        return time.time() - stopped >= 70 and not any(left.values())
+
+    try:
+        poll(forgotten, timeout, every=5)
+    except TimeoutError:
+        print(json.dumps({"note": "a payload outlived the iPhone's stop", "held": left}), flush=True)
+    finally:
+        ios.command(cmd="start")
+    return {"held": {label: len(addresses) for label, addresses in held.items()}, "stillHeld": {k: v for k, v in left.items() if v}}
+
+
+def _blind_link(ios: IPhone, phone: Phone, phone_id: str, knit, since: float, timeout: float) -> dict:
+    """The iPhone and `phone` linked, and the dialer matched the phone's order, a head start of the iPhone's reported
+    (`_blind_dialed_by`)."""
+    linked = _ios_linked(ios, phone, phone_id, timeout)
+    return {**_blind_dialed_by(phone, ios, phone_id=phone_id, knit=knit, since=since, reader=True), "linkSeconds": linked["seconds"]}
+
+
+def _relink(ios: IPhone, phone: Phone, phone_id: str, knit, since: float, timeout: float) -> dict:
+    """Cycles the iPhone's link to `phone`: the iPhone refuses the phone, which closes the link without opening ADR
+    2026-09.6es2's window (a teardown of ours), then allows it, and the two link again by the slot's tag order. A link
+    already down is waited for instead."""
+    mark = time.monotonic()
+    if any(link["peer"] == phone_id for link in ios.command(cmd="links")["links"]):
+        ios.command(cmd="deny-link", peer=phone_id)
+        try:
+            ios.wait(lambda line: line.get("event") == "link" and line.get("peer") == phone_id and not line.get("up") and line["_at"] > mark, 60)
+        finally:
+            time.sleep(5)
+            ios.command(cmd="allow-link", peer=phone_id)
+    return _blind_link(ios, phone, phone_id, knit, since, timeout)
+
+
+def _next_edge(ios: IPhone) -> float:
+    """The next slot edge, in seconds on the wall clock: the iPhone's `nextEdgeAtMs`, or the next multiple of a slot."""
+    edge = (ios.advert() or {}).get("nextEdgeAtMs")
+    return edge / 1000 if edge else (int(time.time() // SLOT_SECONDS) + 1) * SLOT_SECONDS
+
+
+def _edge_turned(ios: IPhone, phones: dict[str, Phone], ids: dict[str, str], edge: float, pause: Callable[[float], None]) -> dict:
+    """Across `edge`: the iPhone announced its coming tag and rotated (`_tag_next_across_edge`, with the contact phone), and
+    the stranger phone's link held too and knows the iPhone by a tag. Read too close to the edge, its announcement may
+    have gone already, so that is inconclusive."""
+    if edge - time.time() < EDGE_LEAD - 60:
+        raise Inconclusive(f"the edge is {round(edge - time.time())} s away: the iPhone may have announced its tag already")
+    turned = _tag_next_across_edge(ios, phones["contact"], ids["contact"], edge - time.time() + 60, pause)
+    if not any(entry.get("nodeId") == ids["stranger"] for entry in (ios.advert() or {}).get("links", [])):
+        raise RuntimeError("the iPhone's link to the stranger phone did not hold across the edge")
+    view = phones["stranger"].advert()
+    link = next((entry for entry in (view or {}).get("links", []) if entry.get("nodeId") == ios.node_id), None)
+    if view is not None and (link or {}).get("blinded") is not True:
+        raise RuntimeError(f"the stranger phone knows the iPhone by no tag after the edge: {link}")
+    return turned
+
+
+def _by_order(records: list[dict]) -> set[str]:
+    """The dialers of the links whose dial the order gave, a head start's and a link nobody judged left out."""
+    return {record["dialer"] for record in records if record.get("dialer") and not record.get("outcome")}
+
+
+def _both_orders(records: list[dict]) -> dict:
+    """The phone and the iPhone each dialed a link by the order: the tag order turns at random each slot, so a run that
+    never saw one side's turn is inconclusive, not failed."""
+    seen = _by_order(records)
+    detail = {"dialers": [record.get("dialer") for record in records], "headStarts": sum(bool(record.get("outcome")) for record in records)}
+    if seen != {"phone", "iphone"}:
+        raise Inconclusive(f"only {sorted(seen)} dialed by the order in {len(records)} links: the tag order never turned ({detail})")
+    return detail
+
+
+def _ios_links(lines: list[tuple[float, str]], node: str) -> list[dict]:
+    """Each link the phone held with `node`, from its capture: when it came up, who dialed it (`phone` at the `bt connect
+    ok` before it, `iphone` at a `bt accepted client`), when it went down, and why; `down` is None while it is up."""
+    links: list[dict] = []
+    dialer = None
+    for at, message in lines:
+        if message.startswith(f"bt connect ok {node} "):
+            dialer = "phone"
+        elif message.startswith(f"bt accepted client {node} "):
+            dialer = "iphone"
+        elif message.startswith(f"bt link up: {node} "):
+            links.append({"up": at, "dialer": dialer, "down": None, "why": None})
+            dialer = None
+        elif message.startswith(f"bt link down: {node} ") and links and links[-1]["down"] is None:
+            links[-1]["down"] = at
+            links[-1]["why"] = message[len(f"bt link down: {node} ") :].strip("()")
+    return links
+
+
+def _edges_within(lines: list[tuple[float, str]], before: float = 40.0, after: float = 70.0) -> list[float]:
+    """The slot edges the capture covers from `before` ahead of each to `after` past it."""
+    if not lines:
+        return []
+    first = int((lines[0][0] + before) // SLOT_SECONDS + 1) * SLOT_SECONDS
+    return [float(edge) for edge in range(first, int(lines[-1][0] - after) + 1, SLOT_SECONDS)]
+
+
+def _held_across_edges(links: list[dict], lines: list[tuple[float, str]], want: int) -> dict:
+    """Each link to the iPhone up 40 s before an edge was still up 70 s past it: the iPhone turns its tag there, and the
+    phone keeps the link. A drop between is failed with its reason; an edge with no link up before it is not judged, and
+    fewer than `want` judged edges is inconclusive. A drop at the iPhone's own address change can fall in the window by
+    chance ("What the writer's dongle runs showed")."""
+    held, dropped, unjudged = [], [], 0
+    for edge in _edges_within(lines):
+        link = next((link for link in links if link["up"] <= edge - 40 and (link["down"] is None or link["down"] > edge - 40)), None)
+        if link is None:
+            unjudged += 1
+        elif link["down"] is not None and link["down"] < edge + 70:
+            dropped.append({"edge": edge, "downAfterEdge": round(link["down"] - edge, 1), "why": link["why"]})
+        else:
+            held.append(edge)
+    if dropped:
+        raise RuntimeError(f"links dropped across an edge: {dropped}")
+    if len(held) < want:
+        raise Inconclusive(f"{len(held)} edges with a link held across them, {unjudged} with none up before")
+    return {"edgesHeld": len(held), "unjudged": unjudged}
+
+
+def _ios_keys(lines: list[tuple[float, str]], node: str) -> set[str]:
+    """What the phone dials the iPhone by: its id, and each handle a blinded read of the iPhone resolved to."""
+    return {node} | {match.group(2) for _, message in lines if (match := GATT_BLINDED.match(message)) and match.group(3) == "handle"}
+
+
+def _no_android_redials(lines: list[tuple[float, str]], node: str) -> dict:
+    """The phone made no dial to the iPhone, by its id or a handle a blinded read gave it, while it held a link to it."""
+    keys = _ios_keys(lines, node)
+    up = False
+    redials = []
+    for at, message in lines:
+        if message.startswith(f"bt link up: {node} "):
+            up = True
+        elif message.startswith(f"bt link down: {node} "):
+            up = False
+        elif up and message.startswith("bt initiating to ") and message[len("bt initiating to ") :].split(" ", 1)[0] in keys:
+            redials.append({"at": at, "line": message})
+    if redials:
+        raise RuntimeError(f"{len(redials)} dials to the linked iPhone: {redials[:3]}")
+    return {"keys": len(keys)}
+
+
+def _spared(lines: list[tuple[float, str]], node: str) -> list[tuple[float, float]]:
+    """When the phone spared the iPhone's addresses from rule 4: each link to it, and each dial to it, given 20 s."""
+    end = lines[-1][0] if lines else 0.0
+    spans = [(link["up"], link["down"] if link["down"] is not None else end) for link in _ios_links(lines, node)]
+    keys = _ios_keys(lines, node)
+    for at, message in lines:
+        if message.startswith("bt initiating to ") and message[len("bt initiating to ") :].split(" ", 1)[0] in keys:
+            spans.append((at, at + 20))
+    return spans
+
+
+def _edge_forgets(lines: list[tuple[float, str]], node: str) -> dict:
+    """Rule 4 on one phone: each `bt gatt forget <address> (edge)` came 35 to 65 s past the first slot edge after that
+    address's last blinded read, a little later at most (`EDGE_FORGET_GRACE`), or later still only while a link or a dial
+    to the iPhone spared the address; no address went twice for one edge; and each blinded payload whose window closed in
+    the capture was forgotten, by any rule, or re-read, unless spared. Both the log and the deadline run on the phone's
+    wall clock. A forget whose read came before the capture is counted, not judged."""
+    reads = [(at, match.group(1)) for at, message in lines if (match := GATT_READ_BLINDED.match(message))]
+    forgets = [(at, match.group(1), match.group(2)) for at, message in lines if (match := GATT_FORGET.match(message))]
+    spans = _spared(lines, node)
+    end = lines[-1][0] if lines else 0.0
+
+    def spared(start: float, stop: float) -> bool:
+        return any(up < stop and down > start for up, down in spans)
+
+    def edge_after(at: float) -> float:
+        return float((int(at // SLOT_SECONDS) + 1) * SLOT_SECONDS)
+
+    found: Counter = Counter()
+    seen: set[tuple[str, float]] = set()
+    wrong: list[dict] = []
+    for at, address, reason in forgets:
+        if reason != "edge":
+            continue
+        read = max((when for when, where in reads if where == address and when < at), default=None)
+        if read is None:
+            found["unread"] += 1
+            continue
+        edge = edge_after(read)
+        past = round(at - edge, 1)
+        if (address, edge) in seen:
+            wrong.append({"address": address, "edge": edge, "why": "twice"})
+        seen.add((address, edge))
+        if past < EDGE_FORGET_FROM - 1:
+            wrong.append({"address": address, "past": past, "why": "early"})
+        elif past <= EDGE_FORGET_TO + 1:
+            found["onTime"] += 1
+        elif spared(edge + EDGE_FORGET_FROM, at):
+            found["spared"] += 1
+        elif past <= EDGE_FORGET_TO + EDGE_FORGET_GRACE:
+            found["lateWithinGrace"] += 1
+        else:
+            wrong.append({"address": address, "past": past, "why": "late"})
+    for read, address in reads:
+        edge = edge_after(read)
+        closed = edge + EDGE_FORGET_TO + EDGE_FORGET_GRACE
+        if closed > end:
+            continue
+        gone = any(where == address and read < when <= closed for when, where, _ in forgets)
+        again = any(where == address and read < when <= closed for when, where in reads)
+        if not gone and not again and not spared(edge + EDGE_FORGET_FROM, closed):
+            wrong.append({"address": address, "edge": edge, "why": "missed"})
+    if wrong:
+        raise RuntimeError(f"rule 4 went wrong: {wrong[:5]} ({dict(found)})")
+    if not found["onTime"] + found["spared"] + found["lateWithinGrace"]:
+        raise Inconclusive(f"no edge forget to judge in {len(reads)} blinded reads")
+    return {**dict(found), "reads": len(reads), "reasons": dict(Counter(reason.split(" ", 1)[0] for _, _, reason in forgets))}
+
+
+def _blinded_refunds(lines: list[tuple[float, str]], node: str) -> dict:
+    """Each blinded read was refunded once its link proved: a link to `node` that came up in the slot of the last blinded
+    read before it, while that read's charge stood inside the budget's window, brought a `bt gatt confirmed <address> (tag)
+    → <node>` within seconds of its `bt link up`. A read within 65 s of its slot's start may have caught the last slot's
+    tag, which no link of this slot shows, so it is excused; a refund with no charge in the capture is counted, since its
+    read may predate the capture."""
+    charges = [{"at": at, "address": match.group(1), "refunded": None} for at, message in lines if (match := GATT_READ_BLINDED.match(message))]
+    unmatched = 0
+    for at, message in lines:
+        refund = GATT_CONFIRMED_TAG.match(message)
+        if not refund or refund.group(2) != node:
+            continue
+        open_ = [charge for charge in charges if charge["address"] == refund.group(1) and charge["refunded"] is None and charge["at"] < at]
+        if open_:
+            open_[-1]["refunded"] = at
+        else:
+            unmatched += 1
+    missing, refunded, excused = [], 0, 0
+    for link in _ios_links(lines, node):
+        read = next((charge for charge in reversed(charges) if charge["at"] < link["up"]), None)
+        if read is None or link["up"] - read["at"] >= GATT_BUDGET_WINDOW:
+            continue
+        if read["refunded"] is not None and read["refunded"] < link["up"] - 10:
+            # An earlier link refunded it: a relink from the same payload has nothing left to refund.
+            continue
+        if int(read["at"] // SLOT_SECONDS) != int(link["up"] // SLOT_SECONDS) or read["at"] % SLOT_SECONDS < EDGE_FORGET_TO:
+            excused += 1
+        elif read["refunded"] is not None and read["refunded"] <= link["up"] + 15:
+            refunded += 1
+        else:
+            missing.append({"read": read["at"], "address": read["address"], "linkUp": link["up"], "refunded": read["refunded"]})
+    if missing:
+        raise RuntimeError(f"blinded reads left charged after their link proved: {missing[:3]}")
+    if not refunded:
+        raise Inconclusive(f"no link came up while a blinded read of its slot stood charged (excused {excused})")
+    return {"refunded": refunded, "excused": excused, "unmatchedRefunds": unmatched}
+
+
+def _budget_agrees(lines: list[tuple[float, str]], slack: float = 5.0) -> dict:
+    """Each `bt state … gattBudget=<used>/<n>` agrees with the capture: `used` is the reads that ended in the budget's
+    window before it, less those refunded by then (`_book_charge`). A charge within `slack` of the window's far end may
+    count either way, and until the capture has run a whole window, reads from before it may add to `used`."""
+    charges: list[tuple[float, str, str | None, bool]] = []
+    start = lines[0][0] if lines else 0.0
+    checked, most, off = 0, 0, []
+    for at, message in lines:
+        _book_charge(charges, at, message)
+        budget = re.search(r"gattBudget=(\d+)/(\d+)", message) if message.startswith("bt state ") else None
+        if not budget:
+            continue
+        used = int(budget.group(1))
+        low = sum(at - charge[0] < GATT_BUDGET_WINDOW - slack for charge in charges)
+        high = sum(at - charge[0] < GATT_BUDGET_WINDOW + slack for charge in charges) if at - start >= GATT_BUDGET_WINDOW else None
+        checked += 1
+        most = max(most, used)
+        if used < low or (high is not None and used > high):
+            off.append({"at": at, "used": used, "charged": [low, high]})
+    if off:
+        raise RuntimeError(f"gattBudget disagrees with the reads and refunds logged: {off[:3]}")
+    if not checked:
+        raise Inconclusive("no bt state line with gattBudget= in the capture")
+    return {"checked": checked, "mostUsed": most}
+
+
+def _gatt_resolutions(lines: list[tuple[float, str]]) -> list[dict]:
+    """How each blinded read's sighting resolved: when, at what address, to what (an id or a handle), and how."""
+    return [
+        {"at": at, "address": match.group(1), "key": match.group(2), "how": match.group(3)}
+        for at, message in lines
+        if (match := GATT_BLINDED.match(message))
+    ]
+
+
+def _contact_resolves(resolutions: list[dict], node: str, random_tags: bool) -> dict:
+    """The contact phone resolved every blinded read of the iPhone by its presence key, to the iPhone. A random tag, which
+    the iPhone airs past its slot's restarts, no key resolves, so with `random_tags` a read held under a handle is let
+    through."""
+    if not resolutions:
+        raise Inconclusive("the contact phone logged no blinded GATT read: is it on the A11 build, and the iPhone blinding?")
+    hows = Counter(resolution["how"] for resolution in resolutions)
+    wrong = [r for r in resolutions if (r["how"] == "key" and r["key"] != node) or (r["how"] != "key" and not (random_tags and r["how"] == "handle"))]
+    if wrong or not hows["key"]:
+        raise RuntimeError(f"the contact phone did not resolve the iPhone by key: {dict(hows)} {wrong[:3]}")
+    return {"resolutions": dict(hows)}
+
+
+def _stranger_resolves(resolutions: list[dict], node: str, first_link: float | None) -> dict:
+    """The stranger phone, which holds no key of the iPhone's, never resolved it by one, held it under a handle until its
+    first link to the iPhone proved, and named no other node by a claim or a hint after."""
+    if not resolutions:
+        raise Inconclusive("the stranger phone logged no blinded GATT read: is it on the A11 build, and the iPhone blinding?")
+    hows = Counter(resolution["how"] for resolution in resolutions)
+    early = [r for r in resolutions if first_link is None or r["at"] < first_link]
+    wrong = [r for r in resolutions if r["how"] in ("key", "own", "replayed", "malformed", "clear")]
+    wrong += [r for r in early if r["how"] != "handle"]
+    wrong += [r for r in resolutions if r["how"] in ("claim", "hint") and r["key"] != node]
+    if wrong:
+        raise RuntimeError(f"the stranger phone resolved the iPhone wrongly: {dict(hows)} {wrong[:3]}")
+    later = sum(r["how"] in ("claim", "hint") for r in resolutions)
+    return {"resolutions": dict(hows), "beforeFirstLink": len(early), "laterByClaimOrHint": later}
+
+
+def _phone_sealed(after: dict, before: dict, lines: list[tuple[float, str]], node: str) -> dict:
+    """The phone's `linksSealed` rose, with no failed seal or refused plain link, and none of its dials to the iPhone
+    came up plain (`bt connect ok <iPhone> … sealed=false`)."""
+    deltas = _counted(after, before, grew=("linksSealed",), held=("linkSealFailed", "linkSealRefused"))
+    plain = [message for _, message in lines if message.startswith(f"bt connect ok {node} ") and "sealed=false" in message]
+    if plain:
+        raise RuntimeError(f"the phone's dial to the iPhone came up plain: {plain[:2]}")
+    return deltas
+
+
+def _ios_sealed(after: dict, before: dict, ups: int) -> dict:
+    """The iPhone sealed every link to the phones: `linksSealed` rose by at least its link-ups to them, with no failed
+    seal or refused plain link."""
+    deltas = _counted(after, before, grew=("linksSealed",), held=("linkSealFailed", "linkSealRefused"))
+    if deltas["linksSealed"] < ups:
+        raise RuntimeError(f"{ups} links to the phones, {deltas['linksSealed']} sealed")
+    return {**deltas, "linkUps": ups}
+
+
+def _no_legacy(lines: dict[str, list[tuple[float, str]]], node: str, before: dict, after: dict) -> dict:
+    """Neither side refused the other as legacy: no phone logged a ` blind=legacy` refusal of the iPhone, and the iPhone's
+    `refusedLegacy` did not grow."""
+    prefix = f"bt refused client {node} "
+    refused = {label: sum(m.startswith(prefix) and " blind=legacy" in m for _, m in ours) for label, ours in lines.items()}
+    counted = after.get("refusedLegacy", 0) - before.get("refusedLegacy", 0)
+    if any(refused.values()) or counted:
+        raise RuntimeError(f"a legacy refusal: phones {refused}, iPhone {counted}")
+    return {}
+
+
+def _doorbell_settles(lines: list[tuple[float, str]], node: str) -> dict:
+    """Each `bt doorbell settling <iPhone>` was followed within 15 s by `bt doorbell found <iPhone>`, and the phone never
+    found the doorbell absent. With no settle in the capture, the lookup never came before the doorbell's service."""
+    absent = [message for _, message in lines if message.startswith(f"bt doorbell absent {node}")]
+    if absent:
+        raise RuntimeError(f"the phone found the iPhone's doorbell absent: {absent[:2]}")
+    settling = [at for at, message in lines if message.startswith(f"{DOORBELL_SETTLING}{node} ")]
+    found = [at for at, message in lines if message.startswith(f"bt doorbell found {node} ")]
+    if not settling:
+        raise Inconclusive("no lookup came before the doorbell's service: the iPhone publishes its listener only once it serves it")
+    unfound = [at for at in settling if not any(at <= when <= at + 15 for when in found)]
+    if unfound:
+        raise RuntimeError(f"{len(unfound)} settles found no doorbell after")
+    return {"settles": len(settling)}
+
+
+def _blind_rings_heard(lines: dict[str, list[tuple[float, str]]], node: str, heard: int) -> dict:
+    """Every ring the phones logged for the iPhone (`bt ring <iPhone>`) reached it as `ble rung by`, and no phone found its
+    doorbell absent. Rings from others in range only add to `heard`."""
+    rung = {label: sum(message.startswith(f"bt ring {node}") for _, message in ours) for label, ours in lines.items()}
+    absent = {label: sum(message.startswith(f"bt doorbell absent {node}") for _, message in ours) for label, ours in lines.items()}
+    detail = {"phoneRings": rung, "heard": heard, "absent": absent}
+    if any(absent.values()):
+        raise RuntimeError(f"a phone found the iPhone's doorbell absent: {detail}")
+    if not sum(rung.values()):
+        raise Inconclusive("no phone rang the iPhone")
+    if heard < sum(rung.values()):
+        raise RuntimeError(f"rings went unheard: {detail}")
+    return detail
+
+
 def _btmon(adapter: str, path: str) -> subprocess.Popen:
     """btmon on one of Knit's own adapters, writing a btsnoop file, through the root wrapper (scripts/knit-hci.sh)."""
     return subprocess.Popen(["sudo", "-n", KNIT_HCI, adapter, "btmon", "-w", path], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
@@ -2578,8 +3189,12 @@ GATT_READ_TIMEOUT = 12.0
 KNIT_HCI = "/usr/local/sbin/knit-hci"
 # `logcat -v epoch`: seconds since the epoch, pid, tid, level, tag, then the message.
 EPOCH_LINE = re.compile(r"^\s*(\d+\.\d+)\s+\d+\s+\d+\s+\w\s+BluetoothMeshTransport\s*:\s(.*)$")
-GATT_READ_END = re.compile(r"^bt gatt read (\S+) (?:→ ([a-z2-7]{26})|failed \(|stranger \()")
+# Every read that ended, which knit-next #154 charges: a clear payload's names its node (group 2), and a blinded one's
+# names none (group 3, `bt gatt read <address> blinded (psm <n>)`, the `blind-gatt-reads` contract, §9).
+GATT_READ_END = re.compile(r"^bt gatt read (\S+) (?:→ ([a-z2-7]{26})|failed \(|stranger \(|(blinded) \()")
+# A clear read's refund, at debug, and a blinded read's, at info: the proven link showed the tag that read found.
 GATT_CONFIRMED = re.compile(r"^bt gatt confirmed (\S+) → ([a-z2-7]{26})")
+GATT_CONFIRMED_TAG = re.compile(r"^bt gatt confirmed (\S+) \(tag\) → ([a-z2-7]{26})")
 
 
 class LogcatCapture:
@@ -2650,18 +3265,34 @@ def _epoch_lines(raw: list[str]) -> list[tuple[float, str]]:
 
 def _charged_reads(lines: list[tuple[float, str]]) -> list[tuple[float, str]]:
     """The reads knit-next #154 charges, as the time and address of each: every read that ended, whatever it found,
-    less each a link confirmed, which refunds the latest charged read at that address that named the confirmed node."""
-    charges: list[tuple[float, str, str | None]] = []
+    less each a link confirmed (`_book_charge`)."""
+    charges: list[tuple[float, str, str | None, bool]] = []
     for at, message in lines:
-        if ended := GATT_READ_END.match(message):
-            charges.append((at, ended.group(1), ended.group(2)))
-        elif confirmed := GATT_CONFIRMED.match(message):
-            address, node = confirmed.groups()
-            for index in range(len(charges) - 1, -1, -1):
-                if charges[index][1] == address and charges[index][2] == node:
-                    del charges[index]
-                    break
-    return [(at, address) for at, address, _ in charges]
+        _book_charge(charges, at, message)
+    return [(at, address) for at, address, _, _ in charges]
+
+
+def _book_charge(charges: list[tuple[float, str, str | None, bool]], at: float, message: str) -> bool:
+    """Books one log line into `charges`, each read's time, address, the node it named and whether it was blinded, and
+    answers whether the line moved them. A read that ended is charged. A clear refund takes the latest clear charge at
+    its address that named its node, and a blinded refund (`(tag)`) the latest blinded charge at its address, as
+    `GattPayloads.confirmed` never compares a tag with an id (knit-next ADR 2026-11.89gg)."""
+    if ended := GATT_READ_END.match(message):
+        charges.append((at, ended.group(1), ended.group(2), ended.group(3) is not None))
+        return True
+    if confirmed := GATT_CONFIRMED.match(message):
+        address, node = confirmed.groups()
+        wanted: Callable[[tuple], bool] = lambda charge: charge[1] == address and charge[2] == node and not charge[3]  # noqa: E731
+    elif tagged := GATT_CONFIRMED_TAG.match(message):
+        address = tagged.group(1)
+        wanted = lambda charge: charge[1] == address and charge[3]  # noqa: E731
+    else:
+        return False
+    for index in range(len(charges) - 1, -1, -1):
+        if wanted(charges[index]):
+            del charges[index]
+            return True
+    return False
 
 
 def _most_charged(charges: list[tuple[float, str]], window: float = GATT_BUDGET_WINDOW) -> dict:
@@ -3162,7 +3793,8 @@ def _address_released(phone: Phone, address: str, timeout: float) -> dict:
     def released() -> bool:
         phone.wake()
         lines = [line for line in _phone_log(phone, "bt gatt ") if f" {address} " in line]
-        held = [i for i, line in enumerate(lines) if f"read {address} →" in line]
+        # A blinded read is held too (the `blind-gatt-reads` contract, §4): it names a tag, not a node.
+        held = [i for i, line in enumerate(lines) if f"read {address} →" in line or f"read {address} blinded " in line]
         gone = [i for i, line in enumerate(lines) if f"forget {address} " in line]
         return not held or (bool(gone) and gone[-1] > held[-1])
 
@@ -8510,6 +9142,17 @@ def main() -> int:
     ios_rotate.add_argument("--rotate-wait", type=float, default=300, help="seconds each rotation may wait out a refusal (a form's two minutes)")
     ios_rotate.add_argument("--btmon", default="", help="a btsnoop file for dongle B's HCI traffic, through knit-hci (sudo)")
     ios_rotate.add_argument("--rssi-floor", type=int, default=-100, help="the peer's promotion floor in dBm (Android's is -90)")
+    blind_reads = commands.add_parser("iphone-blind-reads")
+    blind_reads.add_argument("--device", required=True, help="the contact phone: an approved phone's adb serial, the iPhone's contact both ways")
+    blind_reads.add_argument(
+        "--second-device", required=True, help="the stranger phone: an approved phone's adb serial, in the iPhone's contacts, the iPhone not in its own"
+    )
+    blind_reads.add_argument("--edges", type=int, default=2, help="slot edges the run crosses at the least")
+    blind_reads.add_argument("--max-edges", type=int, default=6, help="slot edges after which it stops, both dial orders seen or not")
+    blind_reads.add_argument("--no-relink", action="store_true", help="leave each link up past an edge instead of cycling it")
+    blind_reads.add_argument("--link-timeout", type=float, default=240, help="seconds for each link to come up")
+    blind_reads.add_argument("--quiet-timeout", type=float, default=180, help="seconds for each phone to forget the iPhone while its mesh is stopped")
+    blind_reads.add_argument("--post-every", type=float, default=180, help="seconds between the phones' room posts, which ring the iPhone")
     ios_forgets = commands.add_parser("iphone-forgets")
     ios_forgets.add_argument("--stages", default="dialed,quiet,accepted", help="which stages to run, comma-separated, in their fixed order")
     ios_forgets.add_argument("--peer-log", default="info", choices=["debug", "info", "warning"], help="knit-peer's log level")
@@ -8553,6 +9196,7 @@ def main() -> int:
         ios_soak,
         ios_forgets,
         ios_rotate,
+        blind_reads,
         commands.choices["iphone-relay"],
         commands.choices["iphone-group"],
     ):
@@ -8571,7 +9215,8 @@ def main() -> int:
         parser.error("--links needs --order peer-above, so that the peer is each link's central")
     # A SIGTERM ends the run through its `finally`s, as Ctrl-C does, so every phone's advert switch is put back.
     signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
-    with ClearAdverts(driven_phones(arguments), keep=arguments.keep_blind), iphone_advert_guard(arguments):
+    blind = arguments.command in BLINDING_RUNS
+    with ClearAdverts(driven_phones(arguments), keep=arguments.keep_blind, blind=blind), iphone_advert_guard(arguments):
         return dispatch(arguments)
 
 
@@ -8580,7 +9225,8 @@ def dispatch(arguments: argparse.Namespace) -> int:
     if arguments.command in (
         "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-resume", "iphone-block",
         "iphone-contact", "iphone-delete",
-        "iphone-react", "iphone-reply", "iphone-typing", "iphone-mention", "iphone-ratchet", "bridge", "record-pull",
+        "iphone-react", "iphone-reply", "iphone-typing", "iphone-mention", "iphone-ratchet", "iphone-blind-reads", "bridge",
+        "record-pull",
     ):
         return {
             "iphone": iphone,
@@ -8597,6 +9243,7 @@ def dispatch(arguments: argparse.Namespace) -> int:
             "iphone-typing": iphone_typing,
             "iphone-mention": iphone_mention,
             "iphone-ratchet": iphone_ratchet,
+            "iphone-blind-reads": iphone_blind_reads,
             "bridge": bridge,
             "record-pull": record_pull,
         }[arguments.command](arguments)
