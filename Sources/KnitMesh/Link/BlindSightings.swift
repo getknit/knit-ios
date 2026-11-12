@@ -10,7 +10,9 @@ internal enum Suppressor<L: Hashable>: Hashable {
     /// Only a proven link to the peer's id: a key's answer (nothing counts as linked to X without X's proof).
     case proven
     /// Only the claimant's own link, while it is the one held under the peer's id: a claim's answer. A new link from the
-    /// same id is not it, so a liar who relinks cannot keep blocking the dial whose proof would void its lie.
+    /// same id is not it, so a liar who relinks cannot keep blocking the dial whose proof would void its lie, unless that
+    /// link's HELLO told the same tag again: then the ended claim yields to that hint (``AdvertAliases/claimAnswer(_:)``),
+    /// and ``hint(_:)`` holds off, ADR 2026-11.sv5t's forged-hint residual.
     case claim(L)
     /// Only the hint's own link, while it is the one held under the peer's id: a hint's answer. This port's departure from
     /// Android, whose hint suppresses nothing (ADR 2026-11.sv5t): Android heals the dial a hint costs with its held-link
@@ -48,7 +50,8 @@ internal enum Suppressor<L: Hashable>: Hashable {
 ///   holds a proven link. Except a **replay**: a tag a key resolves to X, heard from an address whose tag dial proved
 ///   another id, attributes nothing and carries nothing, so that address is never one dialed as X.
 /// - **A claim** attributes from then on and never backwards: a linked liar naming a stranger's tag must not import its
-///   dwell or RSSI. It suppresses a dial only while its claimant's own link is the one held under the id.
+///   dwell or RSSI. It suppresses a dial only while its claimant's own link is the one held under the id. Once that link
+///   ends, a hint on the tag naming the same id answers instead, as a hint (``AdvertAliases/claimAnswer(_:)``).
 /// - **A hint** attributes from then on, for presence and RSSI. Here it also suppresses a dial while the hint's own link is
 ///   held (``Suppressor/hint(_:)``), where Android's suppresses nothing.
 /// - **A malformed tag** attributes nothing.

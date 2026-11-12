@@ -69,6 +69,12 @@ and no say in the address's rotation, and the iPhone's id rides its GATT payload
   tag dial that proves an id we already hold a proven link to keeps the new link and retires the old one, as Android's
   replace does. Every dial to a blinded advert is a tag dial, booked on the tag's handle and the address, whether a key
   resolves it or not.
+  **Amended 2026-11-11:** a claim whose link has ended yields to the hint the same id gave for the same tag on the link
+  held now. Before this, a peer that dialed back in after a drop was redialed on its own tag until the old claim
+  lapsed, up to a rotation period plus the linger: the dead claim answered first and held nothing off, and nothing
+  healed it, since the held-link row skips a doorbell link. The lab saw six refused redials in six minutes
+  (`linux-peer.md`, the writer's dongle runs). A dead claim and a live hint that name different ids still answer by the
+  claim.
 - **The presence keys, received only.** A ctl 11 is stored inside the ratchet open that delivered it, from any sender
   with a peer row who is not us, under Android's era rule (`PresenceKeyPolicy.receive`: a new active root replaces the
   held keys, a drain never starts an era, at most three kept). Only direct contacts' keys are listed to the radio:
@@ -93,7 +99,8 @@ cost an iPhone a refused or link-replacing dial at every rotation of every linke
 - **A forged hint.** A linked Sybil telling us a stranger's tag holds off our dials to that stranger while its link is
   held, one stranger per link. A flagged stranger at the front still dials us itself (it reads our GATT payload); an
   unflagged one, or any stranger while the iPhone is in the background, cannot link to us until the Sybil's link ends.
-  A contact's key outranks any hint. Android accepts the same residual for claims.
+  A contact's key outranks any hint. Android accepts the same residual for claims. Since 2026-11-11 it covers a Sybil
+  that claimed the tag on a link since ended and tells it again when it dials back in.
 - **A peer that missed its announcement.** A rotation the iPhone heard of from nobody, with the peer held, leaves the
   new tag unattributed; a dial to it is refused, or replaces the link once (the safety net). Until the bit ships, every
   rotation is one: Android sends `TAG_NEXT` only to a peer carrying it.

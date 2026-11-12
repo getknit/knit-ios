@@ -533,7 +533,9 @@ explicit direction.** Update this file in the change that ships an item.
       restoration relaunch with the switch on are still owed, then A11. The iPhone's link to a KnitBlueZ reader drops at
       each of the iPhone's address changes, with the switch off too: the reader makes a second connection to the new
       address to read its payload, and the old link dies within about 80 ms. That is not the writer's, and is owed on
-      its own.
+      its own. After each such drop the reader redialed the iPhone's tag while linked again, until the old link's claim
+      lapsed; ADR 2026-11.sv5t's 2026-11-11 amendment fixes that, and `iphone-rotate`'s `no-redial-while-linked` owes
+      it a run across an address change.
     - **A11 (Android reads a blinded GATT payload):** a paired change that iOS leads, knit-next's half of ADR
       2026-11.prsp. At `cad69c77b` and at knit-next's HEAD, `BleGattPayloadReader.kt:86-88` reads a payload carrying
       `FLAG_BLINDED` as `stranger(PHASE_BLINDED)`. So a blinding iPhone is never sighted, never resolved by a contact's

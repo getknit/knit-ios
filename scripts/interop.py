@@ -2030,7 +2030,7 @@ def iphone_rotate(arguments: argparse.Namespace) -> int:
     no `ble matched an added service by order, not identity`, and as many `ble rung by` lines as the phone's `bt ring`
     lines and the peer's doorbell writes together (`bluez ringing`, less any `bluez could not ring`, a debug line, so the
     peer runs at debug), with no `bt doorbell absent` on the phone. Every link must hold through every
-    rotation. The doorbell's handle itself, and whether iOS indicates Service Changed, only btmon shows: `--btmon PATH`
+    rotation, and the peer must make no head-start dial to the iPhone while it holds a link to it. The doorbell's handle itself, and whether iOS indicates Service Changed, only btmon shows: `--btmon PATH`
     captures dongle B's HCI traffic there through knit-hci, which needs its sudoers line (scripts/knit-hci.sh)."""
     phone = Phone(arguments.device)
     run = Run()
@@ -2076,7 +2076,8 @@ def iphone_rotate(arguments: argparse.Namespace) -> int:
                 peer.command(cmd="room", text=f"{body} from the peer")
                 run.step(f"posts-cross-{index + 1}", lambda: _arrivals_after_rotation(ios, body, 60))
             peer_rings = peer.command(cmd="status").get("rings", 0) - peer_rings
-            peer_rang = _doorbell_writes(peer.log_since(ring_mark))
+            peer_log = peer.log_since(ring_mark)
+            peer_rang = _doorbell_writes(peer_log)
 
             def since_rotating() -> list[dict]:
                 return [entry for entry in IPhoneLog.entries(knit.path) if entry.get("ms", 0) >= since * 1000]
@@ -2088,6 +2089,7 @@ def iphone_rotate(arguments: argparse.Namespace) -> int:
             run.step("rings-heard", lambda: _rings_heard(since_rotating, phone, ios.node_id, peer_rang, peer_rings))
             run.step("links-held", lambda: _no_link_dropped(ios, {phone_id, peer_id}))
             run.step("peer-link-held", lambda: _no_link_dropped(peer, {ios.node_id}))
+            run.step("no-redial-while-linked", lambda: _redials_while_linked(peer_log, ios.node_id))
         finally:
             stop.set()
             peer.stop()
@@ -2198,6 +2200,30 @@ def _no_match_by_order(entries: list[dict]) -> dict:
 def _doorbell_writes(messages: list[str]) -> int:
     """The doorbell writes knit-peer logged: each `bluez ringing`, less each `bluez could not ring`."""
     return sum(message.startswith(RINGING) for message in messages) - sum(message.startswith(COULD_NOT_RING) for message in messages)
+
+
+def _redials_while_linked(messages: list[str], node: str) -> dict:
+    """No head-start dial to `node` while the peer holds a link to it. `messages` start with the link up (they follow the
+    link step), and each `link up <node> on chN` and `link down <node> on chN` after moves the count of links held. A dial
+    there is the reader's stale claim outranking the new link's hint (`AdvertAliases.standing`), which the iPhone
+    refuses (`we dial it`) with the peer backing off, for up to a claim's lifetime after each relink. The head start is
+    the only dial a clear peer makes to a blinding iPhone, whichever side of it the peer's id sorts: `AdvertOrder.iDial`
+    never sends a clear form to a blinded one, knit-peer never seeks, and the iPhone's flags rule out ADR 2026-09.6es2's
+    exception, which would log only `link dialing ~zzzz…<n>`."""
+    held = {"start"}
+    redials = 0
+    for message in messages:
+        if message.startswith(f"link up {node} on "):
+            held.add(message.rsplit(" ", 1)[-1])
+        elif message.startswith(f"link down {node} on "):
+            channel = message.rsplit(" ", 1)[-1]
+            # A link that came up before the messages begin is the one held at their start.
+            held.discard(channel if channel in held else "start")
+        elif message.startswith(f"{HEAD_START_LINE}{node} ") and held:
+            redials += 1
+    if redials:
+        raise RuntimeError(f"{redials} head-start dials to a linked node")
+    return {}
 
 
 def _rings_heard(entries: Callable[[], list[dict]], phone: Phone, ios_id: str, peer_rang: int, peer_rings: int) -> dict:

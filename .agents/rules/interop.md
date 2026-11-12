@@ -67,7 +67,8 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
 - **A log line a harness reads is frozen.** Reword no line that a pattern in `scripts/interop.py` or `scripts/soak.py`
   matches; add a line instead. `iphone-rotate` reads `ble serving <the doorbell's|the payload's> service <serial>`, `ble removed
   <…> service <serial>`, `ble matched an added service by order, not identity`, `ble looks again at the services of` and
-  `ble rung by` from the iPhone, and knit-peer's `bluez ringing` and `bluez could not ring`. Both channel-ending tables
+  `ble rung by` from the iPhone, and knit-peer's `bluez ringing`, `bluez could not ring`, `link up <id> on chN`, `link down
+  <id> on chN` and `link head start over for <id> `. Both channel-ending tables
   read `link chN closed: the advert flipped to …` (ADR 2026-11.prsp).
 - **A behaviour that needs Android to change** is a Track A item in `.agents/memory/roadmap.md`, made in
   knit-next under knit-next's own rules, never worked around silently here.

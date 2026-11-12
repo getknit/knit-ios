@@ -90,7 +90,8 @@ bytes 1–16 as `advertised`, says `blinded`, and drops a blinded payload whose 
 (`AdvertForm.hasTagPrefix`); a clear payload is an id whatever its bytes. `AdvertPayload(gattValue:)` reads a blinded GATT
 value with the prefix as a blinded form in both radios, which a blinding iPhone serves (ADR 2026-11.prsp); Android's reader at
 the pin still makes it a stranger's (`BleGattPayloadReader.kt:87-89`) until companion change A11. The link manager resolves
-each blinded sighting (`AdvertAliases`: a contact's key, then a proven link's claim, then a dialer's hint) and keeps it
+each blinded sighting (`AdvertAliases`: a contact's key, then a proven link's claim, then a dialer's hint, though a
+claim whose link has ended yields to the same id's hint on its live link, ADR 2026-11.sv5t's amendment) and keeps it
 under the resolved id or, unresolved, under a handle printed `~zzzz…<n>` (`FormKeys`, at most 512, a handle a live dial key
 names never evicted). Presence, addresses, the dwell and the backoff follow that key (`SightingKey`), so a rotation never
 makes a new peer of a contact; a dial reads the PSM of the sighting it dials. Every dial to a blinded advert is a tag dial,

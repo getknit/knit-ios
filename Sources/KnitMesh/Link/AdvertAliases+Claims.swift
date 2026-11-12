@@ -7,12 +7,17 @@ extension AdvertAliases {
         table.lookup(tag, now: nowClock())?.nodeId
     }
 
-    /// A claim's answer, else a hint's when every hint for `tag` names one id; `nil` when neither answers. A hint's answer
-    /// carries its link, which this port's suppressor reads (ADR 2026-11.sv5t); one hint per id makes it one link.
+    /// A claim's answer (``claimAnswer(_:)``, which a claim whose link ended yields to its own id's hint), else a hint's when
+    /// every hint for `tag` names one id; `nil` when neither answers. A hint's answer carries its link, which this port's
+    /// suppressor reads (ADR 2026-11.sv5t); one hint per id makes it one link. A yielded answer is counted as the hint's.
     func linkAnswer(_ tag: NodeId) -> Answer? {
-        if let claim = claims[tag] {
-            counts.resolvedByClaim += 1
-            return Answer(nodeId: claim.nodeId, source: .claim, claimant: claim.link)
+        if let answer = claimAnswer(tag) {
+            if answer.source == .claim {
+                counts.resolvedByClaim += 1
+            } else {
+                counts.resolvedByHint += 1
+            }
+            return answer
         }
         let hinted = hints.filter { $0.value.tag == tag }
         let ids = Set(hinted.values.map(\.claim.nodeId))
@@ -21,6 +26,28 @@ extension AdvertAliases {
         }
         counts.resolvedByHint += 1
         return Answer(nodeId: id, source: .hint, claimant: hinted.count == 1 ? hinted.first?.key : nil)
+    }
+
+    /// What `tag`'s claim answers, read alike by ``resolve(_:)`` and ``standing(_:)`` so a sighting's attribution and the
+    /// decide-time read never disagree: the claim while its link is held; once that link has ended, the hint on `tag` that
+    /// names the claim's own id, if one is held, else the claim still. `nil` without a claim.
+    ///
+    /// The yield is this port's, inside ADR 2026-11.sv5t's departure (Kotlin's hint suppresses nothing): a blinding peer
+    /// that dials back in after its claimed link dropped tells the same tag, and its hint's link is the one held under its
+    /// id, which the ended claim's ``Suppressor/claim(_:)`` never matches, so the dial would go at every head start for
+    /// the claim's lifetime (`iphone-rotate` run 2, knit-peer reading the lab iPhone, 2026-11-11), refused each time
+    /// with nothing to heal it. The hint is chosen by id, never by how many hints the tag holds, so another id's hint, a
+    /// Sybil's included, brings no redial back. A Sybil that won a stranger's tag and relinks telling it holds the dial off
+    /// while its new link is held: sv5t's "forged hint" residual, which a hint alone already reaches.
+    func claimAnswer(_ tag: NodeId) -> Answer? {
+        guard let claim = claims[tag] else {
+            return nil
+        }
+        let ownHint = heldLinks.contains(claim.link) ? nil : hints.first { $0.value.tag == tag && $0.value.claim.nodeId == claim.nodeId }
+        guard let ownHint else {
+            return Answer(nodeId: claim.nodeId, source: .claim, claimant: claim.link)
+        }
+        return Answer(nodeId: claim.nodeId, source: .hint, claimant: ownHint.key)
     }
 
     /// ``onDialProved(_:provenId:)``'s work once the proof stands: liars voided, their void lifted, a proven rival contested.

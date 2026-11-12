@@ -692,6 +692,20 @@ class IPhoneRotateTest(unittest.TestCase):
         with mock.patch.object(interop, "_phone_log", return_value=[]), self.assertRaises(interop.Inconclusive):
             interop._rings_heard(lambda: entries, phone, IPHONE, 0, 0)
 
+    def test_a_head_start_dial_to_a_linked_node_is_a_redial(self) -> None:
+        node = "dlrr2hznxypyove635fmd56xvy"
+        unlinked = [f"link down {node} on ch3", f"link head start over for {node} (dwell=24000ms rssi=-28dBm)", f"link up {node} on ch5"]
+        self.assertEqual(interop._redials_while_linked(unlinked, node), {})
+        # The handle of a tag nobody resolved is not the node.
+        self.assertEqual(interop._redials_while_linked(["link head start over for ~zzzz…3 (dwell=24000ms rssi=-28dBm)"], node), {})
+        relinked = [*unlinked, f"link head start over for {node} (dwell=24000ms rssi=-28dBm)", "link dialing ~zzzz…3 on ch6"]
+        with self.assertRaises(RuntimeError):
+            interop._redials_while_linked(relinked, node)
+        # Held from the start: a crossing link that ends leaves the first one held.
+        crossing = [f"link up {node} on ch5", f"link down {node} on ch5", f"link head start over for {node} (dwell=24000ms rssi=-28dBm)"]
+        with self.assertRaises(RuntimeError):
+            interop._redials_while_linked(crossing, node)
+
     def test_the_peers_doorbell_writes_are_its_ringing_lines_less_its_failures(self) -> None:
         messages = ["bluez ringing dev_42_AC", "bluez rung by dev_42_AC", "bluez ringing dev_42_AC", "bluez could not ring dev_42_AC: gone"]
         self.assertEqual(interop._doorbell_writes(messages), 1)

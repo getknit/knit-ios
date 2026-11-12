@@ -11,7 +11,7 @@ import KnitWire
 ///    of this phone's wall clock, so a heard tag resolves with one hash lookup and an unknown one, a flood included, costs
 ///    a miss and nothing else.
 /// 4. **Link claims** (``onDialed(_:dialed:told:provenId:)``, ``onTagNext(_:provenId:tag:)``): a tag a proven link told us
-///    is its own.
+///    is its own. A claim whose link has ended yields to a hint on the tag naming the same id (``claimAnswer(_:)``).
 /// 5. **Hints** (``onAnswered(_:told:provenId:)``): a tag a dialer's HELLO told us is its own.
 ///
 /// My own tag is never a claim, a hint or an announcement either. My own clear advert is dropped by id in ``LinkManager``'s
@@ -22,7 +22,9 @@ import KnitWire
 /// - a claim a contact's expected tag contradicts is dropped and counted, at the claim and at every resolve;
 /// - two ids claiming one tag void it for both, and it takes no claim until it would have expired, except that a claim one
 ///   of our own dials proved lifts a void that unproven claimants made and voids those claimants;
-/// - a claim never lapses while its link is held, and lives ``Configuration/claimLifetimeMilliseconds`` past the link's end;
+/// - a claim never lapses while its link is held, and lives ``Configuration/claimLifetimeMilliseconds`` past the link's end,
+///   though while a hint naming the claim's id for the same tag is held, that hint answers instead (this port's, inside
+///   ADR 2026-11.sv5t's departure: the peer dialed back in, and its new link is the one to hold a dial off);
 /// - a dialer believes the responder's `t` only when it equals the `a` it dialed, or a tag that responder announced and we
 ///   hold pending; a different `t` is a rotation edge, held pending;
 /// - a responder's view of the dialer's `t` is a hint, one per link and per id;
@@ -217,9 +219,10 @@ internal final class AdvertAliases<L: Hashable> {
         return holdPending(link, provenId: provenId, tag: tag, now: now)
     }
 
-    /// What `tag` names now, read when a dial is decided: a contact's key, else a claim, else a hint all naming one id; `nil`
-    /// for none. Counts nothing and promotes no announced tag, so a decision read many times a second leaves the
-    /// counters and the tables as the sightings left them.
+    /// What `tag` names now, read when a dial is decided: a contact's key, else a claim (or, its link ended, the same id's
+    /// hint: ``claimAnswer(_:)``, as ``resolve(_:)`` reads it), else a hint all naming one id; `nil` for none. Counts nothing
+    /// and promotes no announced tag, so a decision read many times a second leaves the counters and the tables as the
+    /// sightings left them.
     func standing(_ tag: NodeId) -> Answer? {
         guard Self.isTag(tag) else {
             return nil
@@ -228,8 +231,8 @@ internal final class AdvertAliases<L: Hashable> {
         if let keyId = keyAnswer(tag) {
             return Answer(nodeId: keyId, source: .key)
         }
-        if let claim = claims[tag] {
-            return Answer(nodeId: claim.nodeId, source: .claim, claimant: claim.link)
+        if let answer = claimAnswer(tag) {
+            return answer
         }
         let hinted = hints.filter { $0.value.tag == tag }
         guard hinted.count == 1, let hint = hinted.first else {

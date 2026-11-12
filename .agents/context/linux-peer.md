@@ -2138,8 +2138,11 @@ was left alone, and the guard put both phones' switches back after each run.
   - **After each relink the peer dialed the iPhone's tag again,** six times in 6 minutes the first time, every one
     refused (`we dial it`) or timed out. The tag the old link claimed by `TAG_NEXT` keeps its claim for the claim
     lifetime past the link's end. `AdvertAliases.standing` answers with a claim before a hint, and a claim holds a
-    dial off only while its own link is held, so the hint the new link's HELLO gave never counts. This is the
-    reader's rule, the same for a blinding Android behind a relink, and changing it is the Bluetooth plane's call.
+    dial off only while its own link is held, so the hint the new link's HELLO gave never counts. The same reader
+    rule redials a blinding Android that dials back in. Since 2026-11-11 a claim whose link has ended yields to the
+    same id's hint on its live link (ADR 2026-11.sv5t, amended), and `iphone-rotate` fails `no-redial-while-linked`
+    on any `link head start over for <the iPhone>` while the peer holds a link to it. A run that crosses an address
+    change still owes the check on air.
   - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
     after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
     `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.

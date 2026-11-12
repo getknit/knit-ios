@@ -110,6 +110,45 @@ import Testing
         #expect(rig.links.aliases.standing(strangers)?.nodeId == low)
     }
 
+    /// This port's (ADR 2026-11.sv5t's departure): a blinding peer whose announced tag became its link's claim, and which
+    /// dials back in telling that tag after the link drops, is not redialed while its new link is held. The ended claim
+    /// yields to the new link's hint; before, it held off nothing and the dial went at every head start for the claim's
+    /// lifetime (`iphone-rotate` run 2, knit-peer reading the lab iPhone, 2026-11-11).
+    @Test func aBlindingPeerThatDialsBackInTellingItsClaimedTagIsNotRedialed() throws {
+        let rig = LinkRig.iPhone()
+        let current = contact.tag(wall: rig.clock.wallMilliseconds())
+        try linkIn(rig, contact, on: ChannelID(100))
+        _ = rig.handle(.received(ChannelID(100), BlindingPeer.tagNext(current)))
+        _ = rig.handle(.sighted(contact.sighting(current)))
+        #expect(rig.links.aliases.counters.claims == 1, "heard: the announcement is the link's claim")
+        _ = rig.handle(.closed(ChannelID(100)))
+        _ = try contact.dial(rig, on: ChannelID(101), told: current)
+        #expect(rig.links.liveChannel(to: low) == ChannelID(101))
+        rig.hear(contact.sighting(current), for: 26_000)
+        #expect(Self.dials(rig, to: contact.address) == 0, "its new link, telling the same tag, holds the dial off")
+        #expect(rig.links.aliases.counters.claims == 1, "the ended claim stands, yielding")
+    }
+
+    /// The residual the rule above accepts, ADR 2026-11.sv5t's "forged hint": a Sybil that claimed a stranger's tag and
+    /// relinks telling it holds off our dial to the stranger while its new link is held, as a hint alone already does, and
+    /// no longer once that link ends.
+    @Test func aSybilThatRelinksTellingTheClaimedTagHoldsOffOurDialOnlyWhileItsNewLinkIsHeld() throws {
+        let rig = LinkRig.iPhone()
+        let target = stranger(9, at: "addr-stranger")
+        let strangers = target.tag(wall: rig.clock.wallMilliseconds())
+        try linkIn(rig, sybil, on: ChannelID(100))
+        _ = rig.handle(.received(ChannelID(100), BlindingPeer.tagNext(strangers)))
+        _ = rig.handle(.sighted(target.sighting(strangers)))
+        #expect(rig.links.aliases.counters.claims == 1)
+        _ = rig.handle(.closed(ChannelID(100)))
+        _ = try sybil.dial(rig, on: ChannelID(101), told: strangers)
+        rig.hear(target.sighting(strangers), for: 26_000)
+        #expect(Self.dials(rig, to: target.address) == 0, "held off while the Sybil's new link is held")
+        _ = rig.handle(.closed(ChannelID(101)))
+        rig.hear(target.sighting(strangers), for: 26_000)
+        #expect(Self.dials(rig, to: target.address) == 1, "its link ended: the ended claim answers again and the dial goes")
+    }
+
     @Test func twoSybilIdsClaimingOneTagVoidEachOtherAndNothingHoldsOffOurDial() throws {
         let rig = LinkRig.iPhone()
         let target = stranger(9, at: "addr-stranger")
