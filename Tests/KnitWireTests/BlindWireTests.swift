@@ -112,7 +112,8 @@ import Testing
         #expect(AdvertPayload.writtenFlags(dialsGattPeers: true, blinded: true, seals: false) == both)
         let unclaimed = AdvertPayload.sideChannelFlag | AdvertPayload.awareFlag
         for gatt in [true, false] {
-            #expect([true, false].allSatisfy { AdvertPayload.writtenFlags(dialsGattPeers: gatt, blinded: $0, seals: false) & unclaimed == 0 })
+            #expect(
+                [true, false].allSatisfy { AdvertPayload.writtenFlags(dialsGattPeers: gatt, blinded: $0, seals: false) & unclaimed == 0 })
         }
     }
 

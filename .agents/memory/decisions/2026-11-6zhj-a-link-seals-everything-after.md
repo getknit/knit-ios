@@ -125,8 +125,12 @@ up to v2.11.0 does, and the responder takes both first records for good.
   keeps dialing sealed. Only a downgraded iPhone hits this.
 - **A BlueZ write that would block after sealing fixes a digest with no byte out.** At most one more stale digest
   queues behind it. That is a bounded few KB, and it never rolls the counter back.
-- A future iOS writer that blinds its GATT payload (`NEXT_WIRE_BREAK.md` item 13) would hide this flag from today's
-  readers, which read nothing from a blinded payload. That design has to carry the flag some other way.
+- **A blinded GATT payload carries the flag in its flags byte, as a clear one does.** The writer that blinds it
+  (ADR 2026-11.prsp) came before this change merged, so `writtenFlags(dialsGattPeers:blinded:seals:)` sets
+  `FLAG_LINK_SEAL` in both forms. Android at the pin reads nothing from a blinded GATT payload, so it learns that a
+  blinding iPhone seals only once companion change A11 reads one (the `blind-gatt-reads` contract, §8). Until then it
+  dials no blinding iPhone at all, and the iPhone's own dials read the Pixel's flag from its service data. The writer's
+  switch is off by default in debug builds and absent from release until A11 merges (ADR 2026-11.prsp).
 - No rekeying. The 2^48 frame cap closes a link first.
 - **What keeps it true:**
   - Records, flag and outbox: `LinkSealTests`, `LinkProofTests`, `LinkSealWireTests`, `LinkTests` (tag 12 unknown),

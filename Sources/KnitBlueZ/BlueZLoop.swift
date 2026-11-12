@@ -243,15 +243,6 @@
             }
         }
 
-        func report(_ state: RadioState) {
-            guard reportedState != state else {
-                return
-            }
-            reportedState = state
-            log.log(.info, "bluez radio \(state)")
-            emit(.state(state))
-        }
-
         private func bringUp(now: Int64) {
             if listener == nil {
                 do {

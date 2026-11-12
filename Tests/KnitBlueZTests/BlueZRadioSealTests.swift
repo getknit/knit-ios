@@ -102,7 +102,7 @@
             let file = LinkRecord(.fileChunk, payload: [UInt8](repeating: 0x42, count: 20_000)).encoded ?? []
             radio.writeKeyShare(share, sealer: nil, to: id)
             radio.write(hello, to: id)
-            radio.heardHello(from: LoopRig.advert().advertised, on: id)
+            radio.heardHello(from: LoopRig.advert().advertised, told: nil, announced: nil, on: id)
             radio.dialGotNoReply(at: RadioAddress(LoopRig.peerPath))
             radio.seal(id, with: sealer)
             radio.linkUp(LoopRig.advert().advertised, on: id)

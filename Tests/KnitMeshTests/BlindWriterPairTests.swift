@@ -99,7 +99,9 @@ import Testing
         #expect(high.links.writerCounters.randomMarkFailed == 1)
         #expect(high.links.writerCounters.tagNextCurrent == 1)
         let random = try #require(high.airedTag)
-        #expect(high.tagNexts(on: dial.channel).last == random)
+        // Both blind and seal, so the link is sealed: the TAG_NEXT crosses inside a frame, read with the pipe's own keys.
+        #expect(pipe.records(from: high).filter { $0.tag == .tagNext }.compactMap { NodeId(bytes: $0.payload) }.last == random)
+        #expect(high.links.linksSealed == 1 && middle.links.linksSealed == 1)
         let dials = middle.radio.dials.count
         Self.hearEachOther(high, middle, for: 40_000)
         #expect(middle.radio.dials.count == dials, "no dial to our random tag")

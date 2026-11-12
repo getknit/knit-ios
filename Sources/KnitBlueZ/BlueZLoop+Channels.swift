@@ -167,6 +167,17 @@
             flushWithinBound(id)
         }
 
+        /// Reports the radio's state, once per change. Here rather than in the loop's body only to keep that inside the lint's
+        /// length.
+        func report(_ state: RadioState) {
+            guard reportedState != state else {
+                return
+            }
+            reportedState = state
+            log.log(.info, "bluez radio \(state)")
+            emit(.state(state))
+        }
+
         /// The seal's commands (``RadioCommand/writeKeyShare(_:_:_:)`` and the three after it), in order with the writes.
         func performSealing(_ command: RadioCommand) {
             switch command {

@@ -37,7 +37,9 @@ value survives while `knit.sqlite` stays out of backups. Four facts shape what t
   write to its GATT server, or a seek's discovery (ADR 2026-09.khjj, ADR 2026-10.mueg). While Knit is suspended,
   bluetoothd answers a static characteristic value without waking it.
 - **The links are clear.** This port has no `CAP_LINK_SEAL` (knit-next ADR 2026-11.8mhs, knit-ios #51), so a listener
-  on a link reads the HELLO's id, its `t` and `a`, and every `TAG_NEXT`.
+  on a link reads the HELLO's id, its `t` and `a`, and every `TAG_NEXT`. (Amended 2026-11-12, as the seal merged: links
+  between sealing builds are sealed (ADR 2026-11.6zhj), so all four ride inside the seal there. A listener still reads
+  them on a plain link: with Android up to v2.11.0, or with a tag-reading build from before the seal.)
 
 **Decision:**
 

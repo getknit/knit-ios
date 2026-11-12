@@ -17,7 +17,8 @@ import Testing
         #expect(payload.blinded)
         #expect(payload.advertised == rig.tag(key, slot: rig.slot))
         #expect(payload.digestCue == 0)
-        #expect(payload.flags == AdvertPayload.dialsGattPeersFlag | AdvertPayload.blindedFlag)
+        // The seal's flag rides the blinded form too (`link-seal` §1).
+        #expect(payload.flags == AdvertPayload.dialsGattPeersFlag | AdvertPayload.blindedFlag | AdvertPayload.linkSealFlag)
         #expect(payload.psm == LinkRig.psm)
         #expect(keys.marks.marks[1] == PresenceMark(slot: rig.slot, restart: 0), "the mark is durable before the tag airs")
         #expect(rig.links.blinds)

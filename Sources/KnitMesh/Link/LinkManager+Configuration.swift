@@ -74,9 +74,12 @@ extension LinkManager {
         public var backoff: ConnectBackoff.Configuration
         /// How sightings smooth and linger.
         public var presence: PresenceTracker.Configuration
-        /// A test's seam (ADR 2026-11.sv5t): takes ``Capabilities/blindAdvert`` out of our HELLO only, as a build from before
-        /// the reader would send, so a scripted blinding peer's `RefuseLegacy` (`BleAdmissionPolicy.kt:115`) can be met,
-        /// as Android's lab withholds a capability (`MeshManager.withheldCapabilities`). The app never sets it.
+        /// A test's seam (ADR 2026-11.sv5t): takes ``Capabilities/blindAdvert`` out of our HELLO only, and
+        /// ``Capabilities/linkSeal`` with it (a build from before the reader predates the seal), as such a build would send,
+        /// so a scripted blinding peer's `RefuseLegacy` (`BleAdmissionPolicy.kt:115`) can be met, as Android's lab withholds
+        /// a capability (`MeshManager.withheldCapabilities`). The app never sets it. It shapes our HELLO alone: a stand-in's
+        /// dials still open sealed toward a flagged advert, so a test writes the stand-in's HELLO by hand (``ourHello(addressing:)``),
+        /// and one that dials through promotion sets ``LinkManager/sealSwitch`` to `.off` too, as Android v2.11.0 plays it.
         public var withholdsBlindAdvert: Bool
         /// Whether this build may air a rotating tag instead of its id (Android's `BLIND_ADVERT`; ADR 2026-11.prsp), the build
         /// gate: true in every debug build's factory and in knit-peer, false in release, which then has no switch. While it

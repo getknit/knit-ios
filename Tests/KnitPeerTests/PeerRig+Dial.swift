@@ -25,3 +25,8 @@ func dialProving(
     let proof = try LinkProof.payload(keys: keys, form: .plain, signer: .dialer, dialerHello: hello.payload, responderHello: reply.payload)
     await deliver(.received(channel, record(.proof, proof)))
 }
+
+/// A link record's bytes.
+func record(_ tag: LinkRecord.Tag, _ payload: [UInt8]) -> [UInt8] {
+    LinkRecord(tag, payload: payload).encoded ?? []
+}

@@ -307,11 +307,6 @@ struct CountingGenerator: RandomNumberGenerator, Sendable {
     }
 }
 
-/// A link record's bytes.
-func record(_ tag: LinkRecord.Tag, _ payload: [UInt8]) -> [UInt8] {
-    LinkRecord(tag, payload: payload).encoded ?? []
-}
-
 /// A node under test on a ``PeerRadio``, and a second engine that plays the far end of one link.
 struct PeerRig {
     static let channel = ChannelID(7)

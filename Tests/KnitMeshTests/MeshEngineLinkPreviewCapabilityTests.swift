@@ -23,9 +23,9 @@ import Testing
 
     @Test func theSwitchAddsTheBitToTheProfileAlone() {
         #expect(!MeshConfiguration().linkPreviews && MeshConfiguration().drawnCapabilities.isEmpty)
-        #expect(MeshConfiguration(ratchet: true, linkPreviews: true).capabilities.rawValue == 0xC055F)
-        #expect(MeshConfiguration(linkPreviews: true).capabilities.rawValue == 0xC040F)
-        #expect(MeshConfiguration(ratchet: true).capabilities.rawValue == 0xC015F, "a release build's set is unchanged")
+        #expect(MeshConfiguration(ratchet: true, linkPreviews: true).capabilities.rawValue == 0x1C055F)
+        #expect(MeshConfiguration(linkPreviews: true).capabilities.rawValue == 0x1C040F)
+        #expect(MeshConfiguration(ratchet: true).capabilities.rawValue == 0x1C015F, "a release build's set is unchanged")
         #expect(!Capabilities.local.contains(.linkPreview), "the HELLO and the advert never claim it")
     }
 
@@ -33,12 +33,12 @@ import Testing
     /// card's do not.
     @Test func aProfileWithoutAPrekeyCarriesTheBit() throws {
         let earlier = now - 60_000
-        let stores = MeshStores.inMemory(ownProfile: OwnProfile(name: "Me", version: 5, publishedAt: earlier, capabilities: 0xC000F))
+        let stores = MeshStores.inMemory(ownProfile: OwnProfile(name: "Me", version: 5, publishedAt: earlier, capabilities: 0x1C000F))
         let fixture = EngineFixture(me, stores: stores, configuration: MeshConfiguration(linkPreviews: true))
         let own = stores.ownProfile.load()
-        #expect(own.version == now && own.capabilities?.rawValue == 0xC040F, "the bit came, so the profile is edited at start")
-        #expect(try ourProfile(fixture).capabilities == 0xC040F)
-        #expect(fixture.log.all.contains("info mesh republished our profile: its capabilities are now c040f"))
+        #expect(own.version == now && own.capabilities?.rawValue == 0x1C040F, "the bit came, so the profile is edited at start")
+        #expect(try ourProfile(fixture).capabilities == 0x1C040F)
+        #expect(fixture.log.all.contains("info mesh republished our profile: its capabilities are now 1c040f"))
     }
 
     @Test func withThePrekeyTheEditCarriesEveryBit() throws {
@@ -46,13 +46,13 @@ import Testing
         let ring = try PrekeyRing.load(for: me.keys, from: KeptSecretStore(me.keys.storedForm))
         var minting = ring
         _ = try minting.rotate(now: earlier)
-        let own = OwnProfile(name: "Me", version: 5, publishedAt: earlier, prekeyId: 1, capabilities: 0xC015F)
+        let own = OwnProfile(name: "Me", version: 5, publishedAt: earlier, prekeyId: 1, capabilities: 0x1C015F)
         let stores = MeshStores.inMemory(ownProfile: own)
         let fixture = EngineFixture(
             me, stores: stores, configuration: MeshConfiguration(ratchet: true, linkPreviews: true), prekeys: minting)
-        #expect(stores.ownProfile.load().capabilities?.rawValue == 0xC055F)
+        #expect(stores.ownProfile.load().capabilities?.rawValue == 0x1C055F)
         let content = try ourProfile(fixture)
-        #expect(content.capabilities == 0xC055F && content.prekey?.id == 1)
+        #expect(content.capabilities == 0x1C055F && content.prekey?.id == 1)
     }
 
     /// The bit's reader is a peer's row, where Android reads it: another engine pins our profile with it, and drops it when
@@ -64,21 +64,21 @@ import Testing
         ours.link(bob)
         let pushed = try #require(ours.transport.written(.profile).last)
         theirs.deliver(TestFrame(wire: pushed.wire, envelope: pushed.envelope), from: me)
-        #expect(theirs.stores.peers.peer(me.nodeId)?.capabilities == 0xC040F)
+        #expect(theirs.stores.peers.peer(me.nodeId)?.capabilities == 0x1C040F)
         let off = EngineFixture(me, stores: ours.stores)
         off.link(bob)
         let plain = try #require(off.transport.written(.profile).last)
         theirs.deliver(TestFrame(wire: plain.wire, envelope: plain.envelope), from: me)
-        #expect(theirs.stores.peers.peer(me.nodeId)?.capabilities == 0xC000F)
+        #expect(theirs.stores.peers.peer(me.nodeId)?.capabilities == 0x1C000F)
     }
 
     /// A release build put on a phone that ran a debug one takes the bit back, under a new version that outranks every
     /// profile that claimed it.
     @Test func aBuildWithoutLinkPreviewsTakesTheBitBack() throws {
         let earlier = now - 60_000
-        let stores = MeshStores.inMemory(ownProfile: OwnProfile(name: "Me", version: 5, publishedAt: earlier, capabilities: 0xC040F))
+        let stores = MeshStores.inMemory(ownProfile: OwnProfile(name: "Me", version: 5, publishedAt: earlier, capabilities: 0x1C040F))
         let fixture = EngineFixture(me, stores: stores)
-        #expect(stores.ownProfile.load().version == now && stores.ownProfile.load().capabilities?.rawValue == 0xC000F)
-        #expect(try ourProfile(fixture).capabilities == 0xC000F)
+        #expect(stores.ownProfile.load().version == now && stores.ownProfile.load().capabilities?.rawValue == 0x1C000F)
+        #expect(try ourProfile(fixture).capabilities == 0x1C000F)
     }
 }

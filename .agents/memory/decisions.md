@@ -115,8 +115,8 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-11.y793](decisions/2026-11-y793-a-block-also-holds-a.md) | A block also holds a person's profile and photo | moderation, privacy, ui |
 | [2026-11.pydf](decisions/2026-11-pydf-a-store-build-opens-sample.md) | A store build opens sample chats anyone can try | store, app, ui, moderation |
 | [2026-11.sv5t](decisions/2026-11-sv5t-the-iphone-reads-blinded-adverts.md) | The iPhone reads blinded adverts | ble, mesh, privacy, wire, crypto |
+| [2026-11.6zhj](decisions/2026-11-6zhj-a-link-seals-everything-after.md) | A link seals everything after an ephemeral key exchange | ble, crypto, security, interop |
 | [2026-11.aykf](decisions/2026-11-aykf-the-ui-walks-and-their.md) | The UI walks and their audit advise, not block | accessibility, testing, ci |
 | [2026-11.w5ew](decisions/2026-11-w5ew-a-web-address-in-a.md) | A web address in a message opens on a tap | messages, ui, interop |
 | [2026-11.hcvg](decisions/2026-11-hcvg-a-link-s-card-is.md) | A link's card is fetched by its sender, in debug builds until approved | messages, ui, network, interop, blobs |
 | [2026-11.prsp](decisions/2026-11-prsp-the-iphone-airs-a-rotating.md) | The iPhone airs a rotating tag and sends its own presence keys | ble, mesh, privacy, wire, crypto |
-| [2026-11.6zhj](decisions/2026-11-6zhj-a-link-seals-everything-after.md) | A link seals everything after an ephemeral key exchange | ble, crypto, security, interop |

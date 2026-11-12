@@ -67,7 +67,8 @@ import Testing
         let slow = LinkManager.Configuration(connectTimeoutMilliseconds: 60_000)
         let one = LinkRig(local: LinkRig.high, configuration: slow)
         let two = LinkRig(local: LinkRig.low, servesDoorbell: true, configuration: slow)
-        one.sightToPromotion(LinkRig.low)
+        // Both seal, so every dial here opens sealed, from adverts carrying the flag (a plain one is refused, §7).
+        one.sightToPromotion(LinkRig.low, flags: LinkRig.sealingFlags)
         let first = try #require(one.radio.dials.last)
         _ = RigPipe.dial(one, first.channel, to: two, on: ChannelID(50))
         #expect(one.links.linksProven == 1 && two.links.linksProven == 1)
@@ -81,7 +82,7 @@ import Testing
             _ = one.advance(1000)
             _ = two.advance(1000)
             if second.isMultiple(of: 2) {
-                _ = two.handle(.sighted(LinkRig.sighting(LinkRig.high)))
+                _ = two.handle(.sighted(LinkRig.sighting(LinkRig.high, flags: LinkRig.sealingFlags)))
             }
         }
         let order = try #require(one.radio.dials.last)

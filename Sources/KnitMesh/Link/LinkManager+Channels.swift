@@ -160,8 +160,8 @@ extension LinkManager {
     /// After the nonce, `t` names the tag we air while we blind, so a peer judges the order on the form it could have heard
     /// (`toldForm`, `BluetoothMeshTransport.kt:3837` at `cad69c77b`; ADR 2026-11.prsp), and a dial's HELLO carries `a`, the
     /// form `addressing` names. ``Capabilities/blindAdvert`` comes with ``Capabilities/local``;
-    /// ``Configuration/withholdsBlindAdvert``, a test's seam, takes it out of this HELLO alone, as a build from before the
-    /// reader would send.
+    /// ``Configuration/withholdsBlindAdvert``, a test's seam, takes it out of this HELLO alone, with ``Capabilities/linkSeal``,
+    /// as a build from before the reader would send.
     func ourHello(addressing: AdvertOrder.Form?) -> Hello {
         let capabilities = helloCapabilities()
         let nonce = capabilities.contains(.linkProof) ? LinkProof.freshNonce() : nil
@@ -177,7 +177,10 @@ extension LinkManager {
     func helloCapabilities() -> Capabilities {
         var capabilities = Capabilities.local.union(.blobHave)
         if configuration.withholdsBlindAdvert {
+            // A build from before the reader predates the seal too (v2.11.0 carries neither), so the seam takes both, and
+            // the stand-in meets a blinding peer's `RefuseLegacy` rather than the plain-link refusal (`link-seal` §7).
             capabilities.remove(.blindAdvert)
+            capabilities.remove(.linkSeal)
         }
         if radio.servesDoorbell {
             capabilities.insert(.doorbell)

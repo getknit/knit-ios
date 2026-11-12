@@ -319,14 +319,6 @@ public actor MeshControl {
             "blobs": ControlLines.describe(await mesh.blobs),
             "rings": .int(Int64(await mesh.rings)),
             "rung": .int(Int64(await mesh.ringsHeard)),
-            // One name each on both phones (the `link-hello-proof` contract, §9).
-            "linksProven": .int(Int64(await mesh.linksProven)),
-            "linkProofFailed": .int(Int64(await mesh.linkProofFailed)),
-            "linkClaimRefused": .int(Int64(await mesh.linkClaimRefused)),
-            // One name each on both phones (the `link-seal` contract, §9).
-            "linksSealed": .int(Int64(await mesh.linksSealed)),
-            "linkSealFailed": .int(Int64(await mesh.linkSealFailed)),
-            "linkSealRefused": .int(Int64(await mesh.linkSealRefused)),
             "aliases": ControlLines.describe(await mesh.aliasCounters),
             "presenceKeys": ControlLines.describe(await mesh.presenceKeyCounts),
             // This build's own bits (`Capabilities.local`, lowercase hex), before what a HELLO adds or knit-peer's legacy
@@ -339,6 +331,7 @@ public actor MeshControl {
             "router": ControlLines.describe(await mesh.routerCounters),
             "typing": ControlLines.typing(await mesh.typing),
         ]) { _, own in own }
+        fields.merge(await linkCounters()) { _, own in own }
         return fields
     }
 }

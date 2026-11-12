@@ -161,6 +161,8 @@ import Testing
         let tag = try #require(rig.airedTag)
         // Another iPhone, its HELLO carrying the doorbell, linked and proven.
         let iphone = LinkRig.iPhone(LinkRig.low)
+        // Its HELLO plays a plain dial by hand: without the seal's bit, or §7 refuses it before the row is read.
+        iphone.links.sealSwitch = .off
         let held = ChannelID(71)
         _ = rig.handle(.accepted(held))
         let hello = iphone.links.ourHello(addressing: BlindFixture.blinded(tag)).payload
