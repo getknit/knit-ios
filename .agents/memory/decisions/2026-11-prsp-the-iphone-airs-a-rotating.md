@@ -348,8 +348,12 @@ showed"). The same afternoon the dongle runs passed: `iphone-forgets`, `android-
 through ten forced rotations and a slot edge. It also showed iOS indicating Service Changed twice at each rotation, for
 the new payload service's handles and then the old one's, never the doorbell's ("What the writer's dongle runs
 showed"). The iPhone's link to the Linux peer dropped at each of its address changes, and a clear-mode control showed
-the same, so blinding is not the cause. Still owed: `iphone-wake`, a restoration relaunch and a cold launch with the
-switch on, and whether the Pixel is told of Service Changed (an HCI snoop on the phone).
+the same, so blinding is not the cause. On 2026-11-12 a cold launch and a restoration relaunch with the switch on each
+removed the two restored services at the first power-on and served the doorbell's within 0.6 s, and `iphone-wake`
+passed 10 of 10 with the iPhone locked across a slot edge ("What the writer's relaunches and the locked wake showed").
+Both relaunches were forced, and they used two of the slot's three restarts. How often iOS relaunches Knit unprompted
+is still unmeasured, so a relaunch still rotates. Still owed: whether the Pixel is told of Service Changed (an HCI
+snoop on the phone).
 
 Phase 1, our own keys (draft, 2026-11-11): `PresenceKeyPolicyOwnTests`, `PrekeyRingPresenceGenerationTests`,
 `OwnPresenceKeyStoreTests`, `SchemaTests` (v24), `PresenceKeyFrameTests`, `LinkManagerProvenSendTests`,

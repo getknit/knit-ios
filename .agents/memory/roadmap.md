@@ -529,8 +529,9 @@ explicit direction.** Update this file in the change that ships an item.
 
       Phases 0 to 4 are committed (`edf12b8`, `1a2d9ff`, `032e57e`, `fc56ab2`, `6795964`). The phone-only trials passed on
       2026-11-11 (`.agents/context/linux-peer.md`, "What the blinded-advert writer showed"), and the dongle runs and
-      btmon's handle check passed the same afternoon ("What the writer's dongle runs showed"). `iphone-wake`, a
-      restoration relaunch with the switch on are still owed, then A11. The iPhone's link to a KnitBlueZ reader drops at
+      btmon's handle check passed the same afternoon ("What the writer's dongle runs showed"). On 2026-11-12
+      `iphone-wake`, a cold launch and a restoration relaunch passed with the switch on ("What the writer's relaunches
+      and the locked wake showed"), so A11 is next. The iPhone's link to a KnitBlueZ reader drops at
       each of the iPhone's address changes, with the switch off too: the reader makes a second connection to the new
       address to read its payload, and iOS ends the older connection from the same address. An Android link meets the
       same while the phone's private address is the one its link was made from. That is not the writer's. This port

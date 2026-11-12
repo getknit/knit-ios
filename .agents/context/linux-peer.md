@@ -2205,13 +2205,59 @@ was left alone, and the guard put both phones' switches back after each run.
   - **A Zephyr dial through the accept list goes blind while the same controller enables an advert set** (knit-next's
     finding, 2026-11-11). `ull_filter_adv_update()` (`ll_sw/ull_filter.c:690`, privacy build) clears the filter accept
     list and refills it only for an advert that filters by it, so an initiator using the list loses it. Every
-    KnitBlueZ connect in these captures used `Accept list is not used`, which is clear of it.
+    KnitBlueZ connect in these captures used `Accept list is not used`, which is clear of it. It is filed upstream
+    as zephyrproject-rtos/zephyr#125576. Once a fix lands, knit-hci can take it and knit-next's bridge workaround
+    (`82ac3ee`) can go.
   - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
     after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
     `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.
-- **Still owed:** `iphone-wake`, a restoration relaunch and a cold launch with the switch on, a Pixel HCI snoop for
-  Service Changed, a rule for the readers' second connection at the iPhone's address change (above, not the
+- **Still owed:** a Pixel HCI snoop for Service Changed (`iphone-wake` and both relaunches passed on 2026-11-12, in
+  the next section), a rule for the readers' second connection at the iPhone's address change (above, not the
   writer's: it breaks the line `iphone-rotate`'s `links-held` judges once a run crosses an address change, and it
   drops Android links too), the plan's knit-peer trials (`RefuseLegacy` against a peer that
   withholds `CAP_BLIND_ADVERT`, and the iPhone beside a blinding knit-peer), which no run scripts yet, and everything
+  A11 owes.
+
+## What the writer's relaunches and the locked wake showed
+
+From 00:43 on 2026-11-12 the iPhone 12 kept `6795964`. The Pixel 3, 8 and 9 were on adb and the Pixel 7 was in range,
+all on knit-next debug builds without A11. No dongle was used. The maintainer gave the go-ahead and locked and opened the
+iPhone for `iphone-wake`. Nothing wiped a phone's data. The iPhone's Knit and `bluetoothd` logs (`idevicesyslog`) and the
+Pixels' logcat ran throughout, and the iPhone's switch went back to the build's default after (`advert` with `blind:
+clear`).
+
+| Trial | What it showed |
+| --- | --- |
+| `devicectl … launch --terminate-existing … -- -blind on`, the switch off | The launch failed (`The process identifier of the launched application could not be determined`). iOS started Knit itself 5.5 s after the terminate, in the background and without the argument, so the switch stayed off. That was a clear restoration relaunch (`ble restored the central with 11 connections`, `ble restored the peripheral`, PSM 192). |
+| The switch turned on over the bridge, then a cold launch with no argument | The new process read the stored switch. iOS still handed it the last process's state: 11 connections and `ble restored 2 0xFE30 services, to remove once powered on`. At the first power-on it removed them, served the doorbell's service 0.55 s after its first line, published, and served the payload's 27 ms later. The listener got PSM 193, and the Pixel 3 and 9 each failed one dial on 192 (`reason=OTHER`). The iPhone dialed all four phones and had them back 13.6 to 28.6 s after its start, with one bring-up rotation and `matchedByOrder` 0. |
+| A restoration relaunch with the switch on: Knit sent to the background, then `devicectl … process terminate` | `bluetoothd` kept both of Knit's sessions ("will be persisted, as it was performing long-term action"). A Pixel's GATT link dropped, and it relaunched Knit ("Resurrecting zombie application") 1.8 s after the terminate. The same restored lines came, then the doorbell's service 0.25 s after the first line, PSM 192 again, and the payload's 6 ms later. The seek wake dialed all four 4 s in, and three linked 6.4 to 7.6 s after the relaunch. |
+| `--keep-blind iphone-wake --device <Pixel 9> --expect-wakes` | 10 of 10. Every DM of ten locked minutes woke Knit. Each ticked 3.4 to 10.1 s after it was sent and arrived 0.1 to 8.6 s after. The Pixel rang ten times, and the link held. |
+
+- **The last process's services stay up until the first power-on.** `bluetoothd` served them from the terminate until
+  the relaunch removed them, 1.6 s later, so a read in that gap got the last process's tag. Both processes blinded, so
+  nothing clear went out. A switch flipped between two processes, the case ADR 2026-11.prsp removes them for, was not
+  tried.
+- **A cold launch moved the PSM.** The new process published within about a second of the old one's death and got 193,
+  as a publish did on 2026-10-14 while an unpublish was unanswered ("What the restart trial showed"). The relaunch,
+  1.8 s after its terminate, got 192. The writer does not move the publish, so a clear cold launch probably meets the
+  same. That was not tried. Each Pixel that held 192 failed one dial, and the iPhone dialed it within 11 s.
+- **Bring-ups share the slot's restarts across processes.** `restartsLeft` read 1 after the cold launch and the
+  relaunch, both in the 00:45 slot (an edge restores 3), while each process's `bringUpsInSlot` read 1. So the mark
+  carries the count from one process to the next. A third relaunch in the slot would leave none, and a fourth would air
+  a random tag. How often iOS relaunches Knit unprompted is still unmeasured: both of these were forced.
+- **The locked iPhone turned its slot at its wakes.** The `TAG_NEXT` due at 00:56:30 went to all four links at 00:57:03,
+  the first wake after it (a ring), and the 01:00 rotation came at 01:00:02, both while locked. The doorbell's service
+  stayed 1 and the payload's went from 2 to 3. The Pixel 9 rang ten times with no second doorbell lookup. Its own
+  `TAG_NEXT` at 00:56:30 waited for the iPhone's next wake.
+- **A phone that airs its id never redials a suspended blinding iPhone.** After the relaunch the Pixel 7's dial timed
+  out 17 s in, and nothing retried it while Knit was suspended (00:47:13 to 00:49:20). It linked 24 s after Knit came to
+  the front. The Pixel 7 airs its id, so the order gives the dial to the iPhone, and without A11 Android reads a blinded
+  payload as a stranger's. A11's dial rule toward a GATT-sourced form covers it.
+- **The Pixel 3 never announces its tag to the iPhone.** At 00:56:30 it sent `TAG_NEXT` to its three other links but
+  not the iPhone's, while the Pixel 9 sent the iPhone one. Android sends one only to a peer that `hearsTagNext` passes
+  (`PresenceKeyPolicy.kt:209-213` at the pin: neither blocked nor departed), so the Pixel 3 probably holds the iPhone in
+  one of those sets. The Pixel's sets were not read. That fits the swaps at its edges. At 00:45:14 the iPhone tag-dialed
+  the Pixel 3's new, unresolved tag while it held their link. The Pixel refused it (`heldProven=true`), and the held link
+  ended 67 ms later. The 13:00:28 swap on 2026-11-11 fits too ("What the blinded-advert writer showed").
+- **Still owed:** a Pixel HCI snoop for Service Changed, the knit-peer trials the dongle section lists, and everything
   A11 owes.
