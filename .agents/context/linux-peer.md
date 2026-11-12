@@ -2125,8 +2125,16 @@ was left alone, and the guard put both phones' switches back after each run.
     may never have crossed one. A sixth run, on dongle B after its replug (15:42 to 16:06), passed `rings-heard`
     (33 and 13 of 14, 46 heard) and dropped once more, as the iPhone moved from `45:D0:…` to `4D:93:…`: the peer
     opened its read connection to the new address at 15:56:05.46, and the old link timed out 4.9 s later, so its last
-    radio contact fell within 0.1 s of that connection. On dongle B the first time it fell 4.3 s before. Whether a
-    clear iPhone drops the same way is not known.
+    radio contact fell within 0.1 s of that connection. On dongle B the first time it fell 4.3 s before.
+  - **A clear iPhone drops the same way, so blinding is not the cause.** A control from 16:29 to 17:10 held the
+    iPhone's switch off and ran the same line for 40 minutes, with no rotations: the Pixel and knit-peer's `ios` profile
+    on dongle B as a GATT reader, posts every 2 minutes. The iPhone changed its address three times, about every 14.5
+    minutes (`72:5C:…` to `40:72:…` to `48:99:…` to `68:86:…`), and its link to the peer dropped at each one. Each
+    time, the peer opened a connection to the new address to read its payload (16:38:26.9, 16:53:06.9, 17:07:07.7), and
+    the old link timed out 4.92 s later at its 5 s supervision timeout, so it lost radio contact within about 80 ms of
+    the new connection. The peer cannot tell the new address is the iPhone it holds, so it makes a second connection
+    to the same device, which the iPhone's side evidently ends the first for. The Pixel's link held throughout, as it
+    did in every run. The peer relinked within 20 to 90 s each time, and one post waited out the gap.
   - **After each relink the peer dialed the iPhone's tag again,** six times in 6 minutes the first time, every one
     refused (`we dial it`) or timed out. The tag the old link claimed by `TAG_NEXT` keeps its claim for the claim
     lifetime past the link's end. `AdvertAliases.standing` answers with a claim before a hint, and a claim holds a
@@ -2135,7 +2143,8 @@ was left alone, and the guard put both phones' switches back after each run.
   - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
     after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
     `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.
-- **Still owed:** `iphone-wake`, a restoration relaunch and a cold launch with the switch on, `iphone-rotate` whole
-  with btmon across one of the iPhone's address changes, a Pixel HCI snoop for Service Changed, the plan's knit-peer trials (`RefuseLegacy` against a peer that
+- **Still owed:** `iphone-wake`, a restoration relaunch and a cold launch with the switch on, a Pixel HCI snoop for
+  Service Changed, the BlueZ reader's second connection at the iPhone's address change (above, not the writer's: it
+  breaks the line `iphone-rotate`'s `links-held` judges once a run crosses an address change), the plan's knit-peer trials (`RefuseLegacy` against a peer that
   withholds `CAP_BLIND_ADVERT`, and the iPhone beside a blinding knit-peer), which no run scripts yet, and everything
   A11 owes.

@@ -347,8 +347,9 @@ showed"). The same afternoon the dongle runs passed: `iphone-forgets`, `android-
 `iphone-rotate`, whose one failure was its ring count. btmon on dongle B showed the doorbell at handle `0x0067`
 through ten forced rotations and a slot edge. It also showed iOS indicating Service Changed twice at each rotation, for
 the new payload service's handles and then the old one's, never the doorbell's ("What the writer's dongle runs
-showed"). Still owed: `iphone-wake`, a restoration relaunch and a cold launch with the switch on, and whether the Pixel
-is told of Service Changed (an HCI snoop on the phone).
+showed"). The iPhone's link to the Linux peer dropped at each of its address changes, and a clear-mode control showed
+the same, so blinding is not the cause. Still owed: `iphone-wake`, a restoration relaunch and a cold launch with the
+switch on, and whether the Pixel is told of Service Changed (an HCI snoop on the phone).
 
 Phase 1, our own keys (draft, 2026-11-11): `PresenceKeyPolicyOwnTests`, `PrekeyRingPresenceGenerationTests`,
 `OwnPresenceKeyStoreTests`, `SchemaTests` (v24), `PresenceKeyFrameTests`, `LinkManagerProvenSendTests`,
