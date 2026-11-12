@@ -499,10 +499,13 @@ Kotlin wins.
       `CAP_LINK_SEAL`, `FLAG_LINK_SEAL`, tags 10 and 11, the v2 PROOF transcript and the three seal counters. The device
       trials ran against `554458ef9` (`linux-peer.md`, "What the link-seal trial showed"). `ios-emitted-v1.json` →
       `link.seal` is on `main` as this port exported it.
-    - **Owed here:** `5c3ceb290` (#309) forgets a tag's address after a tag dial over 1M times out (`DialTargets`,
-      `DialPlan.forgetsDialedAddress`), so a claim's address from before the peer's Bluetooth toggle stops drawing dials
-      that pause the scan. Clear and Coded dials forget nothing. Whether this port's tag dials keep such an address is
-      unchecked, and a parity question for the blinded-advert reader (ADR 2026-11.sv5t), not the seal.
+    - **Checked, nothing to mirror:** `5c3ceb290` (#309) forgets a tag's address after a tag dial over 1M times out
+      (`DialTargets`, `DialPlan.forgetsDialedAddress`), so a claim's address from before the peer's Bluetooth toggle
+      stops drawing dials that pause the scan. Clear and Coded dials forget nothing. This port's tag dial keeps the
+      address (`LinkManager+Advance.swift:14` retires it with a backoff), but it promotes no sighting unheard for 12 s
+      (`PromotionPolicy.swift:136-137`, a limit Android lacks), so such an address draws one dial at most, which is what
+      #309 buys Android. CoreBluetooth's connect pauses no scan, and an iPhone has no 1M and Coded split (checked
+      2026-11-12 for the paired change `blind-gatt-reads`).
     - **Nothing to mirror:** `52ef781bf`, `341fbb482`, `acee8ebf5` and `e5bb97c43` (release features, F-Droid, the
       2.11.0 changelog and the folded xp6d ADR, the rewritten copies of `7246f0f1e`, `0e120eb36`, `4f7abbbe1` and
       `d720192c5`), `ea1ef397e` (#304 and #305 recorded as accepted
@@ -565,6 +568,14 @@ Kotlin wins.
     claim after putting a link in its table (this port's admission and registration are one synchronous step in the
     `Mesh` actor), and it re-runs an id's link-up after a displacement (this port's `.down` then `.up` does). The wire
     change is additive.
+- **Mirrored ahead of the pin:** knit-next `feat/blind-gatt-reads` at `bdd21d89a`, not yet merged: companion change A11
+  (its ADR 2026-11.89gg; the paired change `blind-gatt-reads`; knit-ios #42 under ADR 2026-11.prsp), as knit-next ADR
+  2026-09.g64k was mirrored before it merged. `ee8609502` reads a blinding iPhone's GATT payload as a blinded sighting:
+  every `0xFE30` service searched, the blind path's resolution, forget rules 1, 2 and 4 on tags, the `(tag)` refund and
+  the doorbell's 10 s settle. `bdd21d89a` commits `ios-emitted-v1.json` as this port exported it, with
+  `carolPresenceKeysToBob` and `link.seal` kept. Nothing in `Sources/` mirrors it, since these rules were this port's
+  first (`GattPayloads.swift`, `GattSweep.swift`, `DoorbellLookup.swift`). `interop.py iphone-blind-reads` reads its log
+  lines, frozen in `.agents/rules/interop.md`. The pin moves to the merged SHA once the maintainer merges it.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5fdaf5da8`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
