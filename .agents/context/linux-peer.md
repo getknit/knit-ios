@@ -2252,7 +2252,8 @@ clear`).
 - **A phone that airs its id never redials a suspended blinding iPhone.** After the relaunch the Pixel 7's dial timed
   out 17 s in, and nothing retried it while Knit was suspended (00:47:13 to 00:49:20). It linked 24 s after Knit came to
   the front. The Pixel 7 airs its id, so the order gives the dial to the iPhone, and without A11 Android reads a blinded
-  payload as a stranger's. A11's dial rule toward a GATT-sourced form covers it.
+  payload as a stranger's. A11 does not change this: it keeps `AdvertOrder.iDial` on forms, and a clear phone never
+  dials a blinded form. It is filed as knit/knit-next#317.
 - **The Pixel 3 never announces its tag to the iPhone.** At 00:56:30 it sent `TAG_NEXT` to its three other links but
   not the iPhone's, while the Pixel 9 sent the iPhone one. Android sends one only to a peer that `hearsTagNext` passes
   (`PresenceKeyPolicy.kt:209-213` at the pin: neither blocked nor departed), so the Pixel 3 probably holds the iPhone in
