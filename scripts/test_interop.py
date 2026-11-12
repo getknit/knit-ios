@@ -939,6 +939,33 @@ class BlindLinksTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             interop._held_across_edges(interop._ios_links(lines, IPHONE), lines, 1)
 
+    def test_a_drop_the_run_cycled_leaves_its_edge_unjudged(self) -> None:
+        lines = capture(*link(EDGE - 600, EDGE + 16), *link(EDGE + 40, None, dialer="iphone"), end=EDGE + 900 + 100)
+        links = interop._ios_links(lines, IPHONE)
+        with self.assertRaises(RuntimeError):
+            interop._held_across_edges(links, lines, 1)
+        self.assertEqual(interop._held_across_edges(links, lines, 1, [EDGE + 15])["cycled"], 1)
+
+    def test_the_iphone_dialing_back_inside_rule_4s_window_and_the_control(self) -> None:
+        lines = capture(*link(EDGE - 600, EDGE + 16), *link(EDGE + 40, EDGE + 900 + 15, dialer="iphone"), *link(EDGE + 900 + 40, None))
+        links = interop._ios_links(lines, IPHONE)
+        self.assertEqual(interop._iphone_dialed_back(lines, IPHONE, [EDGE])["iphoneDialedBack"], 1)
+        with self.assertRaises(interop.Inconclusive):
+            interop._iphone_dialed_back(lines, IPHONE, [EDGE + 900])
+        self.assertEqual(interop._dialed_back(lines, IPHONE, [EDGE + 900])["phoneDialedBack"], 1)
+        self.assertEqual(interop._dials_again_unlinked(links)["phoneDialedAfterADrop"], 1)
+        with self.assertRaises(interop.Inconclusive):
+            interop._dials_again_unlinked(links[:2])
+
+    def test_the_edge_kind_still_owed_comes_next(self) -> None:
+        kinds = [interop._early_edge(index, late, 2, orders=False, dialed_back=False) for index, late in ((1, 0), (2, 1), (3, 1))]
+        self.assertEqual(kinds, [False, True, False], "late first, then alternating, until two late edges")
+        self.assertFalse(interop._early_edge(4, 2, 2, orders=False, dialed_back=True), "only the orders owed: a late edge")
+        self.assertFalse(interop._early_edge(5, 3, 2, orders=False, dialed_back=True))
+        self.assertTrue(interop._early_edge(5, 3, 2, orders=True, dialed_back=False), "only the dial-back owed: an early edge")
+        self.assertEqual([interop._early_edge(i, 2, 2, orders=False, dialed_back=False) for i in (4, 5)], [True, False], "both owed: alternating")
+        self.assertFalse(interop._early_edge(2, 0, 2, orders=False, dialed_back=False, no_relink=True))
+
     def test_a_dial_to_the_linked_iphone_by_id_or_handle_is_a_redial(self) -> None:
         resolved = (EDGE - 10, f"bt gatt blinded {ADDRESS} → {HANDLE} (handle)")
         crossing = (EDGE - 1, f"bt initiating to {HANDLE} (psm 192 rssi=-60 a2dp=false links=1)")
@@ -950,6 +977,8 @@ class BlindLinksTest(unittest.TestCase):
 
     def test_both_orders_wants_a_dial_each_way_by_the_order(self) -> None:
         self.assertEqual(interop._both_orders([{"dialer": "phone"}, {"dialer": "iphone"}])["headStarts"], 0)
+        early = {"dialer": "iphone", "outcome": "early"}
+        self.assertEqual(interop._by_order([{"dialer": "phone"}, early]), {"phone"}, "an early relink's dialer is no order's")
         with self.assertRaises(interop.Inconclusive):
             interop._both_orders([{"dialer": "phone"}, {"dialer": "iphone", "outcome": "tag dial"}])
 

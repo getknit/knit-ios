@@ -376,8 +376,12 @@ iPhone unlocked. First it stops the iPhone's mesh until both phones forget its p
 on each phone is of a tag no link has announced. After that it goes slot by slot. Both phones post every three minutes,
 which rings the iPhone. At each edge it checks that the iPhone announced and turned its tag with both links up. Ninety
 seconds past the edge it cycles each link (`deny-link`, then `allow-link` on the iPhone), so the pair relinks by the new
-slot's tag order. It stops once both dial orders have shown for both phones and `--edges` edges (2) have passed, or after
-`--max-edges` (6). The captures decide the rest. Each read resolves by key on the contact, and under a handle on the
+slot's tag order. Every second edge is early instead until `--edges` (2) late ones have passed, and after that the kind
+still owed comes next (late for a missing dial order, early for a missing dial-back): both links are cycled 15 s past it, so a relink comes inside rule 4's window while each phone still holds the last slot's payload. That
+is run 223e21's case below, and Android's stale-read rule (the contract's §5). It stops once `--edges` late edges have
+passed, both dial orders have shown for both phones, and the iPhone has dialed each back within 65 s of an early edge, or
+after `--max-edges` (6). Two steps report whether the no-redial check met its cases: the iPhone's early dial-back, and,
+as the control, a phone dialing the iPhone again once a link ended. Each is inconclusive if the tag order never gave it. The captures decide the rest. Each read resolves by key on the contact, and under a handle on the
 stranger until its first link. Each link's dialer must match the phone's order, links up 40 s before an edge must still be
 up 70 s after it, and no phone may dial a linked iPhone. The `(tag)` refunds must square with `gattBudget`, rule 4's
 forgets must land 35 to 65 s past each edge, and the seal counters, legacy refusals and rings are checked on all three. A

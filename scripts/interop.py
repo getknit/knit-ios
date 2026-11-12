@@ -2275,8 +2275,10 @@ EDGE_FORGET_TO = 65.0
 # or at the end of a scan window, whichever comes first.
 EDGE_FORGET_GRACE = 20.0
 # How long past an edge `iphone-blind-reads` cycles its links: past rule 4's window, and 20 s clear of the 70 s past the
-# edge that `_held_across_edges` judges on the phone's clock.
+# edge that `_held_across_edges` judges on the phone's clock. On an early edge it cycles them inside rule 4's window
+# instead, so a relink comes while the phones still hold the last slot's payload (run 223e21).
 RELINK_AFTER_EDGE = 90.0
+EARLY_RELINK_AFTER_EDGE = 15.0
 # How long before an edge the iPhone's counters are read, so that its `TAG_NEXT`, sent about 210 s ahead ("What the
 # blinded-advert writer showed"), counts at that edge.
 EDGE_LEAD = 300.0
@@ -2295,8 +2297,12 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
     each phone's first read of the run is of a bring-up's tag that no link announced. Then, slot by slot, both phones post
     to the room every `--post-every` seconds, which rings the iPhone; the iPhone announces its next tag and turns it at
     the edge with both links held; and 90 s past the edge each link is cycled (the iPhone denies the phone, then allows
-    it), so it comes back by the new slot's tag order. The run ends once both phones have linked in both dial orders and
-    `--edges` edges have passed. Only an iPhone serves a GATT payload, and the lab has one, so every blinded read the
+    it), so it comes back by the new slot's tag order. Every second edge is an early one instead until `--edges` late
+    ones have passed, and after that the kind still owed comes next (`_early_edge`): both links are cycled together 15 s
+    past it, so a relink lands inside rule 4's window
+    while each phone still holds the payload it read in the slot before, run 223e21's case. The run ends once `--edges`
+    late edges have passed, both phones have linked in both dial orders, and the iPhone has dialed each back within 65 s
+    of an early edge. Only an iPhone serves a GATT payload, and the lab has one, so every blinded read the
     phones log is taken to be its.
 
     At each edge it also records, without judging, whether each phone sent the iPhone a `TAG_NEXT` in the announcement
@@ -2307,8 +2313,11 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
     - **Resolution:** the contact phone resolved every read by key, to the iPhone (a random tag, past the slot's restarts,
         may be held under a handle); the stranger phone never by key, and under a handle until its first link to the iPhone.
     - **Links:** each one's dialer against the phone's own order (`_blind_dialed_by`, a head start reported), both dial
-        orders for each phone, each link up 40 s before an edge still up 70 s past it, no dial to the iPhone (its id or a
-        handle a blinded read gave it) while linked, and no legacy refusal on either side.
+        orders for each phone, each link up 40 s before an edge still up 70 s past it (a cycle of the run's own excused), no
+        dial to the iPhone (its id or a handle a blinded read gave it) while linked, and no legacy refusal on either side.
+        Two steps say whether that last check met its cases: the iPhone dialing a phone back within 65 s of an early
+        edge, and, as the control, a phone dialing the iPhone again once a link to it ended. Each is inconclusive when
+        the tag order never gave it.
     - **The refund:** each link that came up in the slot of the last blinded read before it, while that read's charge
         stood, refunded it (`bt gatt confirmed <address> (tag) → <iPhone>`), and every `bt state` line's `gattBudget`
         agrees with the charges and refunds the capture shows. Everything else that charges the budget (strangers under
@@ -2349,6 +2358,8 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
         records: dict[str, list[dict]] = {label: [] for label in phones}
         edges: list[float] = []
         tag_nexts: dict[str, list[dict]] = {label: [] for label in phones}
+        early_edges: list[float] = []
+        cycles: list[float] = []
         random_tags = False
         try:
             run.step("iphone-blinds", lambda: _airs_tag(ios.advert() or {}))
@@ -2368,23 +2379,42 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
                 edge = _next_edge(ios)
                 poster.hold(edge - EDGE_LEAD - time.time())
                 index = len(edges) + 1
+                owed = _still_owed(records, captures, ios.node_id, early_edges)
+                early = _early_edge(index, len(edges) - len(early_edges), arguments.edges, *owed, no_relink=arguments.no_relink)
                 refusals = {label: _tag_next_refusals(phone) for label, phone in phones.items()}
-                run.step(f"edge-{index}-turned", lambda edge=edge: _edge_turned(ios, phones, ids, edge, poster.hold, captures))
-                for label, phone in phones.items():
-                    record = _tag_next_round(phone, captures[label].lines(), ios, edge, refusals[label])
-                    tag_nexts[label].append(record)
-                    print(json.dumps({"record": f"edge-{index}-tag-next-{label}", **record}), flush=True)
-                poster.hold(edge + RELINK_AFTER_EDGE - time.time())
+
+                def round_records(edge: float = edge, index: int = index, refusals: dict = refusals) -> None:
+                    for label, phone in phones.items():
+                        record = _tag_next_round(phone, captures[label].lines(), ios, edge, refusals[label])
+                        tag_nexts[label].append(record)
+                        print(json.dumps({"record": f"edge-{index}-tag-next-{label}", **record}), flush=True)
+
+                if early:
+                    # The 223e21 case: a relink inside rule 4's window, while each phone still holds the last slot's payload.
+                    # The round is recorded first, so it describes the link that carried it.
+                    poster.hold(edge + EARLY_RELINK_AFTER_EDGE - time.time())
+                    round_records()
+                    cycles.append(time.time())
+                    relinked = run.step(f"edge-{index}-early-relink", lambda cycled=cycles[-1]: _relink_all(ios, phones, ids, knit, cycled, arguments.link_timeout))
+                    for label, record in (relinked or {}).items():
+                        records[label].append(record)
+                    early_edges.append(edge)
+                    poster.hold(edge + 50 - time.time())
+                else:
+                    run.step(f"edge-{index}-turned", lambda edge=edge: _edge_turned(ios, phones, ids, edge, poster.hold, captures))
+                    round_records()
                 edges.append(edge)
                 random_tags |= (ios.advert() or {}).get("resolvable") is False
-                if not arguments.no_relink:
+                if not arguments.no_relink and not early:
+                    poster.hold(edge + RELINK_AFTER_EDGE - time.time())
                     for label, phone in phones.items():
-                        cycled = time.time()
+                        cycles.append(time.time())
                         step = f"edge-{index}-relink-{label}"
-                        record = run.step(step, lambda label=label, phone=phone, cycled=cycled: _relink(ios, phone, ids[label], knit, cycled, arguments.link_timeout))
+                        record = run.step(step, lambda label=label, phone=phone, cycled=cycles[-1]: _relink(ios, phone, ids[label], knit, cycled, arguments.link_timeout))
                         if record:
                             records[label].append(record)
-                if len(edges) >= arguments.edges and all(_by_order(records[label]) == {"phone", "iphone"} for label in phones):
+                orders, dialed_back = _still_owed(records, captures, ios.node_id, early_edges)
+                if len(edges) - len(early_edges) >= arguments.edges and orders and (dialed_back or arguments.no_relink):
                     break
             poster.hold(30)
             after = run.step("counters-after", lambda: _blind_counters(ios, phones)) or {}
@@ -2398,8 +2428,11 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
             for label in phones:
                 ours = lines[label]
                 run.step(f"{label}-both-orders", lambda label=label: _both_orders(records[label]))
-                run.step(f"{label}-held-across-edges", lambda ours=ours: _held_across_edges(_ios_links(ours, ios.node_id), ours, arguments.edges))
+                links_held = _ios_links(ours, ios.node_id)
+                run.step(f"{label}-held-across-edges", lambda ours=ours, links_held=links_held: _held_across_edges(links_held, ours, arguments.edges, cycles))
                 run.step(f"{label}-no-redial-while-linked", lambda ours=ours: _no_android_redials(ours, ios.node_id))
+                run.step(f"{label}-iphone-dials-back-early", lambda ours=ours: _iphone_dialed_back(ours, ios.node_id, early_edges))
+                run.step(f"{label}-dials-again-unlinked", lambda links_held=links_held: _dials_again_unlinked(links_held))
                 run.step(f"{label}-refunds", lambda ours=ours: _blinded_refunds(ours, ios.node_id))
                 run.step(f"{label}-budget-agrees", lambda ours=ours: _budget_agrees(ours))
                 run.step(f"{label}-edge-forgets", lambda ours=ours: _edge_forgets(ours, ios.node_id))
@@ -2586,6 +2619,89 @@ def _relink(ios: IPhone, phone: Phone, phone_id: str, knit, since: float, timeou
     return _blind_link(ios, phone, phone_id, knit, since, timeout)
 
 
+def _still_owed(records: dict[str, list[dict]], captures: dict[str, LogcatCapture], node: str, early_edges: list[float]) -> tuple[bool, bool]:
+    """Whether every phone has linked in both dial orders by the order (`_by_order`), and whether the iPhone has dialed
+    every phone back within 65 s of an early edge (`_dialed_back`)."""
+    orders = all(_by_order(ours) == {"phone", "iphone"} for ours in records.values())
+    dialed_back = all(_dialed_back(capture.lines(), node, early_edges)["iphoneDialedBack"] for capture in captures.values())
+    return orders, dialed_back
+
+
+def _early_edge(index: int, late: int, want: int, orders: bool, dialed_back: bool, no_relink: bool = False) -> bool:
+    """Whether edge `index` (from 1) is an early one. Edges alternate, late first, until `want` late ones have passed;
+    after that, the kind still owed: late while only the dial orders are missing (an early relink judges no order), early
+    while only the iPhone's dial-back is, and alternating while both are, so a late edge still follows an early one, the
+    rule-4 window with a dead claim, a hint and a live link (run 223e21)."""
+    if no_relink:
+        return False
+    if late < want or (not orders and not dialed_back):
+        return index % 2 == 0
+    return not dialed_back
+
+
+def _relink_all(ios: IPhone, phones: dict[str, Phone], ids: dict[str, str], knit, since: float, timeout: float) -> dict[str, dict]:
+    """Cycles the iPhone's links to every phone at once, as `_relink` does one, so that each relink lands inside rule 4's
+    window past the edge, while the phones still hold the payload they read in the slot before it. Answers each phone's
+    link as `_early_link` records it; one that does not come back fails the step."""
+    mark = time.monotonic()
+    linked = {link["peer"] for link in ios.command(cmd="links")["links"]}
+    cycled = [label for label in phones if ids[label] in linked]
+    for label in cycled:
+        ios.command(cmd="deny-link", peer=ids[label])
+    try:
+        for label in cycled:
+            ios.wait(lambda line, peer=ids[label]: line.get("event") == "link" and line.get("peer") == peer and not line.get("up") and line["_at"] > mark, 60)
+    finally:
+        time.sleep(5)
+        for label in cycled:
+            ios.command(cmd="allow-link", peer=ids[label])
+    return {label: _early_link(ios, phone, ids[label], timeout) for label, phone in phones.items()}
+
+
+def _early_link(ios: IPhone, phone: Phone, phone_id: str, timeout: float) -> dict:
+    """The iPhone and `phone` linked again after an early cycle, and who dialed, from the phone's `ADVERT`. The order is
+    not judged here: inside rule 4's window the phone may still read the iPhone's last tag, so its `iDial` can name the
+    last slot's order. The late edges judge the order, and `_by_order` leaves these out (`outcome`)."""
+    linked = _ios_linked(ios, phone, phone_id, timeout)
+    link = next((entry for entry in (phone.advert() or {}).get("links", []) if entry.get("nodeId") == ios.node_id), None)
+    if link is None:
+        raise RuntimeError(f"the phone reports no link to the iPhone after the early cycle: {phone.serial}")
+    if not link.get("tagAware"):
+        raise RuntimeError(f"the iPhone reads tags, yet the phone says its HELLO lacked CAP_BLIND_ADVERT: {link}")
+    dialer = "phone" if link.get("dialedByMe") else "iphone"
+    return {"dialer": dialer, "outcome": "early", "tagAware": True, "linkSeconds": linked["seconds"]}
+
+
+def _dialed_back(lines: list[tuple[float, str]], node: str, early_edges: list[float]) -> dict:
+    """Past each of `early_edges`, the links to `node` that came up within rule 4's window (65 s, on the phone's clock), by
+    who dialed them: the iPhone's are the 223e21 case, a relink while the phone still holds the last slot's payload."""
+    within = [link for link in _ios_links(lines, node) for edge in early_edges if edge < link["up"] <= edge + EDGE_FORGET_TO]
+    return {
+        "iphoneDialedBack": sum(link["dialer"] == "iphone" for link in within),
+        "phoneDialedBack": sum(link["dialer"] == "phone" for link in within),
+        "earlyEdges": len(early_edges),
+    }
+
+
+def _iphone_dialed_back(lines: list[tuple[float, str]], node: str, early_edges: list[float]) -> dict:
+    """The iPhone dialed the phone back within 65 s of an edge at least once, so `no-redial-while-linked` judged the window
+    where the phone held a stale payload beside a live link (run 223e21; Android's stale-read rule, contract §5). Which
+    side relinks is the tag order's, so a run where the iPhone never did is inconclusive, and says what happened."""
+    detail = _dialed_back(lines, node, early_edges)
+    if not detail["iphoneDialedBack"]:
+        raise Inconclusive(f"the iPhone never dialed this phone back within {EDGE_FORGET_TO:.0f} s of an edge: {detail}")
+    return detail
+
+
+def _dials_again_unlinked(links: list[dict]) -> dict:
+    """The control for `no-redial-while-linked`: once a link to the iPhone ended, the phone dialed it again, so the rule
+    that held its dials off while linked does not hold them off for good. Inconclusive when the order never gave it one."""
+    again = sum(link["dialer"] == "phone" for previous, link in zip(links, links[1:]) if previous["down"] is not None)
+    if not again:
+        raise Inconclusive(f"the phone never dialed the iPhone after a link to it ended, in {len(links)} links")
+    return {"phoneDialedAfterADrop": again}
+
+
 def _next_edge(ios: IPhone) -> float:
     """The next slot edge, in seconds on the wall clock: the iPhone's `nextEdgeAtMs`, or the next multiple of a slot."""
     edge = (ios.advert() or {}).get("nextEdgeAtMs")
@@ -2631,7 +2747,8 @@ def _both_orders(records: list[dict]) -> dict:
     """The phone and the iPhone each dialed a link by the order: the tag order turns at random each slot, so a run that
     never saw one side's turn is inconclusive, not failed."""
     seen = _by_order(records)
-    detail = {"dialers": [record.get("dialer") for record in records], "headStarts": sum(bool(record.get("outcome")) for record in records)}
+    outcomes = Counter(record.get("outcome") for record in records)
+    detail = {"dialers": [record.get("dialer") for record in records], "headStarts": outcomes["tag dial"], "early": outcomes["early"]}
     if seen != {"phone", "iphone"}:
         raise Inconclusive(f"only {sorted(seen)} dialed by the order in {len(records)} links: the tag order never turned ({detail})")
     return detail
@@ -2677,18 +2794,21 @@ def _at_address_change(lines: list[tuple[float, str]], down: float) -> bool:
     return any(down - 20 <= at <= down + 1 for at, message in lines if message.startswith(GATT_READING))
 
 
-def _held_across_edges(links: list[dict], lines: list[tuple[float, str]], want: int) -> dict:
+def _held_across_edges(links: list[dict], lines: list[tuple[float, str]], want: int, cycles: list[float] | None = None) -> dict:
     """Each link to the iPhone up 40 s before an edge was still up 70 s past it: the iPhone turns its tag there, and the
-    phone keeps the link. A drop between is failed with its reason, unless it came at the iPhone's address change, which
-    can fall in the window by chance (`_at_address_change`) and leaves that edge unjudged. An edge with no link up before
-    it is not judged either, and fewer than `want` judged edges is inconclusive."""
-    held, dropped, moved, unjudged = [], [], 0, 0
+    phone keeps the link. A drop between is failed with its reason, unless the run cycled the link then (`cycles`, the
+    host's times of each `deny-link`) or it came at the iPhone's address change, which can fall in the window by chance
+    (`_at_address_change`); either leaves that edge unjudged. An edge with no link up before it is not judged either, and
+    fewer than `want` judged edges is inconclusive."""
+    held, dropped, moved, cycled, unjudged = [], [], 0, 0, 0
     for edge in _edges_within(lines):
         link = next((link for link in links if link["up"] <= edge - 40 and (link["down"] is None or link["down"] > edge - 40)), None)
         if link is None:
             unjudged += 1
         elif link["down"] is not None and link["down"] < edge + 70:
-            if _at_address_change(lines, link["down"]):
+            if any(at - 5 <= link["down"] <= at + 20 for at in cycles or []):
+                cycled += 1
+            elif _at_address_change(lines, link["down"]):
                 moved += 1
             else:
                 dropped.append({"edge": edge, "downAfterEdge": round(link["down"] - edge, 1), "why": link["why"]})
@@ -2697,8 +2817,10 @@ def _held_across_edges(links: list[dict], lines: list[tuple[float, str]], want: 
     if dropped:
         raise RuntimeError(f"links dropped across an edge: {dropped}")
     if len(held) < want:
-        raise Inconclusive(f"{len(held)} edges with a link held across them, {moved} dropped at an address change, {unjudged} with none up before")
-    return {"edgesHeld": len(held), "atAddressChange": moved, "unjudged": unjudged}
+        raise Inconclusive(
+            f"{len(held)} edges with a link held across them, {cycled} cycled, {moved} dropped at an address change, {unjudged} with none up before"
+        )
+    return {"edgesHeld": len(held), "cycled": cycled, "atAddressChange": moved, "unjudged": unjudged}
 
 
 def _ios_keys(lines: list[tuple[float, str]], node: str) -> set[str]:
