@@ -2152,11 +2152,25 @@ was left alone, and the guard put both phones' switches back after each run.
     `no-redial-while-linked` passed. Just before the 625-second link, the peer's head start had resolved the
     iPhone by the dead claim three times while unlinked. Before the fix, that relink brought the first redial within
     8 ms to 7 s.
+  - **The iPhone ends a link when the same device connects to it again (20:04, a second clear-mode control).** The
+    iPhone's own `bluetoothd` log (`idevicesyslog -p bluetoothd` over USB) and dongle B's btmon covered one address
+    change. At 20:04:15 iOS logged the rotation (`Advertising stopped due to address change`) and listed its links,
+    the peer's among them as healthy. At 20:04:17 the peer's read connection to the new address came in from the
+    dongle's Public address, under the same CoreBluetooth device UUID as the peer's link. In the same second iOS
+    logged that link `disconnected … with reason 708` (700 plus HCI 0x08, a timeout), and the dongle timed out 5 s
+    later. At 20:04:29 a Pixel's Knit link ended the same way, as a new connection came in under that Pixel's UUID. The
+    Pixel 8's read at 20:04:15 came from a new random address, under a new UUID, and ended nothing. So a second
+    connection from an address that already holds a link to the iPhone replaces that link. The dongle's address never
+    changes, so its read always does that. An Android phone does it only while its private address is still the one
+    its link was made from, which is why the Pixel 9's link, hours old, survived every change. Every reader that reads
+    a new address with a second connection can meet this: Android's `BleGattPayloadReader`, KnitBlueZ and KnitBLE's
+    reader. Which rule avoids it is not decided yet.
   - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
     after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
     `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.
 - **Still owed:** `iphone-wake`, a restoration relaunch and a cold launch with the switch on, a Pixel HCI snoop for
-  Service Changed, the BlueZ reader's second connection at the iPhone's address change (above, not the writer's: it
-  breaks the line `iphone-rotate`'s `links-held` judges once a run crosses an address change), the plan's knit-peer trials (`RefuseLegacy` against a peer that
+  Service Changed, a rule for the readers' second connection at the iPhone's address change (above, not the
+  writer's: it breaks the line `iphone-rotate`'s `links-held` judges once a run crosses an address change, and it
+  drops Android links too), the plan's knit-peer trials (`RefuseLegacy` against a peer that
   withholds `CAP_BLIND_ADVERT`, and the iPhone beside a blinding knit-peer), which no run scripts yet, and everything
   A11 owes.

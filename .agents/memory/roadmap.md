@@ -532,8 +532,10 @@ explicit direction.** Update this file in the change that ships an item.
       btmon's handle check passed the same afternoon ("What the writer's dongle runs showed"). `iphone-wake`, a
       restoration relaunch with the switch on are still owed, then A11. The iPhone's link to a KnitBlueZ reader drops at
       each of the iPhone's address changes, with the switch off too: the reader makes a second connection to the new
-      address to read its payload, and the old link dies within about 80 ms. That is not the writer's, and is owed on
-      its own. After each such drop the reader redialed the iPhone's tag while linked again, until the old link's claim
+      address to read its payload, and iOS ends the older connection from the same address. An Android link meets the
+      same while the phone's private address is the one its link was made from. That is not the writer's, and a
+      reader rule for it is owed on its own (`linux-peer.md`, "The iPhone ends a link when the same device connects
+      to it again"). After each such drop the reader redialed the iPhone's tag while linked again, until the old link's claim
       lapsed. ADR 2026-11.sv5t's 2026-11-11 amendment fixes that (`2e82f18`), and a 45-minute hold across four
       address changes showed no redial while linked.
     - **A11 (Android reads a blinded GATT payload):** a paired change that iOS leads, knit-next's half of ADR
