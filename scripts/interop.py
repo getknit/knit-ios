@@ -2299,6 +2299,10 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
     `--edges` edges have passed. Only an iPhone serves a GATT payload, and the lab has one, so every blinded read the
     phones log is taken to be its.
 
+    At each edge it also records, without judging, whether each phone sent the iPhone a `TAG_NEXT` in the announcement
+    round (`bt tag next → <iPhone>`), and on a miss the phone's refusal counts and both ends' view of the link
+    (`_tag_next_round`): the Pixel 3 missed them on 2026-11-12, from processes since gone.
+
     It judges, from the phones' captures unless named otherwise:
     - **Resolution:** the contact phone resolved every read by key, to the iPhone (a random tag, past the slot's restarts,
         may be held under a handle); the stranger phone never by key, and under a handle until its first link to the iPhone.
@@ -2344,6 +2348,7 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
         poster = _Poster(phones, nonce, arguments.post_every)
         records: dict[str, list[dict]] = {label: [] for label in phones}
         edges: list[float] = []
+        tag_nexts: dict[str, list[dict]] = {label: [] for label in phones}
         random_tags = False
         try:
             run.step("iphone-blinds", lambda: _airs_tag(ios.advert() or {}))
@@ -2363,7 +2368,12 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
                 edge = _next_edge(ios)
                 poster.hold(edge - EDGE_LEAD - time.time())
                 index = len(edges) + 1
-                run.step(f"edge-{index}-turned", lambda edge=edge: _edge_turned(ios, phones, ids, edge, poster.hold))
+                refusals = {label: _tag_next_refusals(phone) for label, phone in phones.items()}
+                run.step(f"edge-{index}-turned", lambda edge=edge: _edge_turned(ios, phones, ids, edge, poster.hold, captures))
+                for label, phone in phones.items():
+                    record = _tag_next_round(phone, captures[label].lines(), ios, edge, refusals[label])
+                    tag_nexts[label].append(record)
+                    print(json.dumps({"record": f"edge-{index}-tag-next-{label}", **record}), flush=True)
                 poster.hold(edge + RELINK_AFTER_EDGE - time.time())
                 edges.append(edge)
                 random_tags |= (ios.advert() or {}).get("resolvable") is False
@@ -2411,8 +2421,66 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
             knit.stop()
     links = {label: [{key: record.get(key) for key in ("dialer", "expected", "outcome")} for record in records[label]] for label in phones}
     summary = {"summary": "iphone-blind-reads", "steps": run.steps, "failed": run.failed, "inconclusive": run.inconclusive, "edges": len(edges)}
-    print(json.dumps({**summary, "links": links, "posts": poster.count}))
+    sent = {label: f"{sum(bool(record['sent']) for record in records)}/{len(records)}" for label, records in tag_nexts.items()}
+    print(json.dumps({**summary, "links": links, "posts": poster.count, "tagNextSent": sent}))
     return run.failed
+
+
+# What Android counts when it refuses a `TAG_NEXT` (`MeshMetrics.BleAdvertWrite`, `TagNextSends.Outcome`), read from
+# `STATE`'s `bleAdvertWritesByEvent`: no own key, a link that is unproven, not tag-aware, or to a blocked or departed peer,
+# one inside the receiver's two-minute limit, and a resend held for a due announcement.
+TAG_NEXT_REFUSALS = ("TAG_NEXT_NO_KEY", "TAG_NEXT_INELIGIBLE", "TAG_NEXT_THROTTLED", "TAG_NEXT_BEFORE_ANNOUNCE")
+# Android's line for each `TAG_NEXT` it sends, an announcement, a current form or a resend alike
+# (`BluetoothMeshTransport.kt:1683` at `ee8609502`), and the announcement's lead before the edge (`AdvertRotation.LEAD_MS`).
+TAG_NEXT_SENT = "bt tag next → "
+TAG_NEXT_LEAD = 210.0
+
+
+def _tag_next_refusals(phone: Phone) -> dict:
+    """The phone's `TAG_NEXT` refusal counts now, or none when its bridge did not answer."""
+    try:
+        writes = _phone_metrics(phone).get("bleAdvertWritesByEvent") or {}
+    except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError):
+        return {}
+    return {key: writes.get(key, 0) for key in TAG_NEXT_REFUSALS}
+
+
+def _tag_nexts_sent(lines: list[tuple[float, str]], node: str, edge: float) -> list[float]:
+    """When the phone logged each `TAG_NEXT` it sent `node` around `edge`, in seconds from the edge: from `EDGE_LEAD` ahead
+    of it to 45 s past it, on the phone's clock. The line does not say which kind of send it was."""
+    return [round(at - edge, 1) for at, message in lines if message.startswith(f"{TAG_NEXT_SENT}{node}") and edge - EDGE_LEAD - 5 <= at <= edge + 45]
+
+
+def _announced(offsets: list[float]) -> int:
+    """The sends that fall within 30 s of the announcement's lead, so that a current form or a resend later in the round
+    does not stand in for a missed announcement."""
+    return sum(abs(offset + TAG_NEXT_LEAD) <= 30 for offset in offsets)
+
+
+def _tag_next_round(phone: Phone, lines: list[tuple[float, str]], ios: IPhone, edge: float, before: dict) -> dict:
+    """Recorded, not judged (the contract's step 5): whether the phone announced its coming tag to the iPhone, a `TAG_NEXT`
+    near `TAG_NEXT_LEAD` before `edge`, with every send's time from the edge beside it. On a miss, the refusals it counted
+    since the round began, phone-wide and so maybe another link's, beside how many links it holds; how it holds its link to
+    the iPhone (`proven`, `tagAware`, `blinded`: what `TAG_NEXT`'s eligibility reads); and the capabilities the iPhone's
+    HELLO carries, derived from its own `capabilities` with `CAP_BLOB_HAVE` and, while its doorbell's service is served,
+    `CAP_DOORBELL` (`helloCapabilities()`, which a knit-peer seam can narrow, never a phone's build)."""
+    offsets = _tag_nexts_sent(lines, ios.node_id, edge)
+    record: dict = {"edge": edge, "sent": _announced(offsets), "sentAt": offsets}
+    if record["sent"]:
+        return record
+    after = _tag_next_refusals(phone)
+    record["refusedPhoneWide"] = {key: after[key] - before.get(key, 0) for key in after}
+    try:
+        view = phone.advert() or {}
+        record["phoneLinks"] = len(view.get("links", []))
+        link = next((entry for entry in view.get("links", []) if entry.get("nodeId") == ios.node_id), None)
+        record["link"] = None if link is None else {key: link.get(key) for key in ("proven", "tagAware", "blinded")}
+        local = int(str(ios.command(cmd="status").get("capabilities", "0")), 16)
+        doorbell = ((ios.advert() or {}).get("gatt") or {}).get("doorbell") is not None
+        record["iphoneHelloDerived"] = f"{local | 0x2000 | (0x1000 if doorbell else 0):x}"
+    except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError, TimeoutError, OSError, ValueError) as error:
+        record["error"] = str(error)[:200]
+    return record
 
 
 def _phone_blinds(phone: Phone) -> dict:
@@ -2524,14 +2592,28 @@ def _next_edge(ios: IPhone) -> float:
     return edge / 1000 if edge else (int(time.time() // SLOT_SECONDS) + 1) * SLOT_SECONDS
 
 
-def _edge_turned(ios: IPhone, phones: dict[str, Phone], ids: dict[str, str], edge: float, pause: Callable[[float], None]) -> dict:
+def _edge_turned(
+    ios: IPhone, phones: dict[str, Phone], ids: dict[str, str], edge: float, pause: Callable[[float], None], captures: dict[str, LogcatCapture]
+) -> dict:
     """Across `edge`: the iPhone announced its coming tag and rotated (`_tag_next_across_edge`, with the contact phone), and
     the stranger phone's link held too and knows the iPhone by a tag. Read too close to the edge, its announcement may
-    have gone already, so that is inconclusive."""
+    have gone already, so that is inconclusive, and so is a link that dropped at the iPhone's address change."""
     if edge - time.time() < EDGE_LEAD - 60:
         raise Inconclusive(f"the edge is {round(edge - time.time())} s away: the iPhone may have announced its tag already")
-    turned = _tag_next_across_edge(ios, phones["contact"], ids["contact"], edge - time.time() + 60, pause)
+
+    def moved(label: str) -> bool:
+        lines = captures[label].lines()
+        return any(link["down"] is not None and link["down"] >= edge - 60 and _at_address_change(lines, link["down"]) for link in _ios_links(lines, ios.node_id))
+
+    try:
+        turned = _tag_next_across_edge(ios, phones["contact"], ids["contact"], edge - time.time() + 60, pause)
+    except RuntimeError as error:
+        if "did not hold" in str(error) and moved("contact"):
+            raise Inconclusive("the contact phone's link dropped at the iPhone's address change") from error
+        raise
     if not any(entry.get("nodeId") == ids["stranger"] for entry in (ios.advert() or {}).get("links", [])):
+        if moved("stranger"):
+            raise Inconclusive("the stranger phone's link dropped at the iPhone's address change")
         raise RuntimeError("the iPhone's link to the stranger phone did not hold across the edge")
     view = phones["stranger"].advert()
     link = next((entry for entry in (view or {}).get("links", []) if entry.get("nodeId") == ios.node_id), None)
@@ -2582,25 +2664,41 @@ def _edges_within(lines: list[tuple[float, str]], before: float = 40.0, after: f
     return [float(edge) for edge in range(first, int(lines[-1][0] - after) + 1, SLOT_SECONDS)]
 
 
+# Android's line as a GATT read begins (`BluetoothMeshTransport.kt:3522` at `ee8609502`, debug), which the capture keeps.
+GATT_READING = "bt gatt reading "
+
+
+def _at_address_change(lines: list[tuple[float, str]], down: float) -> bool:
+    """Whether a link to the iPhone that went down at `down` went at the iPhone's address change: the phone began a GATT
+    read in the 20 s before it. A phone never reads an address its link holds (`DialPlan.mayReadGatt`), so a read begun
+    while the link was up was of another address, and iOS ends a link when the device holding it connects again ("What
+    the writer's dongle runs showed", the 20:04 control). A read begun after the drop proves nothing: the dropped link's
+    address is read again then, whatever dropped it."""
+    return any(down - 20 <= at <= down + 1 for at, message in lines if message.startswith(GATT_READING))
+
+
 def _held_across_edges(links: list[dict], lines: list[tuple[float, str]], want: int) -> dict:
     """Each link to the iPhone up 40 s before an edge was still up 70 s past it: the iPhone turns its tag there, and the
-    phone keeps the link. A drop between is failed with its reason; an edge with no link up before it is not judged, and
-    fewer than `want` judged edges is inconclusive. A drop at the iPhone's own address change can fall in the window by
-    chance ("What the writer's dongle runs showed")."""
-    held, dropped, unjudged = [], [], 0
+    phone keeps the link. A drop between is failed with its reason, unless it came at the iPhone's address change, which
+    can fall in the window by chance (`_at_address_change`) and leaves that edge unjudged. An edge with no link up before
+    it is not judged either, and fewer than `want` judged edges is inconclusive."""
+    held, dropped, moved, unjudged = [], [], 0, 0
     for edge in _edges_within(lines):
         link = next((link for link in links if link["up"] <= edge - 40 and (link["down"] is None or link["down"] > edge - 40)), None)
         if link is None:
             unjudged += 1
         elif link["down"] is not None and link["down"] < edge + 70:
-            dropped.append({"edge": edge, "downAfterEdge": round(link["down"] - edge, 1), "why": link["why"]})
+            if _at_address_change(lines, link["down"]):
+                moved += 1
+            else:
+                dropped.append({"edge": edge, "downAfterEdge": round(link["down"] - edge, 1), "why": link["why"]})
         else:
             held.append(edge)
     if dropped:
         raise RuntimeError(f"links dropped across an edge: {dropped}")
     if len(held) < want:
-        raise Inconclusive(f"{len(held)} edges with a link held across them, {unjudged} with none up before")
-    return {"edgesHeld": len(held), "unjudged": unjudged}
+        raise Inconclusive(f"{len(held)} edges with a link held across them, {moved} dropped at an address change, {unjudged} with none up before")
+    return {"edgesHeld": len(held), "atAddressChange": moved, "unjudged": unjudged}
 
 
 def _ios_keys(lines: list[tuple[float, str]], node: str) -> set[str]:

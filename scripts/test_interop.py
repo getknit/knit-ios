@@ -926,6 +926,19 @@ class BlindLinksTest(unittest.TestCase):
         with self.assertRaises(interop.Inconclusive):
             interop._held_across_edges(interop._ios_links(held, IPHONE), held, 3)
 
+    def test_a_drop_at_the_iphones_address_change_leaves_its_edge_unjudged(self) -> None:
+        reading = (EDGE + 28, "bt gatt reading 6A:00:11:22:33:44")
+        lines = capture(*link(EDGE - 600, EDGE + 30), reading, blinded_read(EDGE + 40, "6A:00:11:22:33:44"), end=EDGE + 100)
+        with self.assertRaises(interop.Inconclusive):
+            interop._held_across_edges(interop._ios_links(lines, IPHONE), lines, 1)
+        self.assertTrue(interop._at_address_change(lines, EDGE + 30))
+        self.assertFalse(interop._at_address_change(lines, EDGE - 100))
+
+    def test_a_drop_then_a_read_of_its_address_stays_a_failure(self) -> None:
+        lines = capture(*link(EDGE - 600, EDGE + 30), (EDGE + 40, f"bt gatt reading {ADDRESS}"), blinded_read(EDGE + 45), end=EDGE + 100)
+        with self.assertRaises(RuntimeError):
+            interop._held_across_edges(interop._ios_links(lines, IPHONE), lines, 1)
+
     def test_a_dial_to_the_linked_iphone_by_id_or_handle_is_a_redial(self) -> None:
         resolved = (EDGE - 10, f"bt gatt blinded {ADDRESS} → {HANDLE} (handle)")
         crossing = (EDGE - 1, f"bt initiating to {HANDLE} (psm 192 rssi=-60 a2dp=false links=1)")
@@ -979,6 +992,33 @@ class BlindDoorbellAndSealTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             interop._no_legacy({"contact": []}, IPHONE, {"refusedLegacy": 1}, {"refusedLegacy": 2})
         self.assertEqual(interop._no_legacy({"contact": []}, IPHONE, {}, {}), {})
+
+
+class TagNextRoundTest(unittest.TestCase):
+    def test_a_send_counts_inside_the_round_before_the_edge(self) -> None:
+        lines = [
+            (EDGE - 400, f"bt tag next → {IPHONE}"),
+            (EDGE - 210, f"bt tag next → {IPHONE}"),
+            (EDGE - 210, f"bt tag next → {PHONE}"),
+            (EDGE + 30, f"bt tag next → {IPHONE}"),
+            (EDGE + 60, f"bt tag next → {IPHONE}"),
+        ]
+        self.assertEqual(interop._tag_nexts_sent(lines, IPHONE, EDGE), [-210.0, 30.0])
+        self.assertEqual(interop._announced(interop._tag_nexts_sent(lines, IPHONE, EDGE)), 1)
+        self.assertEqual(interop._announced([30.0]), 0, "a send after the edge is no announcement")
+        self.assertEqual(interop._tag_nexts_sent(lines, PHONE, EDGE + 900), [])
+
+    def test_a_miss_records_the_refusals_and_both_ends_view(self) -> None:
+        phone = mock.Mock()
+        phone.state.return_value = {"metrics": {"bleAdvertWritesByEvent": {"TAG_NEXT_INELIGIBLE": 3, "TAG_NEXT_ANNOUNCED": 9}}}
+        phone.advert.return_value = {"links": [{"nodeId": IPHONE, "proven": True, "tagAware": False, "blinded": True}]}
+        ios = mock.Mock(node_id=IPHONE)
+        ios.command.return_value = {"capabilities": "1c015f"}
+        ios.advert.return_value = {"gatt": {"doorbell": 3}}
+        record = interop._tag_next_round(phone, [], ios, EDGE, {"TAG_NEXT_INELIGIBLE": 1})
+        self.assertEqual(record["refusedPhoneWide"]["TAG_NEXT_INELIGIBLE"], 2)
+        self.assertEqual((record["phoneLinks"], record["link"]), (1, {"proven": True, "tagAware": False, "blinded": True}))
+        self.assertEqual(record["iphoneHelloDerived"], "1c315f")
 
 
 class BlindingAdvertsTest(unittest.TestCase):

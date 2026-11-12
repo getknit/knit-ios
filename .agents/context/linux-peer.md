@@ -383,7 +383,10 @@ up 70 s after it, and no phone may dial a linked iPhone. The `(tag)` refunds mus
 forgets must land 35 to 65 s past each edge, and the seal counters, legacy refusals and rings are checked on all three. A
 lookup before the doorbell's service is up only happens by chance, because a blinding iPhone publishes its listener only
 once that service is served, so `doorbell-settles` stays inconclusive unless one happened. The tag order is random each
-slot, so a run that never saw one side dial counts as inconclusive rather than failed.
+slot, so a run that never saw one side dial counts as inconclusive rather than failed. At each edge the run also records
+whether each phone sent the iPhone a `TAG_NEXT` (`bt tag next → <iPhone>`). When one didn't, it records that phone's
+`TAG_NEXT_*` refusal counts, its `ADVERT` view of the link and the iPhone's HELLO capabilities. That is a record, not a
+judgment: it is there to catch the Pixel 3's missing announcements if they come back.
 
 `scripts/soak.py` is the other way round: a night against every Knit phone in range, driving none of them, so it
 needs no go-ahead for a phone. The peer takes a node id above every phone's and dials them all, since this adapter
