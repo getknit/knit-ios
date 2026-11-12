@@ -2183,6 +2183,29 @@ was left alone, and the guard put both phones' switches back after each run.
     their 12 s timeout, and a failed read waits 30 s before the next. Each read that succeeded then waited out the 12 s
     dwell before the peer dialed, and each of those dials linked at once, at the dongle's 5 s supervision timeout. In the
     20:04 control the iPhone had redialed after 10 s. What decides whether it redials is not known yet.
+  - **Round 2 (`57b05f0`, 2026-11-11 23:43 to 2026-11-12 00:19): no dwell, a 20 s read.** The same hold crossed three
+    address changes:
+    - **23:46:** the read landed 3 s after the drop, and the peer dialed at its backoff's end, 8.3 s after the drop,
+      with no dwell. The read's 2 s grace had already let its connection go, and the dial's fresh connection failed
+      with `0x3e`: the iPhone did not answer it, 2 s after the dongle's previous connection closed. A re-read and
+      the doubled backoff brought the link back 35.3 s after the drop.
+    - **00:04:** the first read's connection failed with `0x3e`, so iOS replaced nothing. bluetoothd removed the
+      iPhone's old address 30 s after it went quiet (`bluez forgot the doorbell of …: BlueZ removed it`), and removing a
+      connected device ends its link (HCI 0x16, below). The next read's dial went 1 ms after it, rode the read's
+      connection, and linked 11.7 s after the drop.
+    - **00:19:** a read that took 12.2 s, which the old 12 s limit would have failed. The dial went at the backoff's end,
+      and the run ended before it linked.
+    So the dwell skip and the 20 s read work, and a dial that rides the read's connection links at once. A dial that
+    comes after the 2 s grace needs a fresh connection, which the iPhone left unanswered once, 2 s after the dongle's
+    last one closed.
+  - **`TemporaryTimeout` is back at 30 s.** `/etc/bluetooth/main.conf` reads `#TemporaryTimeout = 0` (changed
+    2026-11-01), so bluetoothd cuts a link on an address that went quiet 30 s ago, as in the section on it below.
+    KnitBlueZ forgets quiet devices itself, so setting it back to 0 under `[General]` needs only the maintainer and
+    root.
+  - **A Zephyr dial through the accept list goes blind while the same controller enables an advert set** (knit-next's
+    finding, 2026-11-11). `ull_filter_adv_update()` (`ll_sw/ull_filter.c:690`, privacy build) clears the filter accept
+    list and refills it only for an advert that filters by it, so an initiator using the list loses it. Every
+    KnitBlueZ connect in these captures used `Accept list is not used`, which is clear of it.
   - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
     after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
     `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.
