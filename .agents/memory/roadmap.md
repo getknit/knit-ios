@@ -533,9 +533,12 @@ explicit direction.** Update this file in the change that ships an item.
       restoration relaunch with the switch on are still owed, then A11. The iPhone's link to a KnitBlueZ reader drops at
       each of the iPhone's address changes, with the switch off too: the reader makes a second connection to the new
       address to read its payload, and iOS ends the older connection from the same address. An Android link meets the
-      same while the phone's private address is the one its link was made from. That is not the writer's, and a
-      reader rule for it is owed on its own (`linux-peer.md`, "The iPhone ends a link when the same device connects
-      to it again"). After each such drop the reader redialed the iPhone's tag while linked again, until the old link's claim
+      same while the phone's private address is the one its link was made from. That is not the writer's. This port
+      now relinks fast instead of preventing it (`bf25916`, `57b05f0`; ADR 2026-09.6es2 amended 2026-11-11): it
+      admits a relinking dialer out of order, dials a node it just lost without the dwell, and KnitBlueZ gives a read
+      20 s. A KnitBlueZ reader relinks 12 to 35 s after the drop (`linux-peer.md`, "Round 2"). Android's half is A12.
+      The maintainer stopped there on 2026-11-12. Holding a read's link until the dial is the next lever if it is
+      ever needed. After each such drop the reader redialed the iPhone's tag while linked again, until the old link's claim
       lapsed. ADR 2026-11.sv5t's 2026-11-11 amendment fixes that (`2e82f18`), and a 45-minute hold across four
       address changes showed no redial while linked.
     - **A11 (Android reads a blinded GATT payload):** a paired change that iOS leads, knit-next's half of ADR
