@@ -41,6 +41,52 @@ import Testing
         #expect(reader.links.writerCounters.refusedLegacy == 0)
     }
 
+    /// A clear Android's lonely dial (knit-next `AdvertOrder.kt:109-112`, `LonelyDialPolicy.kt:79`; the `blind-gatt-reads`
+    /// contract, §5): its HELLO tells no `t` and addresses our tag, and `iDial(blinded, clear)` leaves the dial to us. Sighted,
+    /// it is refused with no reply, and we dial it ourselves once its advert promotes it. Its id sorts above ours, as the
+    /// lab's Pixels do the iPhone's: the one order where the classic rule would admit it, which the clear iPhone below shows.
+    @Test func aClearAndroidsLonelyDialIsRefusedWhenSightedAndDialedBack() throws {
+        let rig = LinkRig.blindingIPhone(LinkRig.low, keys: keys)
+        let tag = try #require(rig.airedTag)
+        let android = BlindingPeer(LinkRig.high)
+        let hello = android.hello(told: nil, addressed: tag)
+        _ = rig.handle(.sighted(LinkRig.sighting(LinkRig.high, rssi: -60)))
+        let channel = ChannelID(64)
+        _ = rig.handle(.accepted(channel))
+        _ = rig.handle(.received(channel, required(LinkRecord(.hello, payload: hello).encoded)))
+        #expect(rig.radio.writes(on: channel).isEmpty, "no reply, no HELLO written")
+        #expect(rig.radio.closed.contains(channel))
+        #expect(rig.said("link refused \(LinkRig.high): we dial it"))
+        #expect(rig.links.neighbors.isEmpty)
+        #expect(rig.links.writerCounters.refusedLegacy == 0, "it reads tags, so no legacy refusal")
+        // A clear iPhone with the same sighting answers the same HELLO: the refusal is the blinding phone's order.
+        let clear = LinkRig.iPhone(LinkRig.low)
+        _ = clear.handle(.sighted(LinkRig.sighting(LinkRig.high, rssi: -60)))
+        _ = clear.handle(.accepted(channel))
+        _ = clear.handle(.received(channel, required(LinkRecord(.hello, payload: hello).encoded)))
+        #expect(!clear.radio.writes(on: channel).isEmpty)
+        _ = rig.sightToPromotion(LinkRig.high)
+        let back = try #require(rig.radio.dials.last)
+        _ = rig.handle(.connected(back.channel))
+        _ = try rig.answerProving(LinkRig.high, on: back.channel)
+        #expect(rig.links.neighbors.map(\.nodeId) == [LinkRig.high])
+    }
+
+    /// The same lonely dial from an Android the iPhone has not sighted: admitted, our HELLO and PROOF go back, and the link
+    /// registers under its clear form once its PROOF verifies.
+    @Test func aClearAndroidsLonelyDialIsAdmittedWhenUnsighted() throws {
+        let rig = LinkRig.blindingIPhone(keys: keys)
+        let tag = try #require(rig.airedTag)
+        let channel = ChannelID(65)
+        let hello = peer.hello(told: nil, addressed: tag)
+        _ = rig.handle(.accepted(channel))
+        _ = rig.handle(.received(channel, required(LinkRecord(.hello, payload: hello).encoded)))
+        #expect(!rig.radio.writes(on: channel).isEmpty, "our reply goes back")
+        _ = try rig.proveDialer(LinkRig.low, on: channel, hello: hello)
+        #expect(rig.links.neighbors.map(\.nodeId) == [LinkRig.low])
+        #expect(rig.links.blindWriter.linkForms[channel] == .clear(LinkRig.low))
+    }
+
     @Test func aDialerThatMissedOurRotationIsRefusedAndHearsOurTagOverItsHeldLink() throws {
         let rig = LinkRig.blindingIPhone(keys: keys)
         let held = ChannelID(61)
