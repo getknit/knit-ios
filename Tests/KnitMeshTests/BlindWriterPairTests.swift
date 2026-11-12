@@ -168,6 +168,50 @@ import Testing
         #expect(rig.links.blindWriter.linkForms[dial.channel] == .clear(LinkRig.high))
     }
 
+    /// Run 223e21's Pixel 3 case, from this side (the `blind-gatt-reads` contract, §5): an announced tag became a link's claim,
+    /// that link ended, and the peer dialed back in telling the same tag, so the ended claim yields to the live link's hint
+    /// (``AdvertAliases/claimAnswer(_:)``). The edge turned the order toward us, so only that hold-off stands between the
+    /// sighting and a dial to a peer we hold. It holds while the hint's link is held, and the dial goes once that link ends.
+    @Test func anEdgeTurningTheOrderTowardUsDialsNoClaimedPeerWhileItsLiveLinkHolds() throws {
+        let keys = FakeKeys()
+        let rig = LinkRig.blindingIPhone(LinkRig.high, keys: keys)
+        let mine = try #require(rig.airedTag)
+        let edge = rig.edge
+        let ourKey = try #require(keys.key).key
+        let ourNext = BlindFixture.tag(ourKey, owner: LinkRig.high, slot: BlindTag.slotOf(wallMilliseconds: edge))
+        // A blinding Android that dials us in this slot and that we dial in the next.
+        func turns(_ peer: BlindingPeer) -> Bool {
+            !AdvertOrder.iDial(BlindFixture.blinded(mine), BlindFixture.blinded(peer.tag(wall: rig.wall)))
+                && AdvertOrder.iDial(BlindFixture.blinded(ourNext), BlindFixture.blinded(peer.tag(wall: edge)))
+        }
+        var android = BlindingPeer(LinkRig.low)
+        for byte in UInt8(1)...UInt8.max where !turns(android) {
+            android = BlindingPeer(LinkRig.low, keyByte: byte)
+        }
+        #expect(turns(android))
+        let next = android.tag(wall: edge)
+        // Its first link announces `next`, which it airs from the edge, where hearing it makes the announcement that link's claim.
+        _ = try android.dial(rig, on: ChannelID(110), told: android.tag(wall: rig.wall))
+        rig.run(untilWall: edge - 60_000)
+        _ = rig.handle(.received(ChannelID(110), BlindingPeer.tagNext(next)))
+        rig.run(untilWall: edge + 1000)
+        #expect(rig.airedTag == ourNext, "the edge turned our tag, and with it the order")
+        _ = rig.handle(.sighted(android.sighting(next)))
+        #expect(rig.links.aliases.standing(next)?.source == .claim)
+        // Unheard past the promotion limit, so nothing dials while the first link ends and the Android dials back in.
+        _ = rig.advance(13_000)
+        _ = rig.handle(.closed(ChannelID(110)))
+        _ = try android.dial(rig, on: ChannelID(111), told: next)
+        #expect(rig.links.liveChannel(to: LinkRig.low) == ChannelID(111))
+        #expect(rig.links.aliases.standing(next)?.source == .hint, "the ended claim yields to the live link's hint")
+        let before = rig.radio.dials.count { $0.address == android.address }
+        _ = rig.hear(android.sighting(next), for: 26_000)
+        #expect(rig.radio.dials.count { $0.address == android.address } == before, "held off while the hint's link is held")
+        _ = rig.handle(.closed(ChannelID(111)))
+        _ = rig.hear(android.sighting(next), for: 26_000)
+        #expect(rig.radio.dials.count { $0.address == android.address } == before + 1, "its link ended: nothing holds the dial off")
+    }
+
     @Test func anAnnouncedFormBecomesTheLinksAtItsEdgeAndAResendAtOnce() throws {
         let keys = FakeKeys()
         let rig = LinkRig.blindingIPhone(LinkRig.high, keys: keys)
