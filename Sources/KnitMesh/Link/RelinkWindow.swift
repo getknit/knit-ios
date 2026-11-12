@@ -16,7 +16,11 @@ import KnitWire
 /// channel before the radio's close arrives: opened there, a peer evicted at the link budget would redial, be admitted,
 /// outlive the hold and be evicted again. Keyed by node id alone, since the address rotates and the channel is gone.
 /// Consumed only when a link to that id registers proven, never at admission, so a bogus proof leaves it open for the real
-/// peer. Nothing is dialed on it, so it needs no deadline: it is pruned when a dialer is judged or a window opens.
+/// peer. Promotion reads it too: a peer ours to dial whose window is open has its dwell met
+/// (``LinkManager/withRelinkDwell(_:now:)``), so the reader that lost the link redials on its first sighting once the
+/// close's backoff ends. It still needs no deadline: it opens at a radio close, which runs promotion; it is read at each
+/// sighting and at each backoff's wake; and its end only makes a candidate less promotable. It is pruned when a dialer
+/// is judged or a window opens.
 ///
 /// Pure, free of a clock: the caller passes the monotonic time.
 internal struct RelinkWindow {
@@ -42,7 +46,12 @@ internal struct RelinkWindow {
 
     /// Whether `peer`'s window is open at `now`.
     func admits(_ peer: NodeId, now: Int64) -> Bool {
-        closedAt[peer].map { now - $0 < lengthMilliseconds } ?? false
+        closed(peer, now: now) != nil
+    }
+
+    /// When the radio closed the link that opened `peer`'s window, while that window is open at `now`; `nil` otherwise.
+    func closed(_ peer: NodeId, now: Int64) -> Int64? {
+        closedAt[peer].flatMap { now - $0 < lengthMilliseconds ? $0 : nil }
     }
 
     /// A link to `peer` registered proven: its window closes, whichever side dialed.

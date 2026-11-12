@@ -116,8 +116,9 @@ iPhone: `interop.py iphone-peer --release-android`.
   runs out of time ends. `Connect` also makes a device permanent, and BlueZ stores it under
   `/var/lib/bluetooth/`, unless its address is private. Phones' addresses are, so reading an iPhone leaves
   nothing behind; reading another Linux peer, on a public address, leaves its entry under hci1.
-- **The pacing** is `GattPayloads`' in `KnitMesh`: one device at a time, 12 s for each read. A failed read waits
-  30 s, and a device that serves no payload waits ten minutes. A payload lasts until a dial to the device fails, a
+- **The pacing** is `GattPayloads`' in `KnitMesh`: one device at a time, 20 s for each read (the shared default is
+  12 s; `BlueZLoop.Configuration.readPacing`, ADR 2026-09.xzpt, amended 2026-11-11). A failed read waits 30 s, and a
+  device that serves no payload waits ten minutes. A payload lasts until a dial to the device fails, a
   HELLO there names another node, or the device goes unheard for a minute of scanning while nothing links it (ADR
   2026-09.xzpt, amended 2026-09-29), and BlueZ forgetting the device drops it too. The log says `bluez read <node id>
   on PSM <psm> from dev_… over GATT`, or why a read failed, and `bluez forgetting the GATT payload of dev_…` with why.

@@ -15,6 +15,18 @@
             case resolving
             /// Finding the characteristic among BlueZ's objects, and reading it.
             case reading
+
+            /// The stage as a timed-out read's reason names it, so a trial's log says where the time went.
+            var shown: String {
+                switch self {
+                case .connecting:
+                    "connecting"
+                case .resolving:
+                    "resolving services"
+                case .reading:
+                    "reading"
+                }
+            }
         }
 
         /// The payload a read found for `device`. When there is none and a read is due, this starts one, and the
@@ -65,7 +77,8 @@
             guard let read = gatt.current, now >= read.deadline else {
                 return
             }
-            failGattRead(read.address.rawValue, "it took longer than \(gatt.configuration.readTimeoutMilliseconds) ms", now: now)
+            let stage = gattStage.map { " (\($0.shown))" } ?? ""
+            failGattRead(read.address.rawValue, "it took longer than \(gatt.configuration.readTimeoutMilliseconds) ms\(stage)", now: now)
         }
 
         /// Gives up the read in progress without a wait before the next, since the plane went down under it, and

@@ -21,7 +21,7 @@ extension LinkManager {
         }
         let backoff = backingOff(snapshots, now: now)
         let promotion = promotionConfiguration
-        let pool = keepingOneHeadStart(candidates(snapshots), backoff: backoff, configuration: promotion)
+        let pool = keepingOneHeadStart(candidates(snapshots, now: now), backoff: backoff, configuration: promotion)
         // At most one, by keepingOneHeadStart.
         let headStart = pool.first(where: isHeadStartCandidate)
         let decision = PromotionPolicy.decide(
@@ -84,11 +84,12 @@ extension LinkManager {
     /// When a sighted peer's dwell ends between its adverts, so that promotion runs then instead of at its next advert
     /// (``PromotionPolicy/untilDwellEnds(candidates:backoff:configuration:)``). A head-start peer's dwell counts its
     /// head start, so this is also when that ends; a tag's handle-keyed dwell is woken for as an id's is. A peer backing
-    /// off waits for its backoff's own deadline, and the promotion that runs then asks again.
+    /// off waits for its backoff's own deadline, and the promotion that runs then asks again. A peer relinking through its
+    /// window has no dwell left to run (``withRelinkDwell(_:now:)``), so it names no wake here and never loops one.
     func dwellDue(now: Int64) -> Int64? {
         let snapshots = presence.present(now: now)
         let wait = PromotionPolicy.untilDwellEnds(
-            candidates: candidates(snapshots),
+            candidates: candidates(snapshots, now: now),
             backoff: backingOff(snapshots, now: now),
             configuration: promotionConfiguration
         )
@@ -128,8 +129,9 @@ extension LinkManager {
     /// or proving, or a live link holds it off (``isHeldOff(_:live:proven:)``), all read now, never frozen at the sighting.
     /// An unresolved form names no id to refuse (knit-peer's `deny-link`) until a dial to it proves one: the tag at that
     /// address is passed over from then on while the id stays refused (``refusedDials``). A head-start peer's dwell
-    /// counts its head start less, and none is a candidate while a head-start dial is open.
-    func candidates(_ snapshots: [PresenceTracker.Snapshot]) -> [PresenceTracker.Snapshot] {
+    /// counts its head start less, and none is a candidate while a head-start dial is open. A peer ours to dial whose relink
+    /// window is open at `now` has its dwell met (``withRelinkDwell(_:now:)``); a head-start peer never does.
+    func candidates(_ snapshots: [PresenceTracker.Snapshot], now: Int64) -> [PresenceTracker.Snapshot] {
         let anyOrder = dialsWhateverTheOrder
         let headStartOpen = headStartDialInFlight
         let occupied = busy
@@ -152,7 +154,7 @@ extension LinkManager {
             }
             let form = AdvertOrder.Form.of(snapshot.advert)
             if anyOrder || weDial(form, flags: snapshot.advert.flags) || (!form.blinded && impostor.dials == snapshot.key.nodeId) {
-                return snapshot
+                return withRelinkDwell(snapshot, now: now)
             }
             return isHeadStartCandidate(snapshot) && !headStartOpen ? withHeadStart(snapshot) : nil
         }

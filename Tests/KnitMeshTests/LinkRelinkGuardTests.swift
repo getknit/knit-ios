@@ -64,6 +64,59 @@ import Testing
         #expect(!rig.said("link \(low) relinks out of order on ch101"))
     }
 
+    /// Our relink dial, sent on the first sighting past the close's backoff (``LinkManager/withRelinkDwell(_:now:)``), is an
+    /// attempt of ours like any other: the peer's crossing redial is refused as one we dial.
+    @Test func ourRelinkDialOpenToItKeepsWeDialIt() throws {
+        let rig = LinkRig(local: high)
+        try closedByTheRadio(rig)
+        let closed = rig.clock.monotonicMilliseconds()
+        rig.run(until: closed + 15_000)
+        _ = rig.handle(.sighted(LinkRig.sighting(low)))
+        let dial = try #require(rig.radio.dials.last, "dialed on the sighting, with no dwell")
+        _ = rig.acceptProving(low, on: ChannelID(101))
+        #expect(rig.radio.closed.contains(ChannelID(101)))
+        #expect(rig.said("link refused \(low): we dial it"))
+        #expect(!rig.said("link \(low) relinks out of order on ch101"))
+        #expect(!rig.radio.closed.contains(dial.channel), "our dial goes on")
+        #expect(rig.relinkOpen(for: low), "a refusal consumes nothing")
+    }
+
+    /// Our relink dial failed before its channel opened: nothing of ours is open, so the peer's redial is admitted through
+    /// the window.
+    @Test func ourRelinkDialFailingLeavesTheWindowForThePeersRedial() throws {
+        let rig = LinkRig(local: high)
+        try closedByTheRadio(rig)
+        let closed = rig.clock.monotonicMilliseconds()
+        rig.run(until: closed + 15_000)
+        _ = rig.handle(.sighted(LinkRig.sighting(low)))
+        let dial = try #require(rig.radio.dials.last)
+        _ = rig.handle(.dialFailed(dial.channel))
+        _ = rig.acceptProving(low, on: ChannelID(101))
+        #expect(!rig.radio.closed.contains(ChannelID(101)))
+        #expect(rig.said("link \(low) relinks out of order on ch101"))
+    }
+
+    /// The peer's redial, admitted through the window first, holds off our relink dial: its proof is on its way. A 2 s
+    /// backoff ends inside the 5 s wait for that proof.
+    @Test func thePeersAdmittedRedialHoldsOffOurRelinkDial() throws {
+        let configuration = LinkManager.Configuration(backoff: ConnectBackoff.Configuration(baseMilliseconds: 2000))
+        let rig = LinkRig(local: high, configuration: configuration)
+        try closedByTheRadio(rig)
+        _ = rig.advance(500)
+        _ = rig.handle(.sighted(LinkRig.sighting(low)))
+        #expect(rig.radio.dials.isEmpty, "the close's backoff holds")
+        let (hello, _) = rig.acceptProving(low, on: ChannelID(101))
+        #expect(rig.said("link \(low) relinks out of order on ch101"))
+        _ = rig.advance(3000)
+        #expect(try #require(rig.links.backoffs[.peer(.node(low))]).nextAt <= rig.clock.monotonicMilliseconds())
+        _ = rig.handle(.sighted(LinkRig.sighting(low)))
+        #expect(rig.radio.dials.isEmpty, "past the backoff, a proving dialer is busy")
+        let events = try rig.proveDialer(low, on: ChannelID(101), hello: hello)
+        #expect(events.contains { if case .up(let neighbor) = $0 { neighbor.nodeId == low } else { false } })
+        _ = rig.handle(.sighted(LinkRig.sighting(low)))
+        #expect(rig.radio.dials.isEmpty, "linked")
+    }
+
     @Test func anotherProvingDialerOfTheSameIdKeepsWeDialIt() throws {
         let rig = LinkRig(local: high)
         try closedByTheRadio(rig)

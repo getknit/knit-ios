@@ -127,6 +127,9 @@ read of an iPhone's new address can end the reader's own link. The side that red
 30 s after the radio closes a proven link, a dialer that offers to prove that id is admitted even though our order
 says we dial it, unless we have a dial or a proof of our own open to that id (`RelinkWindow`). Only the radio's close
 opens the window, never an eviction, refusal or replace of ours. Only a proven registration of that id, or the 30 s,
-closes it, and nothing is dialed on it. A KnitBlueZ reader also keeps a read's connection for 2 s after a read that
-found a payload, as KnitBLE does, so a redial over that connection is not ended by our own disconnect. Android has no
-such window: it still refuses a dialer below it that it heard within 12 s.
+closes it. While it is open, a sighting of that id heard since the close, that we already dial (by the order, by
+seeking or as knit-peer's lab impostor), skips the 12 s dwell, though never the backoff. A reader that lost its link
+then dials the iPhone's new address once the close's backoff ends, since the iPhone often never redials. A head start
+never skips its wait. A KnitBlueZ reader also keeps a read's connection for 2 s after a read that found a payload, as
+KnitBLE does, so a redial over that connection is not ended by our own disconnect. Android has no such window: it
+still refuses a dialer below it that it heard within 12 s.

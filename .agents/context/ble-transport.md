@@ -399,7 +399,9 @@ whose peer it has never sighted at −90 dBm (one sighted and then lost at −12
 one channel's teardown never touches another's. For 30 s after the radio closes a proven link, it also admits a dialer
 that proves that id whatever the order, unless it has a dial or a proof of its own open to that id. A pair whose link
 iOS ended at an address change then relinks over whichever side dials first (ADR 2026-09.6es2, amended 2026-11-11).
-Android has no such window. Two promotion rules are its own (ADR 2026-09.6es2, amended
+While that window is open, a peer the order (or seeking) already has us dial, and heard since the close, skips the 12 s
+dwell, but never the backoff the close booked. So the reader dials on its first sighting of the new address once 8 to
+12 s have passed, and never on the old address's last sighting; a head-start peer still waits its 24 s. Android has no such window. Two promotion rules are its own (ADR 2026-09.6es2, amended
 2026-09-29 and 2026-10-02): it never dials a peer quiet for more than 12 s, and it wakes when a candidate's dwell ends
 instead of waiting for that peer's next advert.
 
@@ -407,7 +409,8 @@ The advert sets `FLAG_DIALS_GATT_PEERS` only when the radio reads the GATT paylo
 (`Radio.dialsGattPeers`), since a peer that trusts the flag waits to be dialed. A node that cannot advertise
 service data serves that payload as a read-only characteristic, `848eedcd-a2e3-4fb2-86f9-e2c80821a497`, in a
 primary `0xFE30` service, with the digest cue zeroed (ADR 2026-09.xzpt). A radio that reads those payloads
-paces itself by `GattPayloads`: one peer at a time, a failed read tried again after 30 s, and a device that serves
+paces itself by `GattPayloads`: one peer at a time, 12 s for a read (20 s under KnitBlueZ, whose reads of an iPhone's
+new address resolved its services 10 to 13 s in), a failed read tried again after 30 s, and a device that serves
 no payload left alone for ten minutes. After a read that found a payload, both radios keep its connection for 2 s, so
 a dial that follows, ours or the peer's, rides it. A payload serves the address's adverts until a dial there fails before its
 channel opens, a HELLO there names another node, or the address goes unheard for a minute of scanning while nothing

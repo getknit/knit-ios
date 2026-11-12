@@ -218,7 +218,7 @@
             try rig.fake.add(device: LoopRig.peerPath, LoopRig.uuidOnlyDevice())
             rig.settle { rig.fake.connectRequests.count == 1 }
             rig.settle("never gave up") { rig.fake.disconnected == [LoopRig.peerPath] }
-            #expect(rig.log.all.contains { $0.contains("took longer than 300 ms") })
+            #expect(rig.log.all.contains { $0.contains("took longer than 300 ms (connecting)") })
             #expect(rig.loop.gatt.current == nil)
         }
 

@@ -131,6 +131,15 @@ writer that would blind its payload with its advert waits for an iOS ADR of its 
 item 13). `BlueZGattRetryTests.aCharacteristicThatHoldsABlindedPayloadIsAStranger` and `LinkTests`'
 `theFlagsThisPortWritesNeverSetTheAwareBit` pin both.
 
+**Amended 2026-11-11, for the iPhone's address change (ADR 2026-09.6es2, amended the same day): KnitBlueZ gives a read
+20 s.** iOS ends a link when the same device connects to it again, so the Linux peer's read of an iPhone's new address
+costs it its link to that iPhone. bluetoothd then discovers the iPhone's whole database before the payload, about 200
+ms a round trip. Two first reads in three gave up at 12 s, their services resolved 10.1 s and 13.05 s in, and the
+payload takes about 0.8 s more (`.agents/context/linux-peer.md`, "Its trial did not reach the window"). The 30 s
+retry then added half a minute to each relink. `BlueZLoop.Configuration`'s read timeout is now 20 s. The shared
+`GattPayloads` default, `KnitBLE` and Android's `READ_TIMEOUT_MS` stay at 12 s, since CoreBluetooth discovers only
+`0xFE30`. Like the budget, this is pacing, not the forget rules that are law.
+
 **Consequences / limits:**
 
 - **Cross-platform law.** The UUID is law once A3 ships. Change it only together with knit-next.

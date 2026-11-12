@@ -335,8 +335,8 @@
             /// How long the link a read made stays up after the read found a payload, for a channel the peer opens over it
             /// (KnitBLE's `BLERadio.readReleaseGraceMilliseconds`); 0 drops it as the read ends.
             var readReleaseGraceMilliseconds: Int64 = 2000
-            /// How those reads are paced.
-            var gatt = GattPayloads.Configuration()
+            /// How those reads are paced: the shared pacing, with a longer read (``readPacing``).
+            var gatt = Self.readPacing
             /// Whether the GATT application serves the payload characteristic beside the doorbell (``GattApplication``).
             var servesGattPayload = true
             /// Nodes whose adverts and payloads are never reported as sightings (``BlueZRadio/Configuration/neverSighted``).
@@ -351,6 +351,17 @@
             /// How long after the loop starts it stops reading its channels, or `nil` to read them always
             /// (``BlueZRadio/Configuration/stopReadingAfterMilliseconds``).
             var stopReadingAfterMilliseconds: Int64?
+
+            /// The shared pacing (`GattPayloads.Configuration`), but a read may take 20 s, not 12. Under BlueZ a read's
+            /// services resolved 10.1 and 13.05 s after it began, at two of the iPhone's address changes, and the payload's
+            /// own read took about 0.8 s more, so two of three first reads gave up at 12 s and the peer waited 30 s to read
+            /// again, relinking 57 and 59 s after the drop (`.agents/context/linux-peer.md`, "Its trial did not reach the
+            /// window"). One reader runs at a time and nothing else waits on it, so the longer read costs nothing but the
+            /// wait for a peer that never answers. KnitBLE keeps 12 s: CoreBluetooth discovers only `0xFE30`, and nothing
+            /// shows its read is slow.
+            static let readPacing = GattPayloads.Configuration(readTimeoutMilliseconds: readTimeoutMilliseconds)
+            /// How long the radio's own read may take (``readPacing``).
+            static let readTimeoutMilliseconds: Int64 = 20_000
         }
     }
 #endif
