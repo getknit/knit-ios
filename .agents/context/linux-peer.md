@@ -2122,7 +2122,11 @@ was left alone, and the guard put both phones' switches back after each run.
     peer opened a connection to the iPhone's new random address to read its payload, and the old link timed out
     half a second later (`Connection Timeout`, 5 s). On dongle A the peer failed a read of a new address 27 s before
     its channel aborted (`errno 103`). Both drops came as the iPhone changed its address. The first run, which held,
-    may never have crossed one. Whether a clear iPhone drops the same way is not known.
+    may never have crossed one. A sixth run, on dongle B after its replug (15:42 to 16:06), passed `rings-heard`
+    (33 and 13 of 14, 46 heard) and dropped once more, as the iPhone moved from `45:D0:…` to `4D:93:…`: the peer
+    opened its read connection to the new address at 15:56:05.46, and the old link timed out 4.9 s later, so its last
+    radio contact fell within 0.1 s of that connection. On dongle B the first time it fell 4.3 s before. Whether a
+    clear iPhone drops the same way is not known.
   - **After each relink the peer dialed the iPhone's tag again,** six times in 6 minutes the first time, every one
     refused (`we dial it`) or timed out. The tag the old link claimed by `TAG_NEXT` keeps its claim for the claim
     lifetime past the link's end. `AdvertAliases.standing` answers with a claim before a hint, and a claim holds a
