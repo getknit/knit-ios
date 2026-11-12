@@ -2341,3 +2341,41 @@ the test messages were purged afterwards on all three phones.
   - knit-peer averaged 0.2% CPU over a three-minute downgrade run.
 - **Not run on air:** a wrong-length `KEY_SHARE` toward the iPhone's responder. No knit-peer switch sends one, and
   `LinkSealResponderTests` covers it.
+
+## What the blinded GATT reads trial showed
+
+On 2026-11-12 from 12:57 to 13:33, `interop.py iphone-blind-reads` (run `223e21`) ran companion change A11's trial
+(the `blind-gatt-reads` contract, step 5). The iPhone 12 ran `main` at `4fc71c3`, which has the same `Sources/` as this
+branch, at schema v24 with no `storeRefused`. The Pixel 9 (the contact, a contact both ways) and the Pixel 3 (the
+stranger, `b7ievz63…`, in the iPhone's contacts but not the other way round) ran knit-next's local trial build
+`12dee50e3`. All three were blinding. No dongle was used. The maintainer gave the go-ahead, nothing wiped a phone's
+data, and afterwards the iPhone's switch went back to the build's default (`blind clear`), while the Pixels kept their
+debug default.
+
+The run had 36 steps: 33 passed, 1 failed and 2 were inconclusive. It crossed the 13:15 and 13:30 edges.
+
+| What | What it showed |
+| --- | --- |
+| Resolution | The contact resolved all 4 of its blinded reads by key, to the iPhone. The stranger held its first read under a handle (`~zzzz…1`), then resolved 3 by claim and 1 by hint after its first link, and never by key. |
+| Links | The six links the run judged (of seven link-ups on the iPhone) were each dialed as the phone's own order said: the iPhone dialed both phones at the start and at the 13:15 relinks, and both phones dialed at the 13:30 relinks. There was no head start and no legacy refusal on either side. Each link that was up before an edge was still up after it. |
+| Refunds and budget | Each link that followed a blinded read in its slot brought `bt gatt confirmed <address> (tag) → <iPhone>`: 3 on the contact and 2 on the stranger (1 excused, read in the slot's first minute). `gattBudget` agreed with the logged reads and refunds at all 67 `bt state` lines, peaking at 10 of 12. |
+| Rule 4 | The stranger forgot the iPhone's new address at edge + 37 s, unlinked there. Each linked address was forgotten seconds after the cycle took its link down (+94 s and +115 s past the edge, spared until then). No address was forgotten twice for one edge, and none was missed. |
+| The seal | `linksSealed` rose by 7 on the iPhone (one per link-up to the phones), 6 on the contact and 4 on the stranger. `linkSealFailed` and `linkSealRefused` did not move. |
+| The doorbell | 59 `bt ring` lines from the phones (35 and 24), 59 `ble rung by` on the iPhone, and no `bt doorbell absent`. No lookup came before the doorbell's service, so `doorbell-settles` was inconclusive on both, which the supervisor accepted. |
+| `TAG_NEXT` (recorded) | Both phones announced their coming tag to the iPhone at both edges, at edge − 210 s, the Pixel 3 included. |
+
+- **The failure: the stranger redialed the linked iPhone at the 13:30 edge.** At 13:30:00.6, 11.9 and 33.2, still linked to
+  the iPhone, the Pixel 3 logged `bt initiating to <iPhone>` (the id it resolves the new tag to, by the claim the iPhone's
+  `TAG_NEXT` gave it). Each was a tag dial that ended `HANDSHAKE` with `tag dial: no reply`, backing off 9, 21 and 38 s.
+  The iPhone refused each with `RefuseHeld` ("it holds a link here, so it hears our tag there") and resent its tag over
+  the held link once. Its `refusedHeld` reached 3. The contact, which resolves by key, made no such dial, and neither
+  phone did at 13:15. So the cause is on Android's side, and it goes back to the Android worker, as the contract says.
+- **The fresh-reads stop:** with the iPhone's mesh stopped for 181 s, the contact forgot its payload by rule 3. The
+  stranger still held `7F:D9:…`, an old iPhone address from before the capture that it no longer heard. Rule 3 counts
+  scan time only, which a screen-off Pixel accrues in 8 s windows every 2 to 4 minutes. Both phones' first reads after
+  the start were fresh.
+- **The iPhone's restarts were spent** when the run began (`restartsLeft` 0, after link-seal's forced rotations in the
+  same slot). The bring-up's tag still resolved by key on the contact.
+- **No read raced an iPhone dial.** The iPhone's one link timeout, at 13:32:21, had no Pixel read within 3 s of it. A
+  `bt gatt read <address> failed (connect)` right after each edge forget, while the iPhone was about to dial that phone,
+  is bounded: one unrefunded charge per address per slot (the Android worker's reading of `12dee50e3`).
