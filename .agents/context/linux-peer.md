@@ -2165,7 +2165,7 @@ was left alone, and the guard put both phones' switches back after each run.
     its link was made from, which is why the Pixel 9's link, hours old, survived every change. Every reader that reads
     a new address with a second connection can meet this: Android's `BleGattPayloadReader`, KnitBlueZ and KnitBLE's
     reader. The maintainer chose a fast relink over preventing the second connection.
-  - **The fast relink (uncommitted on 2026-11-11 at this writing; ADR 2026-09.6es2, amended 2026-11-11).** In the
+  - **The fast relink (`bf25916`; ADR 2026-09.6es2, amended 2026-11-11).** In the
     20:04 control the iPhone redialed 10 s after its link ended, over the read's own connection, and the peer refused
     it (`link refused …: we dial it`) because its order said it dials the iPhone. The peer's own dials then failed with
     `0x3e` until 20:06:41, 2 min 19 s after the drop. For 30 s after the radio closes a proven link, the link manager
@@ -2174,9 +2174,14 @@ was left alone, and the guard put both phones' switches back after each run.
     KnitBLE does, since the peer's Disconnect at the read's end would have ended that redial. A relink over the read's
     connection runs on the dongle's own connection parameters: dongle B's creates set a 5 s supervision timeout, while a
     dongle on the kernel's 420 ms default would drop it under load ("A link the peer dials times out in 420 ms"). An
-    Android above the iPhone still refuses the redial. Owed: a clear-mode hold across three address changes that
-    records, for each, the gap from `link down` to the redial, from the read's end to `bluez accepted`, and the relinked
-    link's supervision timeout.
+    Android above the iPhone still refuses the redial.
+  - **Its trial did not reach the window (22:22 to 22:58).** A clear-mode hold with the Pixel 3 and the peer on dongle
+    B crossed three address changes, at 22:26, 22:44 and 22:56 (iOS scheduled them 1113 and 669 s apart). The iPhone
+    never dialed back, so the window admitted nothing, and no `we dial it` refusal came either. The peer relinked by its
+    own dial each time, 57, 18 and 59 s after the drop. Two of the three first reads of the new address gave up at
+    their 12 s timeout, and a failed read waits 30 s before the next. Each read that succeeded then waited out the 12 s
+    dwell before the peer dialed, and each of those dials linked at once, at the dongle's 5 s supervision timeout. In the
+    20:04 control the iPhone had redialed after 10 s. What decides whether it redials is not known yet.
   - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
     after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
     `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.
