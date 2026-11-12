@@ -396,7 +396,10 @@ hysteresis and a 20 s hold, the 10 s × 2ⁿ backoff capped at 180 s, and the 5 
 timeouts. Its admission rule is A1's, which Android 2.7 does not have: it admits a dialer it never sighted
 whatever the order, lets such a dialer replace its own stale link once that link is 30 s old, scores a link
 whose peer it has never sighted at −90 dBm (one sighted and then lost at −127), and keys links by channel, so
-one channel's teardown never touches another's. Two promotion rules are its own (ADR 2026-09.6es2, amended
+one channel's teardown never touches another's. For 30 s after the radio closes a proven link, it also admits a dialer
+that proves that id whatever the order, unless it has a dial or a proof of its own open to that id. A pair whose link
+iOS ended at an address change then relinks over whichever side dials first (ADR 2026-09.6es2, amended 2026-11-11).
+Android has no such window. Two promotion rules are its own (ADR 2026-09.6es2, amended
 2026-09-29 and 2026-10-02): it never dials a peer quiet for more than 12 s, and it wakes when a candidate's dwell ends
 instead of waiting for that peer's next advert.
 
@@ -405,7 +408,8 @@ The advert sets `FLAG_DIALS_GATT_PEERS` only when the radio reads the GATT paylo
 service data serves that payload as a read-only characteristic, `848eedcd-a2e3-4fb2-86f9-e2c80821a497`, in a
 primary `0xFE30` service, with the digest cue zeroed (ADR 2026-09.xzpt). A radio that reads those payloads
 paces itself by `GattPayloads`: one peer at a time, a failed read tried again after 30 s, and a device that serves
-no payload left alone for ten minutes. A payload serves the address's adverts until a dial there fails before its
+no payload left alone for ten minutes. After a read that found a payload, both radios keep its connection for 2 s, so
+a dial that follows, ours or the peer's, rides it. A payload serves the address's adverts until a dial there fails before its
 channel opens, a HELLO there names another node, or the address goes unheard for a minute of scanning while nothing
 links it. Those three rules are shared law with A3 (ADR 2026-09.xzpt, amended 2026-09-29). A blinded payload is compared by
 its tag in rule 2, and adds a fourth: it goes at the first slot edge after its read, with jitter (ADR 2026-11.prsp, which

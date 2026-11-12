@@ -12,7 +12,9 @@ public import KnitWire
 /// **Who is admitted.** A dialer whose HELLO arrives within 5 s, unless we sighted it and our own rule says we
 /// dial it: that is how a cross-dial is broken. A dialer we never sighted is admitted whatever the order, since
 /// it may be an iPhone we cannot see. A second link from a linked peer is refused, unless we never sighted the
-/// dialer: then it is the peer's fresh link replacing one that died on its side, and the old one is closed.
+/// dialer: then it is the peer's fresh link replacing one that died on its side, and the old one is closed. A dialer
+/// whose proven link the radio closed in the last 30 s, proving itself again, is admitted though we would dial it, while
+/// no dial of ours to it is open (``RelinkWindow``).
 ///
 /// **Who is who.** When both HELLOs carry ``Capabilities/linkProof``, each side proves the id its HELLO claims before the
 /// link registers, and a proven link displaces unproven ones claiming its id; an id known to prove itself is refused
@@ -115,6 +117,8 @@ public final class LinkManager: MeshTransport {
     var blindCounts = BlindCounts()
     /// The blinded advert's writer (`LinkManager+Writer.swift`).
     lazy var blindWriter = BlindWriter(localId: localId, switchOn: configuration.blindSwitchOn)
+    /// The ids the radio closed a proven link to lately, which may redial us out of order once (``RelinkWindow``).
+    lazy var relinkWindow = RelinkWindow(lengthMilliseconds: configuration.relinkWindowMilliseconds)
     var doorbells: [ChannelID: Doorbell] = [:]
     /// Each live link's incoming file, kept apart from ``channels`` so that reading a channel never copies a file's
     /// bytes.
@@ -353,10 +357,7 @@ public final class LinkManager: MeshTransport {
         case .received(let id, let bytes):
             return receive(bytes, on: id, now: now)
         case .closed(let id):
-            if let channel = channels[id], case .awaitingProof(let pending) = channel.stage {
-                // The peer hung up where its PROOF belonged.
-                proofFailed(on: id, for: pending.peer, why: "eof")
-            }
+            radioClosed(id, now: now)
             return retire(id, backingOff: true, now: now) + promote(now: now)
         case .rung:
             return heardRing(now: now)

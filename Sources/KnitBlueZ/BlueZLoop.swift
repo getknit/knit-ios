@@ -72,6 +72,8 @@
         var gatt: GattPayloads
         var gattStage: GattStage?
         var gattReads = 0
+        /// The devices whose read found a payload and whose link goes once its grace ends with nothing using it, and when.
+        var readReleases: [String: Int64] = [:]
         /// Each linked device's doorbell, once looked up among BlueZ's objects, and the devices a ring waits on.
         var doorbells: [String: Doorbell] = [:]
         var ringsWaiting: Set<String> = []
@@ -157,7 +159,7 @@
 
         private func wait(atMost limit: Int32, now: Int64) -> Int32 {
             let advert = pendingAdvert == nil ? refreshAdvertAt : nil
-            let deadlines = [bus?.nextDeadline, advert, reconnectAt, gatt.current?.deadline, forgetSweepAt].compactMap(\.self)
+            let deadlines = [bus?.nextDeadline, advert, reconnectAt, gattDue, forgetSweepAt].compactMap(\.self)
             guard let next = deadlines.min() else {
                 return limit
             }
@@ -172,7 +174,7 @@
             if let due = refreshAdvertAt, now >= due, pendingAdvert == nil {
                 syncAdvert(now: now)
             }
-            expireGattRead(now: now)
+            fireGattTimers(now: now)
             if !isUp {
                 forgetSweepAt = nil
             } else if let due = forgetSweepAt, now >= due {
@@ -282,7 +284,7 @@
                 mailbox.levels.close(id)
                 mailbox.credits.close(id)
             }
-            let linked = Set(channels.values.compactMap(\.devicePath) + [cancelGattRead()].compactMap(\.self))
+            let linked = Set(channels.values.compactMap(\.devicePath) + [cancelGattRead()].compactMap(\.self) + takeReadReleases())
             channels.removeAll()
             for path in linked.sorted() {
                 dropLink(to: path, now: now)
@@ -330,6 +332,9 @@
             var retryDelayMilliseconds: Int64 = 5000
             /// Whether to read the GATT payload of a peer that advertises only the `0xFE30` UUID.
             var readsGattPayloads = false
+            /// How long the link a read made stays up after the read found a payload, for a channel the peer opens over it
+            /// (KnitBLE's `BLERadio.readReleaseGraceMilliseconds`); 0 drops it as the read ends.
+            var readReleaseGraceMilliseconds: Int64 = 2000
             /// How those reads are paced.
             var gatt = GattPayloads.Configuration()
             /// Whether the GATT application serves the payload characteristic beside the doorbell (``GattApplication``).

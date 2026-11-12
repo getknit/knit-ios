@@ -120,3 +120,13 @@ id a tag dial's reply named. The responder's order check reads a proof-offering 
 whose id sorts below ours is admitted. A sighting attributed to an id we hold a link to is never dialed, and a tag
 dial that proves an id we already hold a proven link to keeps the new link and retires the old one, as Android's
 responder replaces.
+
+**Amended 2026-11-11, for the iPhone's address change (`.agents/context/linux-peer.md`, "The iPhone ends a link when
+the same device connects to it again"):** iOS ends a link when the same device connects to it again, so a reader's GATT
+read of an iPhone's new address can end the reader's own link. The side that redials first now keeps the pair. For
+30 s after the radio closes a proven link, a dialer that offers to prove that id is admitted even though our order
+says we dial it, unless we have a dial or a proof of our own open to that id (`RelinkWindow`). Only the radio's close
+opens the window, never an eviction, refusal or replace of ours. Only a proven registration of that id, or the 30 s,
+closes it, and nothing is dialed on it. A KnitBlueZ reader also keeps a read's connection for 2 s after a read that
+found a payload, as KnitBLE does, so a redial over that connection is not ended by our own disconnect. Android has no
+such window: it still refuses a dialer below it that it heard within 12 s.

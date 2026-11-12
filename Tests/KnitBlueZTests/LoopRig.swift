@@ -53,6 +53,10 @@
         static let gattPacing = GattPayloads.Configuration(
             readTimeoutMilliseconds: 5000, retryMilliseconds: 60_000, strangerRetryMilliseconds: 60_000)
 
+        /// How long a read's link outlives the read in most tests: short, so a suite waiting for the read's Disconnect waits
+        /// little. ``BlueZGattReleaseTests`` sets the grace it tests.
+        static let readReleaseGrace: Int64 = 50
+
         init(
             profile: RadioProfile = .android,
             expectedAddress: String = FakeBlueZ.adapterAddress,
@@ -62,6 +66,7 @@
             acceptedPeer: DialTarget? = nil,
             readsGattPayloads: Bool = false,
             gatt: GattPayloads.Configuration = LoopRig.gattPacing,
+            readReleaseGrace: Int64 = LoopRig.readReleaseGrace,
             forgetQuietDevicesAfter quiet: Int64 = 60_000,
             servesGattPayload: Bool = true,
             neverSighted: Set<NodeId> = [],
@@ -83,6 +88,7 @@
             configuration.retryDelayMilliseconds = 20
             configuration.readsGattPayloads = readsGattPayloads
             configuration.gatt = gatt
+            configuration.readReleaseGraceMilliseconds = readReleaseGrace
             configuration.servesGattPayload = servesGattPayload
             configuration.neverSighted = neverSighted
             configuration.rotateAdvertMilliseconds = rotateAdvert

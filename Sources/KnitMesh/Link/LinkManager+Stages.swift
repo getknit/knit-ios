@@ -125,5 +125,13 @@ extension LinkManager {
         var putOff = false
         /// Our HELLO's payload as we wrote it on this channel, which the transcript signs.
         var wroteHello: [UInt8]?
+
+        /// Whether the channel carries a registered link.
+        var isLive: Bool {
+            if case .live = stage {
+                return true
+            }
+            return false
+        }
     }
 }

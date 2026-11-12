@@ -82,6 +82,7 @@
             if gatt.current?.address.rawValue == path {
                 _ = cancelGattRead()
             }
+            readReleases[path] = nil
             gatt.forget(RadioAddress(path))
         }
 
@@ -210,12 +211,52 @@
             endGattRead(path, outcome, now: now)
         }
 
-        /// Records how the read ended, and drops the link it made unless a channel came to use it meanwhile.
+        /// Records how the read ended, and drops the link it made unless a channel came to use it meanwhile. A read that
+        /// found a payload keeps the link ``Configuration/readReleaseGraceMilliseconds`` longer, as KnitBLE's reader does
+        /// (`BLERadio.readReleaseGraceMilliseconds`): an iPhone ends its link to a device that connects to it again, so the
+        /// read of its new address ended the peer's link. In the one case logged, the iPhone's redial came over the read's own
+        /// connection 10 s after its link ended (its backoff) and 100 ms after a 12 s read ended, and our Disconnect, sent at
+        /// the read's end, would have ended it (`.agents/context/linux-peer.md`, "The iPhone ends a link when the same device
+        /// connects to it again"). A redial that comes later makes its own connection. A failed read drops its link at once,
+        /// since its connection may still be on its way.
         private func endGattRead(_ path: String, _ outcome: GattPayloads.Outcome, now: Int64) {
             gatt.finish(RadioAddress(path), outcome, now: now, wall: Wall.milliseconds())
             gattStage = nil
-            if !linkInUse(path) {
+            guard !linkInUse(path) else {
+                return
+            }
+            if case .read = outcome, configuration.readReleaseGraceMilliseconds > 0 {
+                readReleases[path] = now + configuration.readReleaseGraceMilliseconds
+            } else {
                 dropLink(to: path, now: now)
+            }
+        }
+
+        /// When the read in progress times out, or a read's grace ends, whichever comes first.
+        var gattDue: Int64? {
+            [gatt.current?.deadline, readReleases.values.min()].compactMap(\.self).min()
+        }
+
+        /// Gives up the read in progress past its deadline, and drops the links whose grace ran out.
+        func fireGattTimers(now: Int64) {
+            expireGattRead(now: now)
+            releaseReadLinks(now: now)
+        }
+
+        /// The devices still in their grace, forgotten here: the plane is going down, and their links with it.
+        func takeReadReleases() -> [String] {
+            defer { readReleases.removeAll() }
+            return Array(readReleases.keys)
+        }
+
+        /// Drops the link of each read whose grace has run out, unless a channel or a new read uses it by now. Short of the
+        /// held links 5323bbd fixed: a link nothing uses still goes, 2 s after its read.
+        func releaseReadLinks(now: Int64) {
+            for (path, due) in readReleases.sorted(by: { $0.key < $1.key }) where now >= due {
+                readReleases[path] = nil
+                if !linkInUse(path) {
+                    dropLink(to: path, now: now)
+                }
             }
         }
 

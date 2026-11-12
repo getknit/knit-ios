@@ -70,5 +70,10 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   `ble rung by` from the iPhone, and knit-peer's `bluez ringing`, `bluez could not ring`, `link up <id> on chN`, `link down
   <id> on chN` and `link head start over for <id> `. Both channel-ending tables
   read `link chN closed: the advert flipped to …` (ADR 2026-11.prsp).
+- **Admit a relinking dialer out of order, and only then.** For 30 s after the radio closes a proven link, a dialer
+  proving that id is admitted whatever the order, unless our own dial or proof to it is open (ADR 2026-09.6es2, amended
+  2026-11-11). Android does not do this, so toward an Android above the iPhone a relink still waits for Android's
+  dial. Never let the window open on a teardown of ours, and never drop the guard, or both ends can admit crossing
+  dials and lose both links.
 - **A behaviour that needs Android to change** is a Track A item in `.agents/memory/roadmap.md`, made in
   knit-next under knit-next's own rules, never worked around silently here.

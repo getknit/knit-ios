@@ -2164,7 +2164,19 @@ was left alone, and the guard put both phones' switches back after each run.
     changes, so its read always does that. An Android phone does it only while its private address is still the one
     its link was made from, which is why the Pixel 9's link, hours old, survived every change. Every reader that reads
     a new address with a second connection can meet this: Android's `BleGattPayloadReader`, KnitBlueZ and KnitBLE's
-    reader. Which rule avoids it is not decided yet.
+    reader. The maintainer chose a fast relink over preventing the second connection.
+  - **The fast relink (uncommitted on 2026-11-11 at this writing; ADR 2026-09.6es2, amended 2026-11-11).** In the
+    20:04 control the iPhone redialed 10 s after its link ended, over the read's own connection, and the peer refused
+    it (`link refused …: we dial it`) because its order said it dials the iPhone. The peer's own dials then failed with
+    `0x3e` until 20:06:41, 2 min 19 s after the drop. For 30 s after the radio closes a proven link, the link manager
+    now admits a dialer proving that id out of order, unless its own dial or proof to that id is open, and logs `link
+    <id> relinks out of order on chN`. KnitBlueZ keeps a read's connection 2 s after a read that found a payload, as
+    KnitBLE does, since the peer's Disconnect at the read's end would have ended that redial. A relink over the read's
+    connection runs on the dongle's own connection parameters: dongle B's creates set a 5 s supervision timeout, while a
+    dongle on the kernel's 420 ms default would drop it under load ("A link the peer dials times out in 420 ms"). An
+    Android above the iPhone still refuses the redial. Owed: a clear-mode hold across three address changes that
+    records, for each, the gap from `link down` to the redial, from the read's end to `bluez accepted`, and the relinked
+    link's supervision timeout.
   - **Dongle B hung at 14:44:07** (`command 0x2043 tx timeout`, opcodes failing `-110`) and left the bus at 15:11
     after failed resets, so the third run never linked the peer and a fourth could not start. It needs replugging.
     `iphone-rotate` now stops when either link never comes up, and records `advertising` with each rotation.

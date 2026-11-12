@@ -172,7 +172,7 @@ extension LinkManager {
         if let held, refusesHeld(hello, from: dialer, proves: proves, held: held, now: now) {
             return retire(id, backingOff: false, now: now)
         }
-        if let refusal = admissionRefusal(claim, proves: proves, sighting: sighting, held: held, now: now) {
+        if let refusal = admissionRefusal(claim, proves: proves, sighting: sighting, held: held, on: id, now: now) {
             log.log(.info, "link refused \(dialer): \(refusal)")
             return retire(id, backingOff: false, now: now)
         }
@@ -201,7 +201,12 @@ extension LinkManager {
     /// dialer only after its proof, so the late pass reads the same), so a blinding Android whose real id sorts below ours
     /// is admitted even when a key sights it. While we blind, our forms are the aired snapshot's, and two rows come first:
     /// `RefuseLegacy` in ``admit(_:hello:payload:now:)`` and `RefuseHeld` (``refusesHeld(_:from:proves:held:now:)``).
-    func admissionRefusal(_ claim: Claim, proves: Bool, sighting: AdvertPayload?, held: LiveLink?, now: Int64) -> String? {
+    ///
+    /// The relink window replaces "we dial it" alone, and only for a dialer that proves itself (``relinksOutOfOrder(_:on:now:)``):
+    /// every row above it still comes first, and the rows below it still judge the dialer it lets through.
+    func admissionRefusal( // swiftlint:disable:this function_parameter_count - the rows' inputs, and the channel the relink names
+        _ claim: Claim, proves: Bool, sighting: AdvertPayload?, held: LiveLink?, on id: ChannelID, now: Int64
+    ) -> String? {
         let hello = claim.hello
         if proves, let held, !held.proven {
             return nil
@@ -209,7 +214,9 @@ extension LinkManager {
         let honoured = AdvertOrder.honours(offersProof: proves, proven: false, late: false)
         let outOfOrder = AdvertOrder.outOfOrder(mine, dialer: claim.peer, told: hello.told, addressed: hello.addressed, honoured: honoured)
         if let sighting, outOfOrder || !peerFindsUs(flags: sighting.flags) {
-            return "we dial it"
+            guard proves, relinksOutOfOrder(claim.peer, on: id, now: now) else {
+                return "we dial it"
+            }
         }
         guard let held else {
             return nil
@@ -286,6 +293,7 @@ extension LinkManager {
         crossings.forget(link: id)
         if proven {
             claims.proved(peer)
+            relinkWindow.relinked(peer)
             // Here, not where the PROOF verified, so it names only a link that registers, right before its `link up`.
             log.log(.info, "link \(peer) proved itself on \(id)")
         }

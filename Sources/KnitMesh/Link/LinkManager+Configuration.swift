@@ -22,6 +22,11 @@ extension LinkManager {
         /// (A1's `REPLACE_MIN_HOLD_MS`). An unproven HELLO is unauthenticated, so this bounds how often a device that
         /// claims the id of a peer that cannot prove itself can cut its link. A proven link is replaced only by a proof.
         public var replaceMinHoldMilliseconds: Int64
+        /// How long after the radio closed a proven link a dialer proving the same id is admitted though our order says we
+        /// dial it (``RelinkWindow``): iOS ends a link when the same device connects to it again, and the iPhone redials
+        /// over the reader's connection within a second. 30 s covers the redialer's 8 to 12 s backoff and a dial's 12 s
+        /// connect timeout. 0 never admits.
+        public var relinkWindowMilliseconds: Int64
         /// How often a link's doorbell rings, at most, while frames go out on it. A ring wakes a suspended iPhone for
         /// about 9 s (iOS 27), so ringing at most every 5 s, and once more after the last frame of a burst, has every
         /// frame read within about 5 s of reaching the link. 0 never rings.
@@ -95,6 +100,7 @@ extension LinkManager {
             unsightedLinkRssi: Double = -90,
             absentLinkRssi: Double = -127,
             replaceMinHoldMilliseconds: Int64 = 30_000,
+            relinkWindowMilliseconds: Int64 = 30_000,
             ringIntervalMilliseconds: Int64 = 5000,
             seekWakeBudget: Int = 8,
             seekWakeMilliseconds: Int64 = 10_000,
@@ -121,6 +127,7 @@ extension LinkManager {
             self.unsightedLinkRssi = unsightedLinkRssi
             self.absentLinkRssi = absentLinkRssi
             self.replaceMinHoldMilliseconds = replaceMinHoldMilliseconds
+            self.relinkWindowMilliseconds = relinkWindowMilliseconds
             self.ringIntervalMilliseconds = ringIntervalMilliseconds
             self.seekWakeBudget = seekWakeBudget
             self.seekWakeMilliseconds = seekWakeMilliseconds

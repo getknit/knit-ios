@@ -118,6 +118,7 @@ extension LinkManager {
         refusedDials.removeAll()
         heldStreaks.clear()
         replayMarks.clear()
+        relinkWindow.clear()
         advertised = nil
         advertDue = nil
         writerDown()

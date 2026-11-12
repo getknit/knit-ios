@@ -586,6 +586,15 @@ explicit direction.** Update this file in the change that ships an item.
       - **Trial.** A debug iPhone with the switch on, beside a blinding Pixel that is its contact and one that is not:
         the contact resolves the iPhone by key over GATT, both link in both orders across slot edges, and the read
         budget stays refunded.
+    - **A12 (Android admits a relinking iPhone out of order):** not filed yet. iOS ends a link when the same device
+      connects to it again, so an Android whose private address has not rotated since its link formed ends its own link
+      to an iPhone by reading the iPhone's new address (`.agents/context/linux-peer.md`, "The iPhone ends a link when the
+      same device connects to it again"). The iPhone redials after its 10 s backoff, and an Android above it refuses a
+      sighted dialer below it (`BleAdmissionPolicy.decide`'s `seen && outOfOrder`), so the pair waits for Android's own
+      dial. The ask mirrors this port's window (ADR 2026-09.6es2, amended 2026-11-11): a `relinking` input to `decide`
+      that skips that row when the HELLO offers a proof, this phone's proven link to that id ended by the transport
+      within 30 s (never its own eviction or replace), and it has no dial open to that id, consumed at a proven
+      registration. iOS does not wait for it.
   - **Wire and crypto** (`crypto-owner`): type `lang`, `reads`, `md` and `pk` as kotlinx does (#43, done with the
     reader), and add the `link` frame type, never flooded and spending no key request (#44); the once-per-era receipt
     re-seal (knit-next #176, the item below; #48), the race loser's reclaim (4mjm, #49) and the floored reset (sfms,
