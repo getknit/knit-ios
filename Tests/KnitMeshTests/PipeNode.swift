@@ -19,7 +19,17 @@ final class PipeNode {
     let links: LinkManager
     let engine: MeshEngine
 
-    init(_ peer: TestPeer, clock: ManualClock, seed: UInt64, custodyLimits: CustodyLimits = CustodyLimits()) {
+    /// A phone of `peer`'s. By default an engine with no ratchet; a lab that needs the ratchet gives its `configuration`, the
+    /// `prekeys` it keeps and a `deviceTag`.
+    init(
+        _ peer: TestPeer,
+        clock: ManualClock,
+        seed: UInt64,
+        custodyLimits: CustodyLimits = CustodyLimits(),
+        configuration: MeshConfiguration = MeshConfiguration(queriesBlobHolders: true),
+        prekeys: PrekeyRing? = nil,
+        deviceTag: String? = nil
+    ) {
         self.peer = peer
         stores = MeshStores.inMemory(custodyLimits: custodyLimits)
         let recording = log
@@ -34,13 +44,13 @@ final class PipeNode {
         )
         engine = MeshEngine(
             identity: peer.keys,
-            prekeys: nil,
-            deviceTag: nil,
+            prekeys: prekeys,
+            deviceTag: deviceTag,
             stores: stores,
             transport: links,
             clock: clock,
             random: SeededGenerator(seed: seed + 100),
-            configuration: MeshConfiguration(queriesBlobHolders: true),
+            configuration: configuration,
             log: log,
             ratchetEngine: RatchetEngine(),
             groupRatchetEngine: GroupRatchetEngine(),

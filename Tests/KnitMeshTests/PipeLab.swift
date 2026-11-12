@@ -19,7 +19,11 @@ final class PipeLab {
 
     /// A started phone for `seed`, its custody under `custodyLimits`.
     func node(_ seed: Int, custodyLimits: CustodyLimits = CustodyLimits()) -> PipeNode {
-        let node = PipeNode(TestPeer(seed: seed), clock: clock, seed: UInt64(seed), custodyLimits: custodyLimits)
+        add(PipeNode(TestPeer(seed: seed), clock: clock, seed: UInt64(seed), custodyLimits: custodyLimits))
+    }
+
+    /// Starts `node`, made on this lab's clock, and keeps it in the lab's passes.
+    func add(_ node: PipeNode) -> PipeNode {
         node.start()
         nodes.append(node)
         return node
