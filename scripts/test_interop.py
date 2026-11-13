@@ -1050,6 +1050,122 @@ class TagNextRoundTest(unittest.TestCase):
         self.assertEqual(record["iphoneHelloDerived"], "1c315f")
 
 
+class AsFoundAdvertTest(unittest.TestCase):
+    """`IPhoneAdvert` with `as_found`, as `iphone-blind-reads` holds the iPhone since run 3a7576: no flip at the start, and the
+    build's default back at the end."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.left = Path(self.directory.name) / "left.json"
+
+    def guard(self, ios: FakeAdvertIPhone) -> interop.IPhoneAdvert:
+        return interop.IPhoneAdvert(lambda: ios, want=True, front=lambda: {"opened": "knit"}, left=self.left, as_found=True)
+
+    def test_a_blinding_iphone_is_left_as_it_is_and_cleared_after(self) -> None:
+        ios = FakeAdvertIPhone([ios_advert(True, True, True), {"applied": True}])
+        with contextlib.redirect_stdout(io.StringIO()), mock.patch.object(interop.time, "sleep"), self.guard(ios):
+            self.assertEqual(ios.calls, [{}], "nothing moved at the start")
+        self.assertEqual(ios.calls, [{}, {"clear": True}])
+        self.assertFalse(self.left.exists())
+
+    def test_a_clear_iphone_ends_the_run_before_anything_moves(self) -> None:
+        ios = FakeAdvertIPhone([ios_advert(None, False, False)])
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(RuntimeError), self.guard(ios):
+            pass
+        self.assertEqual(ios.calls, [{}], "no flip, and nothing to put back")
+
+
+class ListenerGateLinesTest(unittest.TestCase):
+    """bluetoothd's lines for an incoming channel on the iPhone's listener, as run 3a7576 caught them."""
+
+    INDICATION = "Nov 12 16:36:22 bluetoothd[103] <Notice>: Connection Indication PSM:0x00c1 Address: <private>) cid:72"
+    REJECTION = (
+        "Nov 12 16:36:22 bluetoothd[103] <Notice>: Rejecting connection for PSM:0x00c1 (Could not find a session, endpoint or pipe) "
+        "Address: <private>) cid:72"
+    )
+
+    def test_a_rejected_channel_is_named_by_its_psm(self) -> None:
+        self.assertEqual(len(interop._listener_rejections([self.INDICATION, self.REJECTION], 193)), 1)
+        self.assertEqual(interop._listener_rejections([self.REJECTION], 192), [])
+        self.assertEqual(interop._listener_accepted([self.INDICATION, self.REJECTION], 193), 0)
+        with self.assertRaises(RuntimeError):
+            interop._listener_held([self.INDICATION, self.REJECTION], {193})
+
+    def test_an_indication_with_no_rejection_is_accepted(self) -> None:
+        other = self.INDICATION.replace("cid:72", "cid:75")
+        lines = [self.INDICATION, self.REJECTION, other, "Channel connected callback : sockets : psm 193, cid 75, sock 31"]
+        self.assertEqual(interop._listener_accepted(lines, 193), 1)
+        self.assertEqual(interop._listener_accepted([self.INDICATION, other, self.REJECTION], 193), 1, "overlapping channels")
+        with self.assertRaises(RuntimeError, msg="one rejection is enough to fail the run"):
+            interop._listener_held(lines, {193})
+        self.assertEqual(interop._listener_held([other], {193}), {"psms": [193], "accepted": 1})
+        with self.assertRaises(RuntimeError, msg="every PSM the iPhone listened on is judged"):
+            interop._listener_held([other, self.INDICATION, self.REJECTION], {192, 193})
+        with self.assertRaises(interop.Inconclusive):
+            interop._listener_held([], {193})
+        with self.assertRaises(interop.Inconclusive):
+            interop._listener_held([other], set())
+
+    def test_every_psm_the_iphone_listened_on_counts(self) -> None:
+        entries = [{"ms": 1000, "message": "ble listening on PSM 192"}, {"ms": 5000, "message": "ble listening on PSM 193"}]
+        self.assertEqual(interop._listened_on(entries, 2), {193})
+
+
+class ListenerGateTest(unittest.TestCase):
+    """`_listener_gate` with the iPhone, the Pixels and the logs faked: what it decides from the orders it reads."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.addCleanup(self.directory.cleanup)
+        self.daemon = mock.Mock(path=Path(self.directory.name) / "bluetoothd.log")
+        self.daemon.path.write_text("")
+        self.knit = FakeKnitLog([])
+        self.addCleanup(self.knit.close)
+        self.ios = mock.Mock(node_id=IPHONE)
+        self.ios.advert.return_value = {"psm": 193}
+        self.rotated: list[object] = []
+
+    def phones(self, dials_after: int) -> dict[str, mock.Mock]:
+        phones = {"contact": mock.Mock(), "stranger": mock.Mock()}
+        phones["contact"].advert.side_effect = lambda: {"peers": [{"peer": IPHONE, "iDial": len(self.rotated) >= dials_after}]}
+        phones["stranger"].advert.side_effect = lambda: {"peers": [{"peer": IPHONE, "iDial": False}]}
+        return phones
+
+    def gate(self, phones: dict, records: dict, relinked: dict | None = None) -> dict:
+        with (
+            mock.patch.object(interop, "_phone_rotate", side_effect=lambda phone, wait: self.rotated.append(phone) or {}),
+            mock.patch.object(interop, "_relink", return_value=relinked or {"dialer": "phone"}),
+            mock.patch.object(interop.time, "sleep"),
+        ):
+            return interop._listener_gate(self.ios, phones, {"contact": PHONE, "stranger": IPHONE}, self.knit, self.daemon, records, time.time() - 60, 10)
+
+    def test_a_pixel_dial_at_link_up_passes_at_once(self) -> None:
+        result = self.gate(self.phones(0), {"contact": [{"dialer": "phone"}], "stranger": []})
+        self.assertEqual((result["pixelDialed"], result["rotated"], self.rotated), ("contact", [], []))
+
+    def test_a_relink_after_the_last_rotation_passes(self) -> None:
+        result = self.gate(self.phones(3), {"contact": [{"dialer": "iphone"}], "stranger": [{"dialer": "iphone"}]})
+        self.assertEqual((result["pixelDialed"], len(self.rotated)), ("contact", 3))
+
+    def test_no_pixel_dial_and_a_rejected_channel_fail(self) -> None:
+        with self.assertRaises(RuntimeError):
+            self.gate(self.phones(9), {"contact": [], "stranger": []})
+        self.daemon.path.write_text(ListenerGateLinesTest.REJECTION + "\n")
+        with self.assertRaises(RuntimeError):
+            self.gate(self.phones(0), {"contact": [{"dialer": "phone"}], "stranger": []})
+
+    def test_an_unanswered_unpublish_fails_before_anything_else(self) -> None:
+        self.knit = FakeKnitLog(["ble heard no answer to 1 unpublishes in 5000 ms, so publishes"])
+        self.addCleanup(self.knit.close)
+        with self.assertRaises(RuntimeError):
+            self.gate(self.phones(0), {"contact": [{"dialer": "phone"}], "stranger": []})
+
+    def test_a_pixels_own_dial_is_found_by_the_order(self) -> None:
+        self.assertEqual(interop._pixel_dialed({"contact": [{"dialer": "iphone"}], "stranger": [{"dialer": "phone"}]}), "stranger")
+        self.assertIsNone(interop._pixel_dialed({"contact": [{"dialer": "iphone"}]}))
+
+
 class BlindingAdvertsTest(unittest.TestCase):
     """`ClearAdverts` with `blind`, as `iphone-blind-reads` holds both its phones."""
 

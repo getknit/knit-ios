@@ -400,11 +400,15 @@ class IPhoneAdvert:
     # switch waits for the next bring-up.
     SETTLED = frozenset({"transport not running", "radio down"})
 
-    def __init__(self, connect, want: bool, front=None, left: Path | None = None) -> None:
+    def __init__(self, connect, want: bool, front=None, left: Path | None = None, as_found: bool = False) -> None:
         self.connect = connect
         self.want = want
         self.front = front
         self.left = left or IPHONE_ADVERT_LEFT
+        # `iphone-blind-reads` moves nothing at the start: the switch must already be where the run wants it, since a flip
+        # just before the run's mesh restart left the listener without an endpoint (run 3a7576). It still puts the
+        # build's default back at the end.
+        self.as_found = as_found
         self.restore: dict | None = None
 
     def __enter__(self) -> Self:
@@ -433,7 +437,18 @@ class IPhoneAdvert:
         if reply is None:
             return
         switch = reply.get("switch") or {}
-        if switch.get("value") is self.want and bool(reply.get("blinding")) is self.want:
+        held = switch.get("value") is self.want and bool(reply.get("blinding")) is self.want
+        if self.as_found:
+            if not held:
+                raise RuntimeError(
+                    f"the iPhone's advert is not {'blinding' if self.want else 'clear'} (switch {switch}): set it before the run, then "
+                    "relaunch Knit so its listener is fresh; this run flips nothing"
+                )
+            self.restore = {"stored": None, "nodeId": ios.node_id, "at": round(time.time())}
+            self.left.parent.mkdir(parents=True, exist_ok=True)
+            self.left.write_text(json.dumps(self.restore) + "\n", encoding="utf-8")
+            return
+        if held:
             return
         self.restore = {"stored": switch.get("stored"), "nodeId": ios.node_id, "at": round(time.time())}
         self.left.parent.mkdir(parents=True, exist_ok=True)
@@ -2288,13 +2303,20 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
     """Companion change A11's device trial (the `blind-gatt-reads` contract, step 5; ADR 2026-11.prsp): a blinding iPhone
     beside two blinding Android phones that read its blinded GATT payload as a blinded sighting. `--device` is the contact
     phone, the iPhone's contact both ways, and `--second-device` the stranger phone, in the iPhone's contacts while the
-    iPhone is not in its own. The run holds the iPhone's switch on (`IPhoneAdvert`) and each phone's on too
-    (`ClearAdverts`, `blind`), and puts back what it found after. It reads the phones' logcat through `LogcatCapture` and
+    iPhone is not in its own. The iPhone's switch must already be on, set before the run and followed by a relaunch of
+    Knit, since the run flips nothing on it (`IPhoneAdvert`, `as_found`): in run 3a7576 a flip just before the run's
+    mesh restart left an unpublish unanswered, and the listener it then published on PSM 193 had no endpoint in
+    bluetoothd. The run puts the build's default back at the end. It holds each phone's switch on (`ClearAdverts`,
+    `blind`) and puts back what it found. It reads the phones' logcat through `LogcatCapture` and
     the iPhone's log over USB, so the iPhone must be on USB with Knit in front and unlocked for the whole run, which
     crosses at least `--edges` slot edges and stops after `--max-edges`.
 
     It stops the iPhone's mesh until each phone forgets the payloads it held for the iPhone (rule 3), then starts it, so
-    each phone's first read of the run is of a bring-up's tag that no link announced. Then, slot by slot, both phones post
+    each phone's first read of the run is of a bring-up's tag that no link announced. With no flip before it, that stop's
+    unpublish has been answered (run 223e21 kept PSM 192); nothing guarantees it, so a gate follows the first links
+    (`_listener_gate`): no `ble heard no answer to … unpublishes` since the start, no bluetoothd rejection on the PSM the
+    iPhone publishes (read over USB beside Knit's log), and a Pixel's own tag dial linked, its link cycled or its tag
+    rotated until its order gives it the dial. A failed gate ends the run before its loop. Then, slot by slot, both phones post
     to the room every `--post-every` seconds, which rings the iPhone; the iPhone announces its next tag and turns it at
     the edge with both links held; and 90 s past the edge each link is cycled (the iPhone denies the phone, then allows
     it), so it comes back by the new slot's tag order. Every second edge is an early one instead until `--edges` late
@@ -2326,6 +2348,7 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
         read, or later while a link or a dial to the iPhone spared it; none twice for one edge; none missed.
     - **The seal:** `linksSealed` rose on all three, by at least the iPhone's links to the phones on the iPhone, with no
         `linkSealFailed` or `linkSealRefused` anywhere, and no plain `bt connect ok` to the iPhone.
+    - **The listener:** bluetoothd rejected no channel on the iPhone's PSM across the run, and took at least one.
     - **The doorbell:** the iPhone logged `ble rung by` at least as often as the phones logged `bt ring` for it, and no
         phone found its doorbell absent. A `bt doorbell settling` line must be followed by `bt doorbell found`. The run
         cannot make one: a blinding iPhone publishes its listener only once it serves the doorbell's service
@@ -2340,10 +2363,11 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
         run.step(f"{label}-blinds", lambda phone=phone: _phone_blinds(phone))
         run.step(f"{label}-budgets-reads", lambda phone=phone: _budgets_gatt_reads(phone))
     captures = {label: LogcatCapture(phone, ROOT / ".build" / f"interop-blind-reads-{nonce}-{label}.log") for label, phone in phones.items()}
-    with IPhoneAdvert(lambda: _bridge_up(IPhone(udid, host)), want=True, front=lambda: _front(udid)):
+    with IPhoneAdvert(lambda: _bridge_up(IPhone(udid, host)), want=True, front=lambda: _front(udid), as_found=True):
         ios = _bridge_up(IPhone(udid, host))
         knit = _iphone_log(ios, f"interop-blind-reads-{nonce}.log")
-        if knit is None:
+        daemon = _iphone_log(ios, f"interop-blind-reads-{nonce}-bluetoothd.log", process="bluetoothd")
+        if knit is None or daemon is None:
             ios.stop()
             raise SystemExit("iphone-blind-reads reads the iPhone's log over USB: connect it")
         print(json.dumps({"run": "iphone-blind-reads", "iphone": ios.node_id, **ids}), flush=True)
@@ -2371,6 +2395,14 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
                 record = run.step(f"link-{label}", lambda label=label, phone=phone: _blind_link(ios, phone, ids[label], knit, started, arguments.link_timeout))
                 if record:
                     records[label].append(record)
+            gate = run.step(
+                "listener-gate", lambda: _listener_gate(ios, phones, ids, knit, daemon, records, started, arguments.link_timeout)
+            )
+            if gate is None:
+                # The iPhone takes no Pixel's dial, or no Pixel's order could be made to give one: nothing below would judge
+                # A11 (run 3a7576). The switch goes back, and the run ends before its loop.
+                raise _GateFailed
+            psm = gate["psm"]
             while len(edges) < arguments.max_edges:
                 if ios.lost is not None:
                     run.step("bridge-held", lambda: _fail("the iPhone's bridge closed: Knit was suspended or crashed"))
@@ -2441,6 +2473,11 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
             run.step("iphone-sealed", lambda: _ios_sealed(after.get("iphone", {}), before["iphone"], ups))
             run.step("no-legacy", lambda: _no_legacy(lines, ios.node_id, before["advert"], after.get("advert", {})))
             run.step("rings-heard", lambda: _blind_rings_heard(lines, ios.node_id, rung_by))
+            psms = {psm} - {None} | _listened_on(IPhoneLog.entries(knit.path), started)
+            run.step("iphone-listener-accepts", lambda: _listener_held(_daemon_messages(daemon), psms))
+        except _GateFailed:
+            why = next((result.get("error") for result in reversed(run.results) if result["step"] == "listener-gate"), None)
+            print(json.dumps({"stopped": "the listener gate failed, so the run ends before its loop", "why": why}), flush=True)
         finally:
             stop.set()
             for node in sorted(kept_off):
@@ -2452,6 +2489,7 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
                 capture.stop()
             ios.stop()
             knit.stop()
+            daemon.stop()
     links = {label: [{key: record.get(key) for key in ("dialer", "expected", "outcome")} for record in records[label]] for label in phones}
     summary = {"summary": "iphone-blind-reads", "steps": run.steps, "failed": run.failed, "inconclusive": run.inconclusive, "edges": len(edges)}
     sent = {label: f"{sum(bool(record['sent']) for record in records)}/{len(records)}" for label, records in tag_nexts.items()}
@@ -2514,6 +2552,10 @@ def _tag_next_round(phone: Phone, lines: list[tuple[float, str]], ios: IPhone, e
     except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError, TimeoutError, OSError, ValueError) as error:
         record["error"] = str(error)[:200]
     return record
+
+
+class _GateFailed(Exception):  # noqa: N818 - named for what ended the run
+    """`iphone-blind-reads`' listener gate failed, so the run ends before its loop (the step already printed why)."""
 
 
 def _phone_blinds(phone: Phone) -> dict:
@@ -2617,6 +2659,139 @@ def _relink(ios: IPhone, phone: Phone, phone_id: str, knit, since: float, timeou
             time.sleep(5)
             ios.command(cmd="allow-link", peer=phone_id)
     return _blind_link(ios, phone, phone_id, knit, since, timeout)
+
+
+# The iPhone's line when its listener's unpublish went unanswered and it published again regardless
+# (`BLECore+Delegates.swift`): after a flip, run 3a7576's restart onto PSM 193 left bluetoothd with no endpoint for it,
+# so every Pixel's dial was rejected. Frozen in .agents/rules/interop.md.
+UNANSWERED_UNPUBLISH = "ble heard no answer to "
+# The PSM each publish listens on, so the run judges every one a restart moved it to.
+LISTENING_ON = re.compile(r"^ble listening on PSM (\d+)$")
+# Apple's bluetoothd as `idevicesyslog -p bluetoothd` prints it, an incoming LE credit-based channel and its rejection.
+# Not ours, so not frozen: a change in iOS shows as a gate with no indication to judge.
+CONNECTION_INDICATION = re.compile(r"Connection Indication PSM:0x([0-9a-fA-F]+) .*cid:(\d+)")
+REJECTING_CONNECTION = re.compile(r"Rejecting connection for PSM:0x([0-9a-fA-F]+) \((.*?)\).*cid:(\d+)")
+
+
+def _daemon_messages(daemon: IPhoneLog) -> list[str]:
+    """bluetoothd's lines so far, as `idevicesyslog` wrote them."""
+    daemon.file.flush()
+    return daemon.path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+
+def _listener_rejections(lines: list[str], psm: int | None) -> list[str]:
+    """bluetoothd's rejections of an incoming channel on `psm`, or on any PSM when it is None."""
+    return [line for line in lines if (match := REJECTING_CONNECTION.search(line)) and (psm is None or int(match.group(1), 16) == psm)]
+
+
+def _listener_accepted(lines: list[str], psm: int) -> int:
+    """How many incoming channels on `psm` bluetoothd did not reject: an indication with no rejection of its cid after it,
+    channels that overlap included."""
+    standing: list[str] = []
+    for line in lines:
+        if (indication := CONNECTION_INDICATION.search(line)) and int(indication.group(1), 16) == psm:
+            standing.append(indication.group(2))
+        elif (rejection := REJECTING_CONNECTION.search(line)) and int(rejection.group(1), 16) == psm and rejection.group(3) in standing:
+            # A cid comes back for later channels, so a rejection takes the latest indication under it.
+            del standing[len(standing) - 1 - standing[::-1].index(rejection.group(3))]
+    return len(standing)
+
+
+def _listener_held(lines: list[str], psms: set[int]) -> dict:
+    """bluetoothd rejected no incoming channel on any PSM the iPhone listened on across the run (run 3a7576's defect), and
+    took at least one: Pixel dials reached it. Inconclusive when no PSM is known."""
+    if not psms:
+        raise Inconclusive("no PSM the iPhone listened on is known")
+    rejected = [line for psm in sorted(psms) for line in _listener_rejections(lines, psm)]
+    if rejected:
+        raise RuntimeError(f"bluetoothd rejected {len(rejected)} channels on PSM {sorted(psms)}: {rejected[0][-160:]}")
+    accepted = sum(_listener_accepted(lines, psm) for psm in psms)
+    if not accepted:
+        raise Inconclusive(f"no channel reached PSM {sorted(psms)} in bluetoothd's log")
+    return {"psms": sorted(psms), "accepted": accepted}
+
+
+def _listened_on(entries: list[dict], since: float) -> set[int]:
+    """Every PSM the iPhone logged listening on since `since` (`ble listening on PSM <n>`), the wall clock in seconds."""
+    return {int(match.group(1)) for entry in entries if entry.get("ms", 0) >= since * 1000 and (match := LISTENING_ON.match(entry["message"]))}
+
+
+def _pixel_dialed(records: dict[str, list[dict]]) -> str | None:
+    """The label of a phone whose own dial linked the iPhone, as judged by the order, or None."""
+    return next((label for label, ours in records.items() for record in ours if record.get("dialer") == "phone"), None)
+
+
+def _phone_rotate(phone: Phone, wait: float) -> dict:
+    """One forced rotation of the phone's tag through its bridge's `ADVERT_ROTATE`, a refusal that time ends waited out up
+    to `wait` seconds (`ForcedRotation.Refusal`: pending, settling, announced, holding, grace, throttled)."""
+    deadline = time.monotonic() + wait
+    while True:
+        reply = phone.bridge("ADVERT_ROTATE")
+        if reply.get("rotated"):
+            return {"epoch": reply.get("epochAfter"), "resolvable": reply.get("resolvable")}
+        if reply.get("why") not in {"pending", "settling", "announced", "holding", "grace", "throttled"} or time.monotonic() > deadline:
+            raise RuntimeError(f"the phone's ADVERT_ROTATE was refused: {reply.get('why')}")
+        time.sleep(10)
+
+
+def _listener_gate(
+    ios: IPhone,
+    phones: dict[str, Phone],
+    ids: dict[str, str],
+    knit,
+    daemon: IPhoneLog,
+    records: dict[str, list[dict]],
+    since: float,
+    timeout: float,
+    rotations: int = 3,
+) -> dict:
+    """The run's preflight, before the loop: the iPhone takes a Pixel's dial. Its restart logged no unanswered unpublish,
+    bluetoothd rejected nothing on the PSM the iPhone publishes, and a Pixel's own tag dial linked (run 3a7576, where
+    neither held and nothing judged A11). The first links' dial is the order's. When neither Pixel dialed, a Pixel whose
+    order now gives it the dial has its link cycled (`_relink`); when none has the dial, a Pixel's own tag is rotated
+    (`ADVERT_ROTATE`), which re-rolls its order against the iPhone's current tag, up to `rotations` times."""
+    knit.file.flush()
+    unanswered = [e["message"] for e in IPhoneLog.entries(knit.path) if e.get("ms", 0) >= since * 1000 and e["message"].startswith(UNANSWERED_UNPUBLISH)]
+    if unanswered:
+        raise RuntimeError(f"the iPhone's restart left an unpublish unanswered: {unanswered[0]}")
+    psm = (ios.advert() or {}).get("psm")
+    rotated: list[str] = []
+    for attempt in range(rotations + 1):
+        rejected = _listener_rejections(_daemon_messages(daemon), psm)
+        if rejected:
+            raise RuntimeError(f"bluetoothd rejects the iPhone's PSM {psm}: {rejected[0][-160:]}")
+        if label := _pixel_dialed(records):
+            return {"psm": psm, "pixelDialed": label, "rotated": rotated}
+        for label, phone in phones.items():
+            sighting = next((peer for peer in (phone.advert() or {}).get("peers", []) if peer.get("peer") == ios.node_id), {})
+            if sighting.get("iDial"):
+                record = _relink(ios, phone, ids[label], knit, time.time(), timeout)
+                records[label].append(record)
+                if record.get("dialer") == "phone":
+                    return {"psm": psm, "pixelDialed": label, "rotated": rotated}
+                break
+        else:
+            if attempt < rotations:
+                rotated.append(_rotate_a_pixel(phones, attempt))
+                time.sleep(15)
+    if label := _pixel_dialed(records):
+        return {"psm": psm, "pixelDialed": label, "rotated": rotated}
+    raise RuntimeError(f"no Pixel's own dial linked the iPhone after {len(rotated)} rotations {rotated}: is its listener taking dials?")
+
+
+def _rotate_a_pixel(phones: dict[str, Phone], attempt: int) -> str:
+    """Rotates one Pixel's tag for the listener gate, the Pixels taking turns, and the other one when the first refuses
+    for longer than a wait (an announcement stands until the edge). Answers the label rotated."""
+    labels = list(phones)
+    order = labels[attempt % len(labels) :] + labels[: attempt % len(labels)]
+    refusals = []
+    for label in order:
+        try:
+            _phone_rotate(phones[label], 150)
+            return label
+        except RuntimeError as error:
+            refusals.append(f"{label}: {error}")
+    raise RuntimeError(f"the gate could rotate no Pixel's tag ({'; '.join(refusals)}), so it cannot judge the listener")
 
 
 def _still_owed(records: dict[str, list[dict]], captures: dict[str, LogcatCapture], node: str, early_edges: list[float]) -> tuple[bool, bool]:
@@ -4513,10 +4688,11 @@ def _last_dialer(phone: Phone, node: str) -> str | None:
 HEAD_START_LINE = "link head start over for "
 
 
-def _iphone_log(ios: IPhone, name: str):
-    """Knit's own log over USB, for the head-start line, or None when the iPhone is not on USB."""
+def _iphone_log(ios: IPhone, name: str, process: str = "Knit"):
+    """Knit's own log over USB, for the head-start line, or None when the iPhone is not on USB. `process` names another
+    process to read instead, `bluetoothd` for `iphone-blind-reads`' listener gate."""
     try:
-        return IPhoneLog(ios.udid, ROOT / ".build" / name)
+        return IPhoneLog(ios.udid, ROOT / ".build" / name, process)
     except (RuntimeError, OSError):
         return None
 
@@ -7935,11 +8111,11 @@ class IPhoneLog:
     """Knit's unified log over USB through `idevicesyslog`, kept as it comes. A debug build writes every level as one
     JSON line (`UnifiedLog`), so the file reads like the peer's log once each line's syslog prefix is cut."""
 
-    def __init__(self, udid: str, path: Path) -> None:
+    def __init__(self, udid: str, path: Path, process: str = "Knit") -> None:
         self.path = path
         self.file = open(path, "a", encoding="utf-8")  # noqa: SIM115 - lives with the process
         self.process = subprocess.Popen(
-            ["idevicesyslog", "-u", udid, "-p", "Knit", "--no-colors"], stdout=self.file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL
+            ["idevicesyslog", "-u", udid, "-p", process, "--no-colors"], stdout=self.file, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL
         )
 
     def stop(self) -> None:

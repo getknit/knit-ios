@@ -369,11 +369,14 @@ The summary lists each rotation's serials, source and whether it aired a random 
 traffic through `knit-hci b btmon` for the handles and any Service Changed indication, which the script does not read.
 
 `iphone-blind-reads` is companion change A11's trial (the `blind-gatt-reads` contract, step 5). It needs no dongle. The
-iPhone's switch goes on for the run, and so do both phones' switches: the contact phone (`--device`, the iPhone's contact
+iPhone's switch must already be on when the run starts, set over the bridge and then Knit relaunched, because the run
+flips nothing on the iPhone (run 3a7576, below). Both phones' switches go on for the run: the contact phone (`--device`, the iPhone's contact
 both ways) and the stranger phone (`--second-device`, which has the iPhone in its contacts but not the other way round).
 It reads each phone's logcat through `LogcatCapture` and the iPhone's log over USB, so Knit has to stay in front and the
 iPhone unlocked. First it stops the iPhone's mesh until both phones forget its payload, then starts it, so the first read
-on each phone is of a tag no link has announced. After that it goes slot by slot. Both phones post every three minutes,
+on each phone is of a tag no link has announced. A gate follows the first links. It fails the run before its loop if the
+restart left an unpublish unanswered, if bluetoothd (read over USB) rejected a channel on the iPhone's PSM, or if no
+Pixel's own dial linked, after cycling a Pixel whose order gives it the dial or rotating a Pixel's tag up to three times. After that it goes slot by slot. Both phones post every three minutes,
 which rings the iPhone. At each edge it checks that the iPhone announced and turned its tag with both links up. Ninety
 seconds past the edge it cycles each link (`deny-link`, then `allow-link` on the iPhone), so the pair relinks by the new
 slot's tag order. Every second edge is early instead until `--edges` (2) late ones have passed, and after that the kind

@@ -83,7 +83,10 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   <id>`, `bt doorbell settling <id> (<n>ms since link up)`, `bt doorbell found <id> `, `bt doorbell absent <id>`,
   `bt ring <id>`, `bt state … gattBudget=<used>/<n>`, `bt link up: <id> `, `bt link down: <id> (<why>)`,
   `bt connect ok <id> … sealed=<bool>`, `bt accepted client <id> `, `bt initiating to <key> `,
-  `bt refused client <id> … blind=legacy`, `bt tag next → <id>` and `bt gatt reading <address>`. From the iPhone it reads `ble rung by`.
+  `bt refused client <id> … blind=legacy`, `bt tag next → <id>` and `bt gatt reading <address>`. From the iPhone it reads
+  `ble rung by` and its listener gate's `ble heard no answer to <n> unpublishes` and `ble listening on PSM <n>`, and from
+  Apple's bluetoothd, which no
+  rule here can freeze, `Connection Indication PSM:0x…` and `Rejecting connection for PSM:0x…`.
 - **Admit a relinking dialer out of order, and only then.** For 30 s after the radio closes a proven link, a dialer
   proving that id is admitted whatever the order, unless our own dial or proof to it is open (ADR 2026-09.6es2, amended
   2026-11-11). Android does not do this, so toward an Android above the iPhone a relink still waits for Android's
