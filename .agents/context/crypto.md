@@ -1165,7 +1165,7 @@ knit-next #174, fixed in `458c2eee`, and this port follows the fix from phase P7
 ### Vectors
 
 `wire-v1.json` pins only the ratchet's shapes. The keyed answers come from companion change A9:
-knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` at each pin, last at `5fdaf5da8`; its bytes last moved in
+knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` at each pin, last at `f018bc8ce`; its bytes last moved in
 `3e3e044c` (`.agents/context/knit-next.md`). Since `1b5e72fa` an initiator's state holds the
 prekey its init names as `peerBasePub` at `peerBaseEpoch` 0 (#174); no frame byte moved. Each section serves one phase:
 

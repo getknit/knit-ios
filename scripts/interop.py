@@ -2274,7 +2274,7 @@ def _rings_heard(entries: Callable[[], list[dict]], phone: Phone, ios_id: str, p
 
 
 # Android's lines for a blinded GATT payload that `iphone-blind-reads` reads (the `blind-gatt-reads` contract, §9;
-# knit-next `BtLines.kt` at `ee8609502`), all at info, none printing a tag, frozen in .agents/rules/interop.md: a blinded
+# knit-next `BtLines.kt` at `f018bc8ce`), all at info, none printing a tag, frozen in .agents/rules/interop.md: a blinded
 # read's end, how its sighting resolved, a payload's forget with its reason (`edge` for rule 4), and the doorbell's settle.
 # `<how>` is `key`, `claim`, `hint`, `handle`, `own`, `replayed` or `malformed`; a blinded form never reaches `clear`.
 GATT_READ_BLINDED = re.compile(r"^bt gatt read (\S+) blinded \(psm (\d+)\)")
@@ -2502,7 +2502,7 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
 # one inside the receiver's two-minute limit, and a resend held for a due announcement.
 TAG_NEXT_REFUSALS = ("TAG_NEXT_NO_KEY", "TAG_NEXT_INELIGIBLE", "TAG_NEXT_THROTTLED", "TAG_NEXT_BEFORE_ANNOUNCE")
 # Android's line for each `TAG_NEXT` it sends, an announcement, a current form or a resend alike
-# (`BluetoothMeshTransport.kt:1683` at `ee8609502`), and the announcement's lead before the edge (`AdvertRotation.LEAD_MS`).
+# (`BluetoothMeshTransport.kt:1689` at `f018bc8ce`), and the announcement's lead before the edge (`AdvertRotation.LEAD_MS`).
 TAG_NEXT_SENT = "bt tag next → "
 TAG_NEXT_LEAD = 210.0
 
@@ -2956,7 +2956,7 @@ def _edges_within(lines: list[tuple[float, str]], before: float = 40.0, after: f
     return [float(edge) for edge in range(first, int(lines[-1][0] - after) + 1, SLOT_SECONDS)]
 
 
-# Android's line as a GATT read begins (`BluetoothMeshTransport.kt:3522` at `ee8609502`, debug), which the capture keeps.
+# Android's line as a GATT read begins (`BluetoothMeshTransport.kt:3540` at `f018bc8ce`, debug), which the capture keeps.
 GATT_READING = "bt gatt reading "
 
 

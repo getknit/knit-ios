@@ -89,8 +89,9 @@ with extended advertising; release N airs its id and ships the readers and the k
 on, waits on the iOS reader. This port reads tags (ADR 2026-11.sv5t; knit-next.md, "Owed here"). `AdvertPayload` keeps
 bytes 1–16 as `advertised`, says `blinded`, and drops a blinded payload whose bytes lack the prefix
 (`AdvertForm.hasTagPrefix`); a clear payload is an id whatever its bytes. `AdvertPayload(gattValue:)` reads a blinded GATT
-value with the prefix as a blinded form in both radios, which a blinding iPhone serves (ADR 2026-11.prsp); Android's reader at
-the pin still makes it a stranger's (`BleGattPayloadReader.kt:87-89`) until companion change A11. The link manager resolves
+value with the prefix as a blinded form in both radios, which a blinding iPhone serves (ADR 2026-11.prsp), and Android's
+reader does too since companion change A11 (knit-next ADR 2026-11.89gg, in the pin since `f018bc8ce`;
+`BleGattPayloadReader.kt:94-97`), which makes one lacking the prefix a stranger's. The link manager resolves
 each blinded sighting (`AdvertAliases`: a contact's key, then a proven link's claim, then a dialer's hint, though a
 claim whose link has ended yields to the same id's hint on its live link, ADR 2026-11.sv5t's amendment) and keeps it
 under the resolved id or, unresolved, under a handle printed `~zzzz…<n>` (`FormKeys`, at most 512, a handle a live dial key

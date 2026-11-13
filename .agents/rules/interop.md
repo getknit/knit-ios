@@ -76,7 +76,7 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   `ble rung by` from the iPhone, and knit-peer's `bluez ringing`, `bluez could not ring`, `link up <id> on chN`, `link down
   <id> on chN` and `link head start over for <id> `. Both channel-ending tables
   read `link chN closed: the advert flipped to …` (ADR 2026-11.prsp). `iphone-blind-reads` reads these Android lines
-  (knit-next `BtLines.kt` at `ee8609502`, the `blind-gatt-reads` contract, §9), so ask knit-next to add a line rather
+  (knit-next `BtLines.kt` at `f018bc8ce`, the `blind-gatt-reads` contract, §9), so ask knit-next to add a line rather
   than reword one: `bt gatt read <address> blinded (psm <n>)`, `bt gatt blinded <address> → <id|~handle> (<how>)`,
   `bt gatt forget <address> (<reason>)` with `edge` among the reasons, `bt gatt confirmed <address> (tag) → <id>`,
   `bt gatt read <address> → <id> (psm …)` with its `failed (` and `stranger (` forms, `bt gatt confirmed <address> →

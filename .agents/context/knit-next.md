@@ -9,10 +9,10 @@ Kotlin wins.
 
 - Release `v2.7.0` is commit `7e73e891`, `v2.8.0` is `45e09f19`, `v2.9.0` is `3286edd8`, and `v2.10.0` is
   `20696bad`. The port started from HEAD `02051b64`, five test-only commits after `v2.7.0`, on 2026-09-25.
-- **The pin is `5fdaf5da8`,** knit-next's local `main` on 2026-11-09, where link encryption merged (knit-next ADR
-  2026-11.8mhs, the paired change `link-seal`), not yet pushed: `origin/main` was still `e5bb97c43`. If `main` is rebased
-  before the push, the pin moves to the pushed commit. Every commit since `cad69c77b` was read for it, and "Since then"
-  below says what each means here.
+- **The pin is `f018bc8ce`,** knit-next's local `main` on 2026-11-12, where companion change A11 merged (knit-next ADR
+  2026-11.89gg, the paired change `blind-gatt-reads`), rebased onto knit-next `main` `716ff0768`, not yet pushed:
+  `origin/main` was still `d3b821062`. If `main` is rebased before the push, the pin moves to the pushed commit. Every
+  commit since `5fdaf5da8` was read for it, and "Since then" below says what each means here.
   `sync-vectors.py --check` needs a checkout at the pin, since a later one may carry vectors this port has not taken.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
@@ -492,8 +492,8 @@ Kotlin wins.
       tests, CI, builds, releases and agents. `NEXT_WIRE_BREAK.md` gains items 13 (finish blinding, the Wi-Fi Aware SSI
       and this port's GATT payload with it) and 14 (`relay` outside the signature, which this port's envelope shares),
       and item 4 notes custody's group filter gone.
-  - **Since then** (17 commits to `5fdaf5da8`, on `main` as rewritten before the push; no vector moved but `keyed-v1.json`'s
-    `link.seal` section and `ios-emitted-v1.json`'s, both from the seal):
+  - **Up to `5fdaf5da8`** (the previous pin; 17 commits, on `main` as rewritten before the push; no vector moved but
+    `keyed-v1.json`'s `link.seal` section and `ios-emitted-v1.json`'s, both from the seal):
     - **Mirrored here:** link encryption, `5fdaf5da8` (knit-next ADR 2026-11.8mhs, #286 option 1), whose patch is
       `feat/link-seal`'s `554458ef9`, which this port mirrored ahead of the pin as ADR 2026-11.6zhj (knit-ios #51):
       `CAP_LINK_SEAL`, `FLAG_LINK_SEAL`, tags 10 and 11, the v2 PROOF transcript and the three seal counters. The device
@@ -511,6 +511,46 @@ Kotlin wins.
       `d720192c5`), `ea1ef397e` (#304 and #305 recorded as accepted
       residuals in xp6d and hj4a), LoRa and debug-bridge fixes (`b592124c4`, `ea69b5bd0`), lab and test waits, the
       call screen, the preview layout audit and its CI gate, and the Gradle 9.9.0 bump (`1bd227dd9`).
+  - **Since then** (35 commits to `f018bc8ce`, read on 2026-11-12; no vector this port copies moved, so
+    `sync-vectors.py` rewrote only their provenance. `ios-emitted-v1.json` gains `carolPresenceKeysToBob` as this port
+    exported it, and the new `usb-control-v1.json` is debug-only and not copied):
+    - **Mirrored here:** companion change A11 (knit-next ADR 2026-11.89gg; the paired change `blind-gatt-reads`;
+      knit-ios #42 under ADR 2026-11.prsp), mirrored ahead of the pin from knit-next's `feat/blind-gatt-reads` at
+      `e4c2d9013`, as knit-next ADR 2026-09.g64k was before it merged. Its four commits were rebased onto `716ff0768`
+      with nothing changed but `vectors/README.md`'s context (`git range-diff`), and `f018bc8ce` follows them.
+      `23b9a5b95` reads a blinding iPhone's GATT payload as a blinded sighting: every `0xFE30` service searched, the
+      blind path's resolution, forget rules 1, 2 and 4 on tags, the `(tag)` refund and the doorbell's 10 s settle.
+      `9b83140a6` commits `ios-emitted-v1.json` as this port exported it, with `carolPresenceKeysToBob` and `link.seal`
+      kept, and `ac1d0fb2c` pins `interop.py`'s `GATT_READ_END` and `GATT_CONFIRMED_TAG` in `BlindGattReadTest`, so
+      those regexes change only with that test. Nothing in `Sources/` mirrors it, since these rules were this port's
+      first (`GattPayloads.swift`, `GattSweep.swift`, `DoorbellLookup.swift`). `6f7e705e5`, after run `223e21`'s
+      redial, adds three rules to the contract's §5:
+      - **The yield** (`AdvertAliases.claimAnswer`): a claim whose link ended yields to its own id's hint on a live
+        link, and the hint's link holds the dial off. This port has had it since `2e82f18`
+        (`AdvertAliases+Claims.swift`). Kotlin answers a yielded claim as `Source.Claim` and counts it as a claim, with
+        the hint's link as the claimant. Swift answers `.hint` and counts a hint. The hold-off is the same, and
+        knit-next ADR 2026-11.89gg records the difference.
+      - **No dial from a stale GATT read** (`GattTargets.withheld`): past a slot edge, a payload read in an earlier slot
+        gives no dial target while its resolved id holds a live proven link. Android only, with nothing to mirror:
+        Swift's hint hold-off covers that window.
+      - **No dial at a held proven link's own address** (`GattTargets.atProvenLinkAddress`). Android only, with nothing
+        to mirror.
+      `interop.py iphone-blind-reads` reads its log lines, frozen in `.agents/rules/interop.md`, and passed in run
+      `70c5df` (`linux-peer.md`), which `f018bc8ce` records in knit-next ADR 2026-11.89gg.
+    - **Checked, nothing to mirror:** `4625b46fb` (#291, knit-next ADR 2026-10.js2p's 2026-11-10 amendment) keeps a
+      delivery's re-derived want, its fast-only flag and its deadline, against a re-arm whose reads began before it,
+      and stops counting a message request's group frame that names a third member as ours. This port has no
+      fast-only flag (`BlobExchange+Record.swift`), and its re-arm (`rewantMissingBlobs`, `MeshEngine+Passes.swift`)
+      reads the rows and records the wants in one synchronous step of the `Mesh` actor, so no delivery lands between
+      them. `d3b821062` is its lab test.
+    - **Another paired change's, read under its own order:** `d83009068`, `c1208cfd4`, `83cb47ce6`, `f6ac4ecbf` and
+      `73fadeac3`.
+    - **Nothing to mirror:** USB control, debug-only (`5cdb71c8c`, `9f05d7a75`, `9f8e869a4`, `6d80d4a2d`, `17284396a`,
+      `716ff0768` and `usb-control-v1.json`), the hotfix `v2.11.1` (`6399e25b4`, cut on its release branch) recorded by
+      `4f2786740`, Room's `@Upsert` on Android's group and ratchet tables (`78d76a210`), calls and walkie (`d0c9a3ac8`,
+      `562f5b267`), the Diagnostics screen's link-encryption and rotating-ID chips (`a6a04ee5a`, diagnostic only), the
+      watch switch (`3c77ea969`), Android's UI, notifications and field log, the lab scripts (`2a289e206`,
+      `022b2c742`), docs, agents and CI.
   - **Mirrored ahead of the last pin, merged since, and checked again at `cad69c77b`,** each unchanged since the commit
     cited, or moved only by a commit above: `eccabcd72`'s `RoomAttachments` (its ADR 2026-10.79j9): a room post's attachment
     that is not a picture, a link card or a video is left off the row, and a post that is nothing else keeps none
@@ -568,28 +608,8 @@ Kotlin wins.
     claim after putting a link in its table (this port's admission and registration are one synchronous step in the
     `Mesh` actor), and it re-runs an id's link-up after a displacement (this port's `.down` then `.up` does). The wire
     change is additive.
-- **Mirrored ahead of the pin:** knit-next `feat/blind-gatt-reads` at `e4c2d9013`, not yet merged: companion change A11
-  (its ADR 2026-11.89gg; the paired change `blind-gatt-reads`; knit-ios #42 under ADR 2026-11.prsp), as knit-next ADR
-  2026-09.g64k was mirrored before it merged. `ee8609502` reads a blinding iPhone's GATT payload as a blinded sighting:
-  every `0xFE30` service searched, the blind path's resolution, forget rules 1, 2 and 4 on tags, the `(tag)` refund and
-  the doorbell's 10 s settle. `bdd21d89a` commits `ios-emitted-v1.json` as this port exported it, with
-  `carolPresenceKeysToBob` and `link.seal` kept, and `2d08d31cf` pins `interop.py`'s `GATT_READ_END` and
-  `GATT_CONFIRMED_TAG` in `BlindGattReadTest`, so those regexes change only with that test. Nothing in `Sources/` mirrors
-  it, since these rules were this port's first (`GattPayloads.swift`, `GattSweep.swift`, `DoorbellLookup.swift`).
-  `e4c2d9013`, after run `223e21`'s redial, adds three rules to the contract's §5:
-  - **The yield** (`AdvertAliases.claimAnswer`): a claim whose link ended yields to its own id's hint on a live link, and
-    the hint's link holds the dial off. This port has had it since `2e82f18` (`AdvertAliases+Claims.swift`). Kotlin
-    answers a yielded claim as `Source.Claim` and counts it as a claim, with the hint's link as the claimant. Swift
-    answers `.hint` and counts a hint. The hold-off is the same, and knit-next ADR 2026-11.89gg records the difference.
-  - **No dial from a stale GATT read** (`GattTargets.withheld`): past a slot edge, a payload read in an earlier slot gives
-    no dial target while its resolved id holds a live proven link. Android only, with nothing to mirror: Swift's hint
-    hold-off covers that window.
-  - **No dial at a held proven link's own address** (`GattTargets.atProvenLinkAddress`). Android only, with nothing to
-    mirror.
-  `interop.py iphone-blind-reads` reads its log lines, frozen in `.agents/rules/interop.md`, and passed against it in run
-  `70c5df` (`linux-peer.md`). The pin moves to the merged SHA once the maintainer merges it.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
-  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5fdaf5da8`.
+  `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `f018bc8ce`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
   `scripts/sync-vectors.py`.
 

@@ -773,7 +773,7 @@ def link(up: float, down: float | None, dialer: str = "phone") -> list[tuple[flo
 
 
 class BlindedGattLinesTest(unittest.TestCase):
-    """The harness's reading of Android's blinded GATT lines (the `blind-gatt-reads` contract, §9, at knit-next `ee8609502`)."""
+    """The harness's reading of Android's blinded GATT lines (the `blind-gatt-reads` contract, §9, at knit-next `f018bc8ce`)."""
 
     def test_a_blinded_read_ends_a_read_and_names_no_node(self) -> None:
         blinded = interop.GATT_READ_END.match(f"bt gatt read {ADDRESS} blinded (psm 192)")

@@ -89,8 +89,8 @@ A node carries frames for people who are not in range yet. This is store-and-for
   sender: the oldest `(sentAt, id)` frame of the sender holding the most live frames, recounted after each
   (`ForwardDao.evictFairest`, knit-next ADR 2026-10.7mqm, ADR 2026-10.9e7g). Senders count by their bytes too.
   Before `e0cbb842a` the cap took the oldest frame in custody, so five free identities flooding just inside the
-  future window evicted every honest frame on every node. Lab Pixels on the pin still run that rule, so a mixed
-  fleet keeps different sets while the cap binds.
+  future window evicted every honest frame on every node. A phone on a build from before it still runs that rule, so
+  a mixed fleet keeps different sets while the cap binds.
   - **Don't make the room or group trims fair** unless every build moves together. A busy room at its quota is the
     ordinary case, and a fair room trim would split an old node from a new one for good.
   - **What it leaves open:** identities are free, so about 1,000 of them, one frame each, can still wear the honest
