@@ -2456,3 +2456,25 @@ logcat, throughout.
   show. The run's stop came 111 s after its flip, not within 30 s as in run `3a7576`, so this was not that run's timing.
 - **A legacy run now flips a lab iPhone with no kept choice twice** (ADR 2026-11.prsp, Phase 7). A kept `-blind off`
   spares those flips.
+
+## What the listener recycle probe showed
+
+On 2026-11-12, 23:42 to 00:01, the probe owed by knit/knit-ios#53's safety net (`fix/53-listener-unpublish`). The
+iPhone ran that branch's Debug build beside the Pixel 9 and the Pixel 3, both on knit-next `f018bc8ce` and blinding,
+with bluetoothd and Knit read over USB. The DEBUG bridge command `skip-unpublish` leaves the next stop's unpublish
+unsent with its deadline armed, so each mesh stop and start meets the 5 s wait with no answer, as run `3a7576` did.
+
+| Step | What it showed |
+| --- | --- |
+| Recycles 1 to 3 | Each logged `ble heard no answer to 1 unpublishes in 5000 ms, so recycles the peripheral manager`, `ble recycled the peripheral manager (k of 3)` and `ble found the recycled peripheral manager powered on`, then `ble listening on PSM 192`. bluetoothd showed the old session checking out and erased, and a new one registering with `persistence: on (CBSR) restoreID: app.getknit.knit.peripheral`, the same restore identifier, each time within the same second. After the first, bluetoothd accepted 2 incoming channels on `0x00c0`, the Pixel 9's own dial among them. After the second and third the iPhone dialed every peer itself, so nothing came in, and those two listeners were not proven. |
+| A fourth, with the 3 recycles spent | `so publishes` and `ble spent its 3 peripheral manager recycles, so publishes on the same one`, then `ble listening on PSM 193`. bluetoothd then logged `Rejecting connection for PSM:0x00c1 (Could not find a session, endpoint or pipe)`: run `3a7576`'s fault, reproduced on demand by a publish on the same manager after an unanswered unpublish. |
+| A relaunch after the recycles (`devicectl … launch --terminate-existing`) | `ble restored the peripheral` and `ble restored 2 0xFE30 services`, then `ble listening on PSM 192`: the shared restore identifier survives a recycle. |
+| One more recycle on the fresh process | Recycled and listened on 192, and bluetoothd accepted an incoming channel 34 s later, from an ambient Knit Android phone. |
+| A background terminate | bluetoothd resurrected Knit, which restored the peripheral and listened on 192. |
+| #53's own sequence: a flip with 5 links up, a stop 26 s later, a start 60 s after | The unpublish was answered at once, PSM 192 came back, and an incoming channel was accepted. Not reproduced, as in the earlier attempt. |
+
+- **No API MISUSE, no `still not powered on`, no `ignored a recycled peripheral manager's restored state`** in the
+  session. The one rejection is the fourth step's.
+- **What it settles:** a fresh peripheral manager gets bluetoothd a fresh endpoint, even with the old PSM never
+  unpublished, while a publish on the same manager does not. What triggers the unanswered unpublish in the wild is still
+  unknown.
