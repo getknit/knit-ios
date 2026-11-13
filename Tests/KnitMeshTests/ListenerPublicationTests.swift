@@ -4,8 +4,7 @@ import Testing
 /// The CoreBluetooth radio's L2CAP listener across a stop and a start, with the unpublish's answer landing before the
 /// start, after it, late or never. A publish sent behind an unanswered unpublish gets another PSM, so a start waits for
 /// the answer, for at most ``ListenerPublication/answerWaitMilliseconds``, and nothing here tells channels apart by PSM.
-/// A wait that runs out recycles the peripheral manager, at most ``ListenerPublication/maximumRecycles`` times, and then
-/// publishes on the same one (knit/knit-ios#53).
+/// A wait that runs out recycles the peripheral manager (knit/knit-ios#53), one recycle at a time and with no cap.
 @Suite struct ListenerPublicationTests {
     /// A ``ListenerPublication`` behind a reference, so `#expect` can check what a mutating call answers.
     private final class Listener {
@@ -28,19 +27,26 @@ import Testing
             return listener
         }
 
-        /// Published on 192 with every recycle spent: each a stop whose answer never came, then the new manager's
-        /// power-on and its publish.
-        static func spent() -> Listener {
-            let listener = live()
-            for _ in 0..<ListenerPublication.maximumRecycles {
-                if let unpublish = listener.stop() {
-                    _ = listener.waitEnded(unpublish.wait)
-                }
-                _ = listener.managerPoweredOn()
-                _ = listener.shouldPublish()
-                _ = listener.published(192)
-            }
+        /// Published on 192 with one answer owed late: a publish that landed after a stop while a recycle was under way,
+        /// whose wait then ran out, then the new manager's power-on and its publish. The radio cannot reach this today
+        /// (every answer it passes is the current manager's, and none asks a publish before power-on), so it pins the
+        /// late-answer rules the type keeps as a defence.
+        static func owingLate() throws -> Listener {
+            let (listener, _) = try recycling()
+            let owed = try #require(Self.unpublish(listener.published(193, running: false)))
+            #expect(listener.waitEnded(owed.wait) == .publish(expired: 1))
+            #expect(listener.managerPoweredOn())
+            #expect(listener.shouldPublish())
+            _ = listener.published(192)
             return listener
+        }
+
+        /// The unpublish a published answer asks for, or `nil` when it asks to listen.
+        static func unpublish(_ published: ListenerPublication.Published) -> ListenerPublication.Unpublish? {
+            if case .unpublish(let unpublish) = published {
+                return unpublish
+            }
+            return nil
         }
 
         /// A live listener whose stop's answer never came, recycled once and waiting for the new manager.
@@ -89,26 +95,22 @@ import Testing
         #expect(listener.state.psm == 192)
     }
 
-    /// A manager that refuses the unpublish never answers it (CoreBluetooth's API MISUSE). Once every recycle is spent,
-    /// the deadline publishes on the same manager, as the radio did before knit/knit-ios#53.
+    /// A manager that refuses the unpublish never answers it (CoreBluetooth's API MISUSE). The deadline holds the publish
+    /// back no longer than the wait, then recycles the manager, whose power-on lets the radio publish (knit/knit-ios#53).
     @Test func aLostAnswerHoldsThePublishBackOnlyUntilTheDeadline() throws {
-        let listener = Listener.spent()
+        let listener = Listener.live()
         let unpublish = try #require(listener.stop())
         #expect(!listener.shouldPublish())
-        #expect(listener.waitEnded(unpublish.wait) == .publish(expired: 1))
+        #expect(listener.waitEnded(unpublish.wait) == .recycle(expired: 1, ordinal: 1))
         #expect(listener.state.unpublishing == 0)
-        #expect(listener.state.late == 1)
-        #expect(listener.state.recycles == ListenerPublication.maximumRecycles)
-        #expect(listener.shouldPublish(), "the deadline lets a running radio publish")
+        #expect(listener.managerPoweredOn())
+        #expect(listener.shouldPublish(), "the new manager's power-on lets a running radio publish")
         #expect(listener.waitEnded(unpublish.wait) == .answered, "and a second firing does nothing")
     }
 
     @Test func aLateAnswerAfterTheDeadlineKeepsTheNewChannel() throws {
-        let listener = Listener.spent()
-        let unpublish = try #require(listener.stop())
-        _ = listener.waitEnded(unpublish.wait)
-        _ = listener.shouldPublish()
-        #expect(listener.published(192) == .listening(192))
+        let listener = try Listener.owingLate()
+        #expect(listener.state.psm == 192)
         #expect(listener.unpublished(192) == .late, "it carries the new channel's PSM, and is not a drop")
         #expect(listener.state.psm == 192)
         #expect(listener.state.late == 0)
@@ -116,15 +118,11 @@ import Testing
     }
 
     @Test func aLateAnswerGoesBeforeOneStillWaitedOn() throws {
-        let listener = Listener.spent()
-        let first = try #require(listener.stop())
-        _ = listener.waitEnded(first.wait)
-        _ = listener.shouldPublish()
-        _ = listener.published(193)
-        _ = listener.stop()
-        #expect(listener.unpublished(192) == .late, "the stack answers in order, so the oldest owed comes first")
-        #expect(!listener.shouldPublish(), "the second stop's answer is still waited on")
-        #expect(listener.unpublished(193) == .asked)
+        let listener = try Listener.owingLate()
+        _ = try #require(listener.stop())
+        #expect(listener.unpublished(193) == .late, "the stack answers in order, so the oldest owed comes first")
+        #expect(!listener.shouldPublish(), "the stop's answer is still waited on")
+        #expect(listener.unpublished(192) == .asked)
         #expect(listener.shouldPublish())
     }
 
@@ -292,28 +290,23 @@ extension ListenerPublicationTests {
         #expect(listener.shouldPublish())
     }
 
-    @Test func theRecyclesAreCappedAndThenTheRadioPublishesAnyway() throws {
+    /// No cap (the maintainer, 2026-11-13): the probe's fourth expiry, published on the same manager, came up with no
+    /// bluetoothd endpoint, so every expired wait with no recycle under way recycles, however many came before.
+    @Test func everyExpiryRecyclesWithNoCap() throws {
         let listener = Listener.live()
-        for ordinal in 1...ListenerPublication.maximumRecycles {
+        for ordinal in 1...6 {
             let unpublish = try #require(listener.stop())
             #expect(listener.waitEnded(unpublish.wait) == .recycle(expired: 1, ordinal: ordinal))
+            #expect(listener.state.late == 0)
             #expect(listener.managerPoweredOn())
             #expect(listener.shouldPublish())
             _ = listener.published(192)
         }
-        let past = try #require(listener.stop())
-        #expect(listener.waitEnded(past.wait) == .publish(expired: 1))
-        #expect(!listener.state.recycling)
-        #expect(listener.state.late == 1)
-        #expect(listener.shouldPublish(), "today's publish on the same manager")
+        #expect(listener.state.recycles == 6)
     }
 
-    @Test func theCapIsThree() {
-        #expect(ListenerPublication.maximumRecycles == 3)
-    }
-
-    /// The new manager may report `.poweredOff` before `.poweredOn`. The power-off forgets as ever, but spends no
-    /// recycle and gives none back, and the publish still waits for the new manager.
+    /// The new manager may report `.poweredOff` before `.poweredOn`. The power-off forgets as ever, but keeps the count,
+    /// and the publish still waits for the new manager.
     @Test func aPowerOffDuringARecycleKeepsTheLatchAndTheCount() throws {
         let (listener, unpublish) = try Listener.recycling()
         let before = listener.state.generation
@@ -327,7 +320,7 @@ extension ListenerPublicationTests {
         #expect(listener.shouldPublish())
         _ = listener.published(192)
         listener.state.poweredOff()
-        #expect(listener.state.recycles == 1, "a power cycle gives no recycle back")
+        #expect(listener.state.recycles == 1, "a power cycle keeps the count")
     }
 
     /// The radio ignores the old manager's callbacks by identity, but an answer that reached this type anyway finds

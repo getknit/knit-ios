@@ -30,10 +30,10 @@
         static let recycledPowerOnWarningSeconds = 10
 
         /// Unpublishes a PSM, and bounds the wait for the answer, which holds the next publish back
-        /// (``ListenerPublication``). A wait that runs out recycles the peripheral manager while recycles are left, and
-        /// then publishes on the same one (knit/knit-ios#53). The deadline runs on uptime, and nothing resumes a suspended
-        /// Knit to run it, so there the recycle or the publish waits until the process runs again. A stop and a start come
-        /// from Settings or the bridge, in the foreground, where it fires on time.
+        /// (``ListenerPublication``). A wait that runs out recycles the peripheral manager (knit/knit-ios#53), unless a
+        /// recycle is already under way, whose manager the publish then waits for. The deadline runs on uptime, and
+        /// nothing resumes a suspended Knit to run it, so there the recycle or the publish waits until the process runs
+        /// again. A stop and a start come from Settings or the bridge, in the foreground, where it fires on time.
         func awaitUnpublish(_ unpublish: ListenerPublication.Unpublish, on manager: CBPeripheralManager) {
             #if DEBUG
                 if skipsNextUnpublish {
@@ -62,11 +62,8 @@
                 log.log(.warning, "ble heard no answer to \(expired) unpublishes in \(wait) ms, so recycles the peripheral manager")
                 recyclePeripheralManager(ordinal)
             case .publish(let expired):
+                // A recycle is under way, so the publish waits for its manager's power-on.
                 log.log(.warning, "ble heard no answer to \(expired) unpublishes in \(wait) ms, so publishes")
-                let cap = ListenerPublication.maximumRecycles
-                if listener.recycles >= cap {
-                    log.log(.warning, "ble spent its \(cap) peripheral manager recycles, so publishes on the same one")
-                }
                 resume()
             }
         }
@@ -103,7 +100,7 @@
             forgetServices()
             let fresh = makePeripheralManager(recycled: true)
             peripheralManager = fresh
-            log.log(.info, "ble recycled the peripheral manager (\(ordinal) of \(ListenerPublication.maximumRecycles))")
+            log.log(.info, "ble recycled the peripheral manager, \(ordinal) in this process")
             let made = ObjectIdentifier(fresh)
             let warning = Self.recycledPowerOnWarningSeconds
             queue.asyncAfter(deadline: .now() + .seconds(warning)) { [weak self] in

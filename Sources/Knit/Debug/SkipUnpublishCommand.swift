@@ -7,7 +7,7 @@
     /// `{"cmd":"skip-unpublish"}`: leaves the radio's next unpublish of its L2CAP listener unsent, with its deadline still
     /// armed, so the next mesh stop's wait runs out and the radio recycles its peripheral manager (``BLERadio/skipNextUnpublish()``,
     /// knit/knit-ios#53). Only the iPhone's radio has a listener that answers late, so the bridge answers it rather than
-    /// ``MeshControl``. The reply says how many recycles this process has spent, and the PSM the listener holds.
+    /// ``MeshControl``. The reply says how many recycles this process has made, and the PSM the listener holds.
     internal struct SkipUnpublishCommand: Decodable {
         static let name = "skip-unpublish"
 
@@ -37,7 +37,6 @@
             reply["ok"] = true
             reply["armed"] = true
             reply["recycles"] = .int(Int64(listener.recycles))
-            reply["maximumRecycles"] = .int(Int64(ListenerPublication.maximumRecycles))
             reply["recycling"] = .bool(listener.recycling)
             reply["listenerPSM"] = listener.psm.map { JSONValue.int(Int64($0)) } ?? .null
             return JSONValue.object(reply).line

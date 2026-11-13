@@ -6,7 +6,7 @@
     extension BLERadio {
         /// Leaves the next unpublish unsent while still arming its deadline, so the wait runs out as in run `3a7576`
         /// (knit/knit-ios#53) and the peripheral manager is recycled: the device probe for whether iOS takes a second
-        /// manager under the same restore identifier. Answers the listener as it then stands, its recycles spent included.
+        /// manager under the same restore identifier. Answers the listener as it then stands, its recycles counted.
         public func skipNextUnpublish() async -> ListenerPublication {
             await withCheckedContinuation { continuation in
                 core.onQueue { core in

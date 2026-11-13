@@ -594,11 +594,12 @@ A stop forgets the PSM at once, and a start
 publishes only once the stop's unpublish is answered, or after 5 s without an answer (`ListenerPublication`).
 Published while an unpublish was still unanswered, the iPhone 12 got 193 instead of 192, and the Pixels that dial it
 failed on the PSM they had read until they read it again. With nothing outstanding, iOS hands back 192. An answer can
-carry the next channel's PSM, so answers are matched by count, and one that comes after the 5 s is logged and
-ignored. An unpublish that goes unanswered for those 5 s recycles the peripheral manager, at most 3 times a process,
-and then publishes on the same one, as before (knit/knit-ios#53). In run `3a7576` the publish after such an unpublish,
-on the same manager, came up on a PSM bluetoothd had no endpoint for, and only a relaunch, with new managers, brought
-it back. A recycle replaces the peripheral manager alone: the central and its dialed links stay up, the old manager's
+carry the next channel's PSM, so answers are matched by count. One that never comes within the 5 s goes nowhere
+even if it comes later, since the wait then recycles the manager it belonged to. An unpublish that goes unanswered for those 5 s recycles the peripheral manager, one recycle at a time and
+with no cap (knit/knit-ios#53). In run `3a7576` the publish after such an unpublish, on the same manager, came up on a
+PSM bluetoothd had no endpoint for, and only a relaunch, with new managers, brought it back. The probe made that on
+demand, and a publish on the same manager after a capped fourth recycle died the same way, so the cap went
+(`linux-peer.md`, "What the listener recycle probe showed"). A recycle replaces the peripheral manager alone: the central and its dialed links stay up, the old manager's
 late answers go nowhere, and the new one publishes once it powers on. The payload is served only while the listener
 is published on its PSM, and a resetting manager counts as off (`linux-peer.md`, "What the restart trial showed"). Each channel's streams run on one run-loop thread, read in
 64 KiB gulps and written 8 KiB at a time. A channel stops reading once 256 KiB it delivered wait unprocessed by `Mesh`

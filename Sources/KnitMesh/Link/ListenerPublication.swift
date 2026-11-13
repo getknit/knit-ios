@@ -25,11 +25,12 @@
 /// incoming channel until Knit was relaunched, which published 192 again. Why is not known. So an expired wait answers
 /// ``Expiry/recycle(expired:ordinal:)``: the radio drops the peripheral manager and makes a new one, this type forgets
 /// the listener and every answer owed, as at a power-off, and holds the publish until the new manager is powered on
-/// (``managerPoweredOn()``). One recycle runs at a time, and at most ``maximumRecycles`` in a process; after that a
-/// wait that runs out answers ``Expiry/publish(expired:)``, counts its answers as late and publishes on the same
-/// manager, as the radio did before. One case stays open there: a genuine unasked drop that arrives while a late answer
-/// is still owed is taken for that answer, and the radio keeps a PSM nothing listens on until its next stop and start
-/// or power cycle.
+/// (``managerPoweredOn()``). One recycle runs at a time, with no cap (the maintainer, 2026-11-13): each needs an
+/// unanswered unpublish, which needs a stop, so recycles cannot loop on their own, and in the probe a publish on the
+/// same manager after one came up dead again (`.agents/context/linux-peer.md`, "What the listener recycle probe
+/// showed"). A wait that ran out while a recycle was under way would answer ``Expiry/publish(expired:)`` and count its
+/// answers as late. The radio cannot reach that today, since every answer it passes here is the current manager's and
+/// nothing is owed while a new one powers on, so the late-answer rules stay only as a defence.
 ///
 /// A stopped radio holds no listener: a publish that lands after a stop is unpublished at once, and the next start
 /// publishes anew, so every start that publishes reports the PSM again, and the link manager advertises it.
@@ -37,10 +38,6 @@ public struct ListenerPublication: Sendable, Equatable {
     /// How long a start waits for an unpublish's answer before it publishes anyway: well past the 0.2 s seen on the
     /// iPhone 12 with four links up, and the 4 s after which every publish in the A4 series got its PSM back.
     public static let answerWaitMilliseconds = 5000
-    /// How many times a process replaces its peripheral manager after an unanswered unpublish before it publishes on the
-    /// same one anyway: the maintainer's cap (2026-11-12, knit/knit-ios#53), so a manager that never answers cannot
-    /// churn forever.
-    public static let maximumRecycles = 3
 
     /// An unpublish to send, and the generation of the deadline to arm for its answer.
     public struct Unpublish: Sendable, Equatable {
@@ -65,8 +62,8 @@ public struct ListenerPublication: Sendable, Equatable {
         /// `expired` answers never came. Drop the peripheral manager and make a new one, the process's `ordinal`th, and
         /// publish once it is powered on (``ListenerPublication/managerPoweredOn()``).
         case recycle(expired: Int, ordinal: Int)
-        /// `expired` answers never came, and every recycle is spent or one is already under way: they are late from
-        /// now on, and a running radio publishes on the manager it has.
+        /// `expired` answers never came while a recycle is already under way: they are late from now on, and a running
+        /// radio publishes once that recycle's manager is powered on. Unreachable from the radio today; a defence.
         case publish(expired: Int)
     }
 
@@ -93,7 +90,8 @@ public struct ListenerPublication: Sendable, Equatable {
     public private(set) var late = 0
     /// The generation of the newest deadline armed. It only grows, through power cycles and recycles too.
     public private(set) var generation: UInt64 = 0
-    /// How many times this process replaced its peripheral manager (``maximumRecycles``). Kept through power cycles.
+    /// How many times this process replaced its peripheral manager: the log's count, and why a recycled manager's
+    /// restored state is ignored. Kept through power cycles.
     public private(set) var recycles = 0
     /// Whether a new peripheral manager is on its way to `.poweredOn`, which holds every publish back: until then it
     /// refuses commands unanswered (CoreBluetooth's API MISUSE). Kept through a power-off, which a new manager may report
@@ -167,7 +165,7 @@ public struct ListenerPublication: Sendable, Equatable {
     }
 
     /// The deadline armed under `wait` came due. Answers ``Expiry/answered`` for a deadline a newer unpublish replaced, or
-    /// one whose answers came. Otherwise it gives up on the answers owed: while a recycle is left and none is under way it
+    /// one whose answers came. Otherwise it gives up on the answers owed: unless a recycle is already under way it
     /// forgets everything the old manager owed or held, as ``poweredOff()`` does, so that manager's answer, which never
     /// comes, leaves nothing counted that would file the new manager's first answer as late; else it counts them late.
     public mutating func waitEnded(_ wait: UInt64) -> Expiry {
@@ -175,7 +173,7 @@ public struct ListenerPublication: Sendable, Equatable {
             return .answered
         }
         let expired = unpublishing
-        guard !recycling, recycles < Self.maximumRecycles else {
+        guard !recycling else {
             late += expired
             unpublishing = 0
             return .publish(expired: expired)
@@ -199,7 +197,7 @@ public struct ListenerPublication: Sendable, Equatable {
     /// The radio went off, reset or lost its permission. Its channels are taken as gone, as the radio always has, and
     /// the answers still owed are no longer counted on. One that comes late anyway is ``Unpublished/stray``, or at
     /// worst ``Unpublished/dropped``, which costs only a second publish. Any deadline armed before does nothing. The
-    /// recycles spent stay spent, and a recycle under way still waits for its manager's `.poweredOn`.
+    /// recycles counted stay counted, and a recycle under way still waits for its manager's `.poweredOn`.
     public mutating func poweredOff() {
         let next = generation &+ 1
         let spent = recycles

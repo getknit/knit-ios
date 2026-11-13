@@ -2667,8 +2667,8 @@ def _relink(ios: IPhone, phone: Phone, phone_id: str, knit, since: float, timeou
 
 # The iPhone's line when its listener's unpublish went unanswered (`BLECore+Listener.swift`): after a flip, run 3a7576's
 # restart onto PSM 193 on the same peripheral manager left bluetoothd with no endpoint for it, so every Pixel's dial was
-# rejected. Since knit/knit-ios#53's net the line ends `so recycles the peripheral manager` while recycles are left, and
-# `so publishes` once they are spent, as it always did before. Both are frozen in .agents/rules/interop.md.
+# rejected. Since knit/knit-ios#53's net the line ends `so recycles the peripheral manager`, or `so publishes` while a
+# recycle is already under way, as it always did before. Both are frozen in .agents/rules/interop.md.
 UNANSWERED_UNPUBLISH = "ble heard no answer to "
 UNANSWERED_RECYCLES = "so recycles the peripheral manager"
 # The PSM each publish listens on, so the run judges every one a restart moved it to.

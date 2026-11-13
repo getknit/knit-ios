@@ -2478,3 +2478,5 @@ unsent with its deadline armed, so each mesh stop and start meets the 5 s wait w
 - **What it settles:** a fresh peripheral manager gets bluetoothd a fresh endpoint, even with the old PSM never
   unpublished, while a publish on the same manager does not. What triggers the unanswered unpublish in the wild is still
   unknown.
+- **The cap went.** The probe ran with the then cap of 3 recycles a process, hence `(k of 3)` and the fourth step. The
+  maintainer dropped it on 2026-11-13, keeping one recycle at a time and the 10 s `still not powered on` warning.
