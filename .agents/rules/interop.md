@@ -85,7 +85,8 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   `bt connect ok <id> … sealed=<bool>`, `bt accepted client <id> `, `bt initiating to <key> `,
   `bt refused client <id> … blind=legacy`, `bt tag next → <id>`, `bt gatt reading <address>` and `bluetooth adapter
   off` and `on`. From the iPhone it reads
-  `ble rung by` and its listener gate's `ble heard no answer to <n> unpublishes` and `ble listening on PSM <n>`, and from
+  `ble rung by` and its listener gate's `ble heard no answer to <n> unpublishes`, whose tail `so recycles the peripheral manager` it
+  reads too, and `ble listening on PSM <n>`, and from
   Apple's bluetoothd, which no
   rule here can freeze, `Connection Indication PSM:0x…` and `Rejecting connection for PSM:0x…`.
 - **Admit a relinking dialer out of order, and only then.** For 30 s after the radio closes a proven link, a dialer

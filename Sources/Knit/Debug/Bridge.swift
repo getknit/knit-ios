@@ -21,7 +21,8 @@
     /// the app has ReplayKit (``RecordCommand``, ADR 2026-10.x2cq); `crash-now`, `hang-now` and `crash-reports`, since only
     /// the app saves MetricKit's reports (``CrashCommand``, ADR 2026-10.qhsv); `sample` and `open-thread`, since only the
     /// launch holds the sample chats and the screens (``SampleCommand``, ADR 2026-11.pydf; ``ThreadCommand``); and
-    /// `linkpreview`, since only the app fetches a card (``LinkPreviewCommand``, ADR 2026-11.hcvg). `advert` and
+    /// `linkpreview`, since only the app fetches a card (``LinkPreviewCommand``, ADR 2026-11.hcvg); `skip-unpublish`, since
+    /// only the iPhone's radio recycles its peripheral manager (``SkipUnpublishCommand``, knit/knit-ios#53). `advert` and
     /// `advert-rotate` are ``MeshControl``'s, as knit-peer's are, with the switch kept in the defaults and the CoreBluetooth
     /// server's state beside the link manager's (``AdvertSwitchDefaults``, ADR 2026-11.prsp).
     /// Each `status` carries `memoryAvailableKb`, how much more Knit may take before iOS ends it, so a soak can see its

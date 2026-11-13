@@ -49,8 +49,8 @@
             return nil
         }
 
-        /// The reply to a command that does something: records the screen, crashes, opens the sample chats or a thread, or
-        /// fetches a link's card.
+        /// The reply to a command that does something: records the screen, crashes, opens the sample chats or a thread,
+        /// fetches a link's card, or leaves the radio's next unpublish unsent.
         private func act(_ line: String) async -> String? {
             if let ask = RecordCommand.parse(line) {
                 return await ask.answer(takes)
@@ -66,6 +66,9 @@
             }
             if let ask = LinkPreviewCommand.parse(line) {
                 return await ask.answer(session, screening: screening)
+            }
+            if let ask = SkipUnpublishCommand.parse(line) {
+                return await ask.answer(radio)
             }
             return nil
         }

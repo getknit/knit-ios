@@ -4,6 +4,21 @@
     import KnitMesh
     import KnitWire
 
+    /// What an advert says: the `0xFE30` service data Android sends, or only the UUID, which is an iPhone's.
+    internal enum BLEAdvert {
+        /// The payload in the advert's `0xFE30` service data, if it carries one that parses.
+        static func payload(_ advertisement: [String: Any]) -> AdvertPayload? {
+            let data = advertisement[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data]
+            return data?[BLECore.serviceUUID].flatMap { AdvertPayload(serviceData: Array($0)) }
+        }
+
+        /// Whether the advert lists the `0xFE30` UUID, in its service list or the overflow area.
+        static func listsService(_ advertisement: [String: Any]) -> Bool {
+            let keys = [CBAdvertisementDataServiceUUIDsKey, CBAdvertisementDataOverflowServiceUUIDsKey]
+            return keys.contains { key in (advertisement[key] as? [CBUUID])?.contains(BLECore.serviceUUID) ?? false }
+        }
+    }
+
     // MARK: Scanning
 
     extension BLECore {

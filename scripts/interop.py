@@ -124,6 +124,7 @@ from __future__ import annotations
 import argparse
 import base64
 import contextlib
+import datetime
 import hashlib
 import io
 import json
@@ -2664,10 +2665,12 @@ def _relink(ios: IPhone, phone: Phone, phone_id: str, knit, since: float, timeou
     return _blind_link(ios, phone, phone_id, knit, since, timeout)
 
 
-# The iPhone's line when its listener's unpublish went unanswered and it published again regardless
-# (`BLECore+Delegates.swift`): after a flip, run 3a7576's restart onto PSM 193 left bluetoothd with no endpoint for it,
-# so every Pixel's dial was rejected. Frozen in .agents/rules/interop.md.
+# The iPhone's line when its listener's unpublish went unanswered (`BLECore+Listener.swift`): after a flip, run 3a7576's
+# restart onto PSM 193 on the same peripheral manager left bluetoothd with no endpoint for it, so every Pixel's dial was
+# rejected. Since knit/knit-ios#53's net the line ends `so recycles the peripheral manager` while recycles are left, and
+# `so publishes` once they are spent, as it always did before. Both are frozen in .agents/rules/interop.md.
 UNANSWERED_UNPUBLISH = "ble heard no answer to "
+UNANSWERED_RECYCLES = "so recycles the peripheral manager"
 # The PSM each publish listens on, so the run judges every one a restart moved it to.
 LISTENING_ON = re.compile(r"^ble listening on PSM (\d+)$")
 # Apple's bluetoothd as `idevicesyslog -p bluetoothd` prints it, an incoming LE credit-based channel and its rejection.
@@ -2680,6 +2683,22 @@ def _daemon_messages(daemon: IPhoneLog) -> list[str]:
     """bluetoothd's lines so far, as `idevicesyslog` wrote them."""
     daemon.file.flush()
     return daemon.path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+
+def _from_second(lines: list[str], ms: int) -> list[str]:
+    """bluetoothd's lines from the second of `ms` on, the wall clock in milliseconds, by their syslog stamps, which carry
+    no year (`Nov 12 16:36:22`): the iPhone's own clock, as Knit's `ms` is. A line with no stamp is left out. The stamps
+    are the iPhone's local time and `ms` is read in this host's, so the two must share a zone, as the lab's do."""
+    start = datetime.datetime.fromtimestamp(ms / 1000).replace(microsecond=0)
+    kept = []
+    for line in lines:
+        try:
+            stamp = datetime.datetime.strptime(line[:15], "%b %d %H:%M:%S").replace(year=start.year)
+        except ValueError:
+            continue
+        if stamp >= start:
+            kept.append(line)
+    return kept
 
 
 def _listener_rejections(lines: list[str], psm: int | None) -> list[str]:
@@ -2702,7 +2721,9 @@ def _listener_accepted(lines: list[str], psm: int) -> int:
 
 def _listener_held(lines: list[str], psms: set[int]) -> dict:
     """bluetoothd rejected no incoming channel on any PSM the iPhone listened on across the run (run 3a7576's defect), and
-    took at least one: Pixel dials reached it. Inconclusive when no PSM is known."""
+    took at least one: Pixel dials reached it. Inconclusive when no PSM is known. It reads the whole run, so in a run
+    whose listener gate passed on a recycle (knit/knit-ios#53) a rejection the old peripheral manager logged before it
+    fails here too: read the gate's line before calling that a dead listener."""
     if not psms:
         raise Inconclusive("no PSM the iPhone listened on is known")
     rejected = [line for psm in sorted(psms) for line in _listener_rejections(lines, psm)]
@@ -2752,15 +2773,20 @@ def _listener_gate(
     bluetoothd rejected nothing on the PSM the iPhone publishes, and a Pixel's own tag dial linked (run 3a7576, where
     neither held and nothing judged A11). The first links' dial is the order's. When neither Pixel dialed, a Pixel whose
     order now gives it the dial has its link cycled (`_relink`); when none has the dial, a Pixel's own tag is rotated
-    (`ADVERT_ROTATE`), which re-rolls its order against the iPhone's current tag, up to `rotations` times."""
+    (`ADVERT_ROTATE`), which re-rolls its order against the iPhone's current tag, up to `rotations` times. An unanswered
+    unpublish the iPhone answered with a recycle (knit/knit-ios#53) fails nothing by itself: the rejections and the
+    Pixel's dial judge the listener it brought up."""
     knit.file.flush()
-    unanswered = [e["message"] for e in IPhoneLog.entries(knit.path) if e.get("ms", 0) >= since * 1000 and e["message"].startswith(UNANSWERED_UNPUBLISH)]
-    if unanswered:
-        raise RuntimeError(f"the iPhone's restart left an unpublish unanswered: {unanswered[0]}")
+    unanswered = [e for e in IPhoneLog.entries(knit.path) if e.get("ms", 0) >= since * 1000 and e["message"].startswith(UNANSWERED_UNPUBLISH)]
+    if dead := [e["message"] for e in unanswered if not e["message"].endswith(UNANSWERED_RECYCLES)]:
+        raise RuntimeError(f"the iPhone's restart left an unpublish unanswered: {dead[0]}")
+    # A recycled listener answers only for what bluetoothd did after it: a dial the old one refused may share its PSM.
+    recycled = max((e["ms"] for e in unanswered), default=None)
     psm = (ios.advert() or {}).get("psm")
     rotated: list[str] = []
     for attempt in range(rotations + 1):
-        rejected = _listener_rejections(_daemon_messages(daemon), psm)
+        lines = _daemon_messages(daemon)
+        rejected = _listener_rejections(lines if recycled is None else _from_second(lines, recycled), psm)
         if rejected:
             raise RuntimeError(f"bluetoothd rejects the iPhone's PSM {psm}: {rejected[0][-160:]}")
         if label := _pixel_dialed(records):

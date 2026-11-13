@@ -595,8 +595,12 @@ publishes only once the stop's unpublish is answered, or after 5 s without an an
 Published while an unpublish was still unanswered, the iPhone 12 got 193 instead of 192, and the Pixels that dial it
 failed on the PSM they had read until they read it again. With nothing outstanding, iOS hands back 192. An answer can
 carry the next channel's PSM, so answers are matched by count, and one that comes after the 5 s is logged and
-ignored. The payload is served only while the listener is published on its PSM, and a resetting manager counts as
-off (`linux-peer.md`, "What the restart trial showed"). Each channel's streams run on one run-loop thread, read in
+ignored. An unpublish that goes unanswered for those 5 s recycles the peripheral manager, at most 3 times a process,
+and then publishes on the same one, as before (knit/knit-ios#53). In run `3a7576` the publish after such an unpublish,
+on the same manager, came up on a PSM bluetoothd had no endpoint for, and only a relaunch, with new managers, brought
+it back. A recycle replaces the peripheral manager alone: the central and its dialed links stay up, the old manager's
+late answers go nowhere, and the new one publishes once it powers on. The payload is served only while the listener
+is published on its PSM, and a resetting manager counts as off (`linux-peer.md`, "What the restart trial showed"). Each channel's streams run on one run-loop thread, read in
 64 KiB gulps and written 8 KiB at a time. A channel stops reading once 256 KiB it delivered wait unprocessed by `Mesh`
 (`InboxCredits`), and the radio restarts the read itself below half, since the stream sends no new
 `hasBytesAvailable` until something reads (ADR 2026-10.f5zs). The writes stop at 4 MiB queued (`LinkOutbox`). `writeKeyShare` and `seal` go `onQueue` and

@@ -159,7 +159,9 @@ explicitly. The commits are the evidence that each one bit this codebase.
     failed for 7 minutes: `stop()` kept the PSM until iOS answered, the start found it and published nothing, and
     the late answer cleared it). Publishing before that answer is no fix: iOS hands the publish 193, the PSM flips
     each restart, and Android fails a dial on the PSM it read (2026-10-14). `ListenerPublication` forgets the PSM at
-    the stop and publishes once the answer comes, or after 5 s, and `serve()` serves only the PSM the listener holds.
+    the stop and publishes once the answer comes, and `serve()` serves only the PSM the listener holds. An unpublish
+    unanswered for 5 s recycles the peripheral manager, up to 3 times a process, since run `3a7576`'s publish on the same manager
+    came up with no bluetoothd endpoint (knit/knit-ios#53).
 12. **Background discoverability.** A backgrounded app loses its local name, and its service UUID moves to the
     overflow area, which only an iOS scan filtered on that UUID reads: not Android, not BlueZ, not an iPhone at the
     front. A change that relies on being seen while backgrounded, or on seeing a backgrounded iPhone, is a finding

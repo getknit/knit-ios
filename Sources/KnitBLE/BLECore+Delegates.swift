@@ -4,21 +4,6 @@
     import KnitMesh
     import KnitWire
 
-    /// What an advert says: the `0xFE30` service data Android sends, or only the UUID, which is an iPhone's.
-    internal enum BLEAdvert {
-        /// The payload in the advert's `0xFE30` service data, if it carries one that parses.
-        static func payload(_ advertisement: [String: Any]) -> AdvertPayload? {
-            let data = advertisement[CBAdvertisementDataServiceDataKey] as? [CBUUID: Data]
-            return data?[BLECore.serviceUUID].flatMap { AdvertPayload(serviceData: Array($0)) }
-        }
-
-        /// Whether the advert lists the `0xFE30` UUID, in its service list or the overflow area.
-        static func listsService(_ advertisement: [String: Any]) -> Bool {
-            let keys = [CBAdvertisementDataServiceUUIDsKey, CBAdvertisementDataOverflowServiceUUIDsKey]
-            return keys.contains { key in (advertisement[key] as? [CBUUID])?.contains(BLECore.serviceUUID) ?? false }
-        }
-    }
-
     // MARK: The managers' state
 
     extension BLECore: CBCentralManagerDelegate, CBPeripheralManagerDelegate {
@@ -44,8 +29,19 @@
             restored.removeAll()
         }
 
-        func peripheralManagerDidUpdateState(_: CBPeripheralManager) {
-            updateState()
+        /// A recycled manager's first `.poweredOn` leaves the radio's state on, as it was, so nothing else resumes the radio
+        /// to publish on it (``recyclePeripheralManager(_:)``).
+        func peripheralManagerDidUpdateState(_ manager: CBPeripheralManager) {
+            guard isCurrent(manager), !rereadOnceHeld() else {
+                return
+            }
+            let fresh = manager.state == .poweredOn && listener.managerPoweredOn()
+            if fresh {
+                log.log(.info, "ble found the recycled peripheral manager powered on")
+            }
+            if !updateState(), fresh {
+                resume()
+            }
         }
 
         #if os(iOS)
@@ -65,7 +61,13 @@
             /// powered on, so the first power-on of the process removes them (``GattServing``), as ``dropRestored()`` drops
             /// the connections. Two or more `0xFE30` services were a blinding process's, so the doorbell's service comes up
             /// first again, before the listener is published (ADR 2026-11.prsp).
-            func peripheralManager(_: CBPeripheralManager, willRestoreState state: [String: Any]) {
+            /// Only the process's first manager: a recycled one shares its restore identifier, and what it might be handed
+            /// is this process's own, which the recycle already removed (``recyclePeripheralManager(_:)``).
+            func peripheralManager(_ manager: CBPeripheralManager, willRestoreState state: [String: Any]) {
+                guard isCurrent(manager), listener.recycles == 0 else {
+                    log.log(.info, "ble ignored a recycled peripheral manager's restored state")
+                    return
+                }
                 let services = state[CBPeripheralManagerRestoredStateServicesKey] as? [CBMutableService] ?? []
                 let knit = services.filter { $0.uuid == Self.serviceUUID }.count
                 serving.restored(knitServices: knit)
@@ -81,12 +83,18 @@
 
     // MARK: The peripheral role
 
+    // Every peripheral manager callback here and above answers only the current manager (``isCurrent(_:)``). A recycle
+    // sets the old one's delegate to `nil`, and this is the second check: a late `didAdd` from it matched in `awaitingAdd`
+    // by identity would mark a service served on the new one (``recyclePeripheralManager(_:)``).
     extension BLECore {
         /// A service was added, or refused. Matched to its step by the object CoreBluetooth hands back, or else to the oldest
         /// add still owed an answer, since the manager answers in the order it was asked (``GattServing``). Advertising
         /// starts once a payload is served, never at every add, and while blinding the doorbell's service publishes the
         /// listener (ADR 2026-11.prsp).
         func peripheralManager(_ manager: CBPeripheralManager, didAdd service: CBService, error: (any Error)?) {
+            guard isCurrent(manager) else {
+                return
+            }
             if let error {
                 log.log(.warning, "ble could not serve \(service.uuid): \(error)")
             }
@@ -122,13 +130,19 @@
             return serial
         }
 
-        func peripheralManagerDidStartAdvertising(_: CBPeripheralManager, error: (any Error)?) {
+        func peripheralManagerDidStartAdvertising(_ manager: CBPeripheralManager, error: (any Error)?) {
+            guard isCurrent(manager) else {
+                return
+            }
             if let error {
                 log.log(.warning, "ble could not advertise: \(error)")
             }
         }
 
         func peripheralManager(_ manager: CBPeripheralManager, didPublishL2CAPChannel psm: CBL2CAPPSM, error: (any Error)?) {
+            guard isCurrent(manager) else {
+                return
+            }
             if let error {
                 listener.publishFailed()
                 log.log(.warning, "ble could not listen: \(error)")
@@ -148,30 +162,13 @@
             }
         }
 
-        /// Unpublishes a PSM, and bounds the wait for the answer, which holds the next publish back
-        /// (``ListenerPublication``). The deadline runs on uptime, and nothing resumes a suspended Knit to run it, so
-        /// there the publish waits until the process runs again. A stop and a start come from Settings or the bridge,
-        /// in the foreground, where it fires on time.
-        func awaitUnpublish(_ unpublish: ListenerPublication.Unpublish, on manager: CBPeripheralManager) {
-            manager.unpublishL2CAPChannel(unpublish.psm)
-            let wait = ListenerPublication.answerWaitMilliseconds
-            queue.asyncAfter(deadline: .now() + .milliseconds(wait)) { [weak self] in
-                guard let self else {
-                    return
-                }
-                let expired = listener.waitEnded(unpublish.wait)
-                guard expired > 0 else {
-                    return
-                }
-                log.log(.warning, "ble heard no answer to \(expired) unpublishes in \(wait) ms, so publishes")
-                resume()
-            }
-        }
-
         /// The answer to an unpublish may land after the next start, one round trip behind the stop (about 0.2 s on the
         /// iPhone 12). Until it lands, or its wait runs out, nothing is published, and once it has, a radio that runs
         /// publishes, which reports the PSM to the link manager, which advertises it (``ListenerPublication``).
-        func peripheralManager(_: CBPeripheralManager, didUnpublishL2CAPChannel psm: CBL2CAPPSM, error: (any Error)?) {
+        func peripheralManager(_ manager: CBPeripheralManager, didUnpublishL2CAPChannel psm: CBL2CAPPSM, error: (any Error)?) {
+            guard isCurrent(manager) else {
+                return
+            }
             let failure = error.map { ": \($0)" } ?? ""
             switch listener.unpublished(psm) {
             case .asked:
@@ -191,7 +188,7 @@
         /// A peer rang the doorbell. Data on an open link does not wake a suspended Knit, and a write does, so a peer
         /// that has written to our link rings to have it read. The wake is the point, and the value is ignored.
         func peripheralManager(_ manager: CBPeripheralManager, didReceiveWrite requests: [CBATTRequest]) {
-            guard let first = requests.first else {
+            guard isCurrent(manager), let first = requests.first else {
                 return
             }
             manager.respond(to: first, withResult: .success)
@@ -200,7 +197,11 @@
             retryServing()
         }
 
-        func peripheralManager(_: CBPeripheralManager, didOpen channel: CBL2CAPChannel?, error: (any Error)?) {
+        func peripheralManager(_ manager: CBPeripheralManager, didOpen channel: CBL2CAPChannel?, error: (any Error)?) {
+            guard isCurrent(manager) else {
+                log.log(.info, "ble ignored a channel the recycled peripheral manager opened")
+                return
+            }
             guard let channel, error == nil, running else {
                 log.log(.info, "ble refused an incoming channel: \(error.map { "\($0)" } ?? "stopped")")
                 return

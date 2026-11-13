@@ -1199,6 +1199,27 @@ class ListenerGateTest(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.gate(self.phones(0), {"contact": [{"dialer": "phone"}], "stranger": []})
 
+    def test_a_recycled_listener_is_judged_by_what_follows(self) -> None:
+        self.knit = FakeKnitLog(["ble heard no answer to 1 unpublishes in 5000 ms, so recycles the peripheral manager"])
+        self.addCleanup(self.knit.close)
+
+        def rejected(seconds: float) -> str:
+            # bluetoothd's own stamp, `seconds` from the recycle, on the REJECTION line.
+            stamp = time.strftime("%b %d %H:%M:%S", time.localtime(time.time() + seconds))
+            return stamp + ListenerGateLinesTest.REJECTION[15:] + "\n"
+
+        self.daemon.path.write_text(rejected(-60))
+        result = self.gate(self.phones(0), {"contact": [{"dialer": "phone"}], "stranger": []})
+        self.assertEqual(result["pixelDialed"], "contact", "the old listener's rejection is not the recycled one's")
+        self.daemon.path.write_text(rejected(-60) + rejected(5))
+        with self.assertRaises(RuntimeError, msg="a recycle that left the listener dead still fails"):
+            self.gate(self.phones(0), {"contact": [{"dialer": "phone"}], "stranger": []})
+
+    def test_bluetoothds_lines_are_kept_from_a_second_on(self) -> None:
+        lines = ["Nov 12 16:36:21 bluetoothd[103] a", "Nov 12 16:36:22 bluetoothd[103] b", "no stamp", "Nov 12 16:37:00 bluetoothd[103] c"]
+        at = int(time.mktime(time.strptime("2026 Nov 12 16:36:22", "%Y %b %d %H:%M:%S")) * 1000) + 400
+        self.assertEqual([line[-1] for line in interop._from_second(lines, at)], ["b", "c"])
+
     def test_a_pixels_own_dial_is_found_by_the_order(self) -> None:
         self.assertEqual(interop._pixel_dialed({"contact": [{"dialer": "iphone"}], "stranger": [{"dialer": "phone"}]}), "stranger")
         self.assertIsNone(interop._pixel_dialed({"contact": [{"dialer": "iphone"}]}))

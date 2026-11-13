@@ -326,11 +326,12 @@ check_release_app() {
 	# ratchet switch (Launch.options, ADR 2026-10.5sk9), and the lines voice notes and link previews log as they come on
 	# (AppEnvironment.voiceNotes and .linkPreviews), since a store build has neither until each is approved (ADR 2026-10.ue3y,
 	# ADR 2026-11.hcvg), and the blinded advert writer's defaults key and the line its debug factory logs as it opens the
-	# gate (AppEnvironment.blindAdvert), since a store build has no switch (ADR 2026-11.prsp). Any one here means a debug
+	# gate (AppEnvironment.blindAdvert), since a store build has no switch (ADR 2026-11.prsp), and the line KnitBLE logs
+	# as the bridge arms its skipped unpublish (BLERadio.skipNextUnpublish, knit/knit-ios#53). Any one here means a debug
 	# path ships.
 	for marker in app.getknit.knit.bridge "running the demo on seeded stores in memory" debug.launch.ratchet \
 		"voice notes are on in this debug build" "link previews are on in this debug build" debug.launch.blind \
-		"the blinded advert writer is on in this debug build"; do
+		"the blinded advert writer is on in this debug build" "ble will skip the next unpublish"; do
 		if grep -q -a -F "$marker" "$app/Knit"; then
 			echo "$app/Knit holds debug-only code: it contains \"$marker\"" >&2
 			return 1

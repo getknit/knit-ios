@@ -21,7 +21,9 @@
                             expectsBlinding: core.expectsBlinding,
                             restoredServices: core.restoredServices,
                             matchedByOrder: core.matchedByOrder,
-                            poweredOn: core.reported == .on
+                            // The manager as well as the radio: through a recycle the radio stays on while the new
+                            // manager is not powered on yet, and serves nothing.
+                            poweredOn: core.reported == .on && core.peripheralManager?.state == .poweredOn
                         ))
                 }
             }
@@ -30,9 +32,10 @@
 
     extension BLECore {
         /// Publishes the listener when none is live or asked for, and while blinding once the doorbell's service is served,
-        /// so a peer that dials the PSM it read finds the doorbell (``GattServing/mayPublish``).
+        /// so a peer that dials the PSM it read finds the doorbell (``GattServing/mayPublish``). Only on a manager that is
+        /// powered on, which a recycled one is not at first, and the radio's state does not say so (``updateState()``).
         func publishIfDue(on peripheralManager: CBPeripheralManager) {
-            if serving.mayPublish, listener.shouldPublish() {
+            if peripheralManager.state == .poweredOn, serving.mayPublish, listener.shouldPublish() {
                 peripheralManager.publishL2CAPChannel(withEncryption: false)
             }
         }
@@ -52,7 +55,7 @@
         /// stop, or a debounced one racing the radio going off, may arrive before the new publish lands. The publish's
         /// answer serves it then, as the link manager sends no new advert for an unchanged PSM.
         func serve() {
-            guard running, reported == .on, let peripheralManager else {
+            guard running, reported == .on, let peripheralManager, peripheralManager.state == .poweredOn else {
                 return
             }
             apply(serving.serve(servable, now: clock.monotonicMilliseconds()), on: peripheralManager)
@@ -71,8 +74,17 @@
             }
         }
 
-        /// Asks the peripheral manager for each step, keeping each service added under its serial.
+        /// Asks the peripheral manager for each step, keeping each service added under its serial. A manager that is not
+        /// powered on would refuse each unanswered, so then the server forgets what it holds instead, and the next serve
+        /// after the power-on starts over.
         func apply(_ steps: [GattServing.Step], on manager: CBPeripheralManager) {
+            guard manager.state == .poweredOn else {
+                if !steps.isEmpty {
+                    log.log(.info, "ble held back \(steps.count) serving steps: the peripheral manager is not powered on")
+                    forgetServices()
+                }
+                return
+            }
             for step in steps {
                 switch step {
                 case .stopAdvertising:

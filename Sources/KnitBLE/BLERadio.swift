@@ -156,6 +156,11 @@
         #if os(iOS)
             static let centralRestoreId = "app.getknit.knit.central"
             static let peripheralRestoreId = "app.getknit.knit.peripheral"
+            /// The restore identifier a recycled peripheral manager takes (``recyclePeripheralManager(_:)``): the first one's,
+            /// the maintainer's choice of 2026-11-12, so a relaunch after a recycle still restores the peripheral. Whether
+            /// iOS takes a second manager under it cleanly within one process is the device probe's to settle (knit/knit-ios#53);
+            /// another identifier, or `nil` for none, is this one line.
+            static let recycledPeripheralRestoreId: String? = peripheralRestoreId
         #endif
 
         /// The central and the peripheral manager.
@@ -209,7 +214,8 @@
         /// What the scan this process started asks for, or `nil` before it starts one. A relaunch to restore Bluetooth
         /// may find iOS still running the last process's scan, with whatever filter it had.
         var scanning: ScanFilter?
-        /// The L2CAP listener: what was asked of the peripheral manager and what it answered.
+        /// The L2CAP listener: what was asked of the peripheral manager and what it answered, and how many times this process
+        /// replaced the manager after an unpublish it never answered (``ListenerPublication/recycles``).
         var listener = ListenerPublication()
         /// What the link manager last asked to advertise, and its PSM: forgotten when the link manager forgets its advert.
         var wanted: GattServing.Wanted?
@@ -230,6 +236,9 @@
         var matchedByOrder = 0
         #if DEBUG
             var probe = ScanProbe()
+            /// Whether the next unpublish is left unsent while its deadline is still armed, so a probe on the iPhone can
+            /// force the unanswered unpublish of knit/knit-ios#53 (``BLERadio/skipNextUnpublish()``).
+            var skipsNextUnpublish = false
         #endif
 
         init(
@@ -266,13 +275,11 @@
                 return
             }
             var centralOptions: [String: Any] = [CBCentralManagerOptionShowPowerAlertKey: false]
-            var peripheralOptions: [String: Any] = [CBPeripheralManagerOptionShowPowerAlertKey: false]
             #if os(iOS)
                 centralOptions[CBCentralManagerOptionRestoreIdentifierKey] = Self.centralRestoreId
-                peripheralOptions[CBPeripheralManagerOptionRestoreIdentifierKey] = Self.peripheralRestoreId
             #endif
             central = CBCentralManager(delegate: self, queue: queue, options: centralOptions)
-            peripheralManager = CBPeripheralManager(delegate: self, queue: queue, options: peripheralOptions)
+            peripheralManager = makePeripheralManager(recycled: false)
         }
 
         func stop() {
@@ -283,7 +290,8 @@
             for peripheral in peripherals.values where peripheral.state != .disconnected {
                 central?.cancelPeripheralConnection(peripheral)
             }
-            if let peripheralManager {
+            // A manager that is not powered on refuses both, and holds nothing of this process's.
+            if let peripheralManager, peripheralManager.state == .poweredOn {
                 peripheralManager.stopAdvertising()
                 peripheralManager.removeAllServices()
             }
@@ -322,7 +330,10 @@
 
         /// The state both managers agree on: any refusal or absence wins, then off, then on. A manager resetting (bluetoothd
         /// restarting) counts as off: its channels go, and it refuses a command unanswered until it is powered on again.
-        func updateState() {
+        /// Answers whether the state changed, which resumes the radio. A recycled peripheral manager's `.unknown` changes
+        /// nothing, so the radio stays on through a recycle and no `.state(.off)` makes the link manager forget its links.
+        @discardableResult
+        func updateState() -> Bool {
             let states = [central?.state, peripheralManager?.state].compactMap(\.self)
             let state: RadioState?
             if states.contains(.unsupported) {
@@ -337,7 +348,7 @@
                 state = nil
             }
             guard let state, state != reported else {
-                return
+                return false
             }
             reported = state
             log.log(.info, "ble \(state)")
@@ -354,6 +365,7 @@
             }
             emit(.state(state))
             resume()
+            return true
         }
 
         /// Drops every link, dial and read: the radio went off or stopped, and the link manager forgets them too.
