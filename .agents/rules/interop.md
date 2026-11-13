@@ -83,7 +83,8 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   <id>`, `bt doorbell settling <id> (<n>ms since link up)`, `bt doorbell found <id> `, `bt doorbell absent <id>`,
   `bt ring <id>`, `bt state … gattBudget=<used>/<n>`, `bt link up: <id> `, `bt link down: <id> (<why>)`,
   `bt connect ok <id> … sealed=<bool>`, `bt accepted client <id> `, `bt initiating to <key> `,
-  `bt refused client <id> … blind=legacy`, `bt tag next → <id>` and `bt gatt reading <address>`. From the iPhone it reads
+  `bt refused client <id> … blind=legacy`, `bt tag next → <id>`, `bt gatt reading <address>` and `bluetooth adapter
+  off` and `on`. From the iPhone it reads
   `ble rung by` and its listener gate's `ble heard no answer to <n> unpublishes` and `ble listening on PSM <n>`, and from
   Apple's bluetoothd, which no
   rule here can freeze, `Connection Indication PSM:0x…` and `Rejecting connection for PSM:0x…`.

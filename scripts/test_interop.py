@@ -946,6 +946,44 @@ class BlindLinksTest(unittest.TestCase):
             interop._held_across_edges(links, lines, 1)
         self.assertEqual(interop._held_across_edges(links, lines, 1, [EDGE + 15])["cycled"], 1)
 
+    def test_a_drop_inside_the_phones_adapter_restart_leaves_its_edge_unjudged(self) -> None:
+        # Run 70c5df's Pixel 3: its sockets reset 30 ms before `bluetooth adapter off`, and it was back 2.5 s later.
+        off = (EDGE + 69.633, "bluetooth adapter off")
+        on = (EDGE + 72.086, "bluetooth adapter on")
+        lines = capture(*link(EDGE - 600, EDGE + 69.6), off, (EDGE + 69.646, "bluetooth adapter off"), on, end=EDGE + 300)
+        links = interop._ios_links(lines, IPHONE)
+        self.assertEqual(interop._adapter_restarts(lines), [(EDGE + 69.633, EDGE + 72.086)])
+        with self.assertRaises(interop.Inconclusive) as caught:
+            interop._held_across_edges(links, lines, 1)
+        self.assertIn("1 ended in an adapter restart", str(caught.exception))
+
+    def test_a_drop_before_the_adapter_went_off_still_fails(self) -> None:
+        lines = capture(*link(EDGE - 600, EDGE + 50), (EDGE + 60, "bluetooth adapter off"), (EDGE + 62, "bluetooth adapter on"), end=EDGE + 300)
+        with self.assertRaises(RuntimeError):
+            interop._held_across_edges(interop._ios_links(lines, IPHONE), lines, 1)
+        self.assertEqual(interop._adapter_restarts([(EDGE, "bluetooth adapter off"), (EDGE + 5, "bt state x")]), [(EDGE, EDGE + 5)])
+
+    def test_a_link_torn_down_for_the_adapter_after_its_on_is_excused(self) -> None:
+        # A fast bounce: Android's off handler logs the teardown from a coroutine, after `on`.
+        lines = capture(
+            (EDGE - 600.5, f"bt connect ok {IPHONE} durMs=700 sealed=true"),
+            (EDGE - 600, f"bt link up: {IPHONE} (2 live)"),
+            (EDGE + 30, "bluetooth adapter off"),
+            (EDGE + 30.4, "bluetooth adapter on"),
+            (EDGE + 30.9, f"bt link down: {IPHONE} (adapter off)"),
+            end=EDGE + 300,
+        )
+        with self.assertRaises(interop.Inconclusive) as caught:
+            interop._held_across_edges(interop._ios_links(lines, IPHONE), lines, 1)
+        self.assertIn("1 ended in an adapter restart", str(caught.exception))
+
+    def test_each_adapter_restart_is_its_own_inconclusive_step(self) -> None:
+        lines = capture(*link(EDGE - 600, EDGE + 69.6), (EDGE + 69.633, "bluetooth adapter off"), (EDGE + 72.086, "bluetooth adapter on"), end=EDGE + 300)
+        with self.assertRaises(interop.Inconclusive) as caught:
+            interop._adapter_restarted(lines, IPHONE)
+        self.assertIn("ending 1 links", str(caught.exception))
+        self.assertEqual(interop._adapter_restarted(capture(*link(EDGE - 600, None), end=EDGE + 300), IPHONE), {"restarts": 0})
+
     def test_the_iphone_dialing_back_inside_rule_4s_window_and_the_control(self) -> None:
         lines = capture(*link(EDGE - 600, EDGE + 16), *link(EDGE + 40, EDGE + 900 + 15, dialer="iphone"), *link(EDGE + 900 + 40, None))
         links = interop._ios_links(lines, IPHONE)

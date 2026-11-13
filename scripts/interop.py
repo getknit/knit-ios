@@ -2349,6 +2349,8 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
     - **The seal:** `linksSealed` rose on all three, by at least the iPhone's links to the phones on the iPhone, with no
         `linkSealFailed` or `linkSealRefused` anywhere, and no plain `bt connect ok` to the iPhone.
     - **The listener:** bluetoothd rejected no channel on the iPhone's PSM across the run, and took at least one.
+    - **The phones' own adapters:** each `bluetooth adapter off` to `on` span is listed with the links it ended, and makes
+        its step inconclusive (a crash and a toggle look alike); those links are left out of the edge holds.
     - **The doorbell:** the iPhone logged `ble rung by` at least as often as the phones logged `bt ring` for it, and no
         phone found its doorbell absent. A `bt doorbell settling` line must be followed by `bt doorbell found`. The run
         cannot make one: a blinding iPhone publishes its listener only once it serves the doorbell's service
@@ -2470,6 +2472,7 @@ def iphone_blind_reads(arguments: argparse.Namespace) -> int:
                 run.step(f"{label}-edge-forgets", lambda ours=ours: _edge_forgets(ours, ios.node_id))
                 run.step(f"{label}-sealed", lambda label=label, ours=ours: _phone_sealed(after.get(label, {}), before[label], ours, ios.node_id))
                 run.step(f"{label}-doorbell-settles", lambda ours=ours: _doorbell_settles(ours, ios.node_id))
+                run.step(f"{label}-adapter-restarts", lambda ours=ours: _adapter_restarted(ours, ios.node_id))
             run.step("iphone-sealed", lambda: _ios_sealed(after.get("iphone", {}), before["iphone"], ups))
             run.step("no-legacy", lambda: _no_legacy(lines, ios.node_id, before["advert"], after.get("advert", {})))
             run.step("rings-heard", lambda: _blind_rings_heard(lines, ios.node_id, rung_by))
@@ -2969,13 +2972,59 @@ def _at_address_change(lines: list[tuple[float, str]], down: float) -> bool:
     return any(down - 20 <= at <= down + 1 for at, message in lines if message.startswith(GATT_READING))
 
 
+# Android's lines as its Bluetooth adapter goes off and comes back (knit-next `BluetoothMeshTransport.kt:5309` and
+# `:5295` at `a55ae9a96`). Every link ends inside that span: run 70c5df's Pixel 3 restarted its stack at 17:46:09.633
+# and was back at 17:46:12.086. Frozen in .agents/rules/interop.md.
+ADAPTER_OFF = "bluetooth adapter off"
+ADAPTER_ON = "bluetooth adapter on"
+
+
+def _adapter_restarts(lines: list[tuple[float, str]]) -> list[tuple[float, float]]:
+    """Each span the phone's Bluetooth adapter was off, from its first `bluetooth adapter off` to the next `bluetooth
+    adapter on`, on the phone's clock; one still off at the end of the capture runs to its last line."""
+    spans: list[tuple[float, float]] = []
+    off: float | None = None
+    for at, message in lines:
+        if message == ADAPTER_OFF and off is None:
+            off = at
+        elif message == ADAPTER_ON and off is not None:
+            spans.append((off, at))
+            off = None
+    if off is not None:
+        spans.append((off, lines[-1][0]))
+    return spans
+
+
+def _in_adapter_restart(spans: list[tuple[float, float]], link: dict) -> bool:
+    """Whether a link ended in an adapter restart: torn down for it (`bt link down: <id> (adapter off)`, which Android's
+    off handler logs from a coroutine, so after the `on` line too when the adapter bounces fast), or down inside a span.
+    The sockets can die before the `off` line is logged (70c5df: .593 to .620 against .633), so a span opens 3 s early
+    and closes at its `on`."""
+    if link["why"] == "adapter off":
+        return True
+    return link["down"] is not None and any(off - 3 <= link["down"] <= on for off, on in spans)
+
+
+def _adapter_restarted(lines: list[tuple[float, str]], node: str) -> dict:
+    """Recorded as its own step so a restart always shows in the summary: each span the phone's Bluetooth adapter was off,
+    and which of its links to `node` ended in it. Inconclusive when there was one, since the harness cannot tell a stack
+    crash, which the run's own traffic may have caused, from a user's toggle; it passes when there was none."""
+    spans = _adapter_restarts(lines)
+    ended = [link for link in _ios_links(lines, node) if _in_adapter_restart(spans, link)]
+    if spans:
+        raise Inconclusive(f"the adapter restarted {len(spans)} times, at {[round(off, 3) for off, _ in spans]}, ending {len(ended)} links to the iPhone")
+    return {"restarts": 0}
+
+
 def _held_across_edges(links: list[dict], lines: list[tuple[float, str]], want: int, cycles: list[float] | None = None) -> dict:
     """Each link to the iPhone up 40 s before an edge was still up 70 s past it: the iPhone turns its tag there, and the
     phone keeps the link. A drop between is failed with its reason, unless the run cycled the link then (`cycles`, the
-    host's times of each `deny-link`) or it came at the iPhone's address change, which can fall in the window by chance
-    (`_at_address_change`); either leaves that edge unjudged. An edge with no link up before it is not judged either, and
-    fewer than `want` judged edges is inconclusive."""
-    held, dropped, moved, cycled, unjudged = [], [], 0, 0, 0
+    host's times of each `deny-link`), it came at the iPhone's address change, which can fall in the window by chance
+    (`_at_address_change`), or it ended inside the phone's own Bluetooth adapter restart (`_adapter_restarts`); each
+    leaves that edge unjudged. An edge with no link up before it is not judged either, and fewer than `want` judged edges
+    is inconclusive."""
+    held, dropped, moved, cycled, restarted, unjudged = [], [], 0, 0, 0, 0
+    restarts = _adapter_restarts(lines)
     for edge in _edges_within(lines):
         link = next((link for link in links if link["up"] <= edge - 40 and (link["down"] is None or link["down"] > edge - 40)), None)
         if link is None:
@@ -2983,6 +3032,8 @@ def _held_across_edges(links: list[dict], lines: list[tuple[float, str]], want: 
         elif link["down"] is not None and link["down"] < edge + 70:
             if any(at - 5 <= link["down"] <= at + 20 for at in cycles or []):
                 cycled += 1
+            elif _in_adapter_restart(restarts, link):
+                restarted += 1
             elif _at_address_change(lines, link["down"]):
                 moved += 1
             else:
@@ -2993,9 +3044,10 @@ def _held_across_edges(links: list[dict], lines: list[tuple[float, str]], want: 
         raise RuntimeError(f"links dropped across an edge: {dropped}")
     if len(held) < want:
         raise Inconclusive(
-            f"{len(held)} edges with a link held across them, {cycled} cycled, {moved} dropped at an address change, {unjudged} with none up before"
+            f"{len(held)} edges with a link held across them, {cycled} cycled, {restarted} ended in an adapter restart, "
+            f"{moved} dropped at an address change, {unjudged} with none up before"
         )
-    return {"edgesHeld": len(held), "cycled": cycled, "atAddressChange": moved, "unjudged": unjudged}
+    return {"edgesHeld": len(held), "cycled": cycled, "adapterRestart": restarted, "atAddressChange": moved, "unjudged": unjudged}
 
 
 def _ios_keys(lines: list[tuple[float, str]], node: str) -> set[str]:
