@@ -568,15 +568,26 @@ Kotlin wins.
     claim after putting a link in its table (this port's admission and registration are one synchronous step in the
     `Mesh` actor), and it re-runs an id's link-up after a displacement (this port's `.down` then `.up` does). The wire
     change is additive.
-- **Mirrored ahead of the pin:** knit-next `feat/blind-gatt-reads` at `2d08d31cf`, not yet merged: companion change A11
+- **Mirrored ahead of the pin:** knit-next `feat/blind-gatt-reads` at `e4c2d9013`, not yet merged: companion change A11
   (its ADR 2026-11.89gg; the paired change `blind-gatt-reads`; knit-ios #42 under ADR 2026-11.prsp), as knit-next ADR
   2026-09.g64k was mirrored before it merged. `ee8609502` reads a blinding iPhone's GATT payload as a blinded sighting:
   every `0xFE30` service searched, the blind path's resolution, forget rules 1, 2 and 4 on tags, the `(tag)` refund and
   the doorbell's 10 s settle. `bdd21d89a` commits `ios-emitted-v1.json` as this port exported it, with
   `carolPresenceKeysToBob` and `link.seal` kept, and `2d08d31cf` pins `interop.py`'s `GATT_READ_END` and
-  `GATT_CONFIRMED_TAG` in `BlindGattReadTest`, so those regexes change only with that test. Nothing in `Sources/` mirrors it, since these rules were this port's
-  first (`GattPayloads.swift`, `GattSweep.swift`, `DoorbellLookup.swift`). `interop.py iphone-blind-reads` reads its log
-  lines, frozen in `.agents/rules/interop.md`. The pin moves to the merged SHA once the maintainer merges it.
+  `GATT_CONFIRMED_TAG` in `BlindGattReadTest`, so those regexes change only with that test. Nothing in `Sources/` mirrors
+  it, since these rules were this port's first (`GattPayloads.swift`, `GattSweep.swift`, `DoorbellLookup.swift`).
+  `e4c2d9013`, after run `223e21`'s redial, adds three rules to the contract's §5:
+  - **The yield** (`AdvertAliases.claimAnswer`): a claim whose link ended yields to its own id's hint on a live link, and
+    the hint's link holds the dial off. This port has had it since `2e82f18` (`AdvertAliases+Claims.swift`). Kotlin
+    answers a yielded claim as `Source.Claim` and counts it as a claim, with the hint's link as the claimant. Swift
+    answers `.hint` and counts a hint. The hold-off is the same, and knit-next ADR 2026-11.89gg records the difference.
+  - **No dial from a stale GATT read** (`GattTargets.withheld`): past a slot edge, a payload read in an earlier slot gives
+    no dial target while its resolved id holds a live proven link. Android only, with nothing to mirror: Swift's hint
+    hold-off covers that window.
+  - **No dial at a held proven link's own address** (`GattTargets.atProvenLinkAddress`). Android only, with nothing to
+    mirror.
+  `interop.py iphone-blind-reads` reads its log lines, frozen in `.agents/rules/interop.md`, and passed against it in run
+  `70c5df` (`linux-peer.md`). The pin moves to the merged SHA once the maintainer merges it.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `5fdaf5da8`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running
