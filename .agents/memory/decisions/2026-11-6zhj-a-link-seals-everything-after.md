@@ -130,7 +130,9 @@ up to v2.11.0 does, and the responder takes both first records for good.
   `FLAG_LINK_SEAL` in both forms. Android at the pin reads nothing from a blinded GATT payload, so it learns that a
   blinding iPhone seals only once companion change A11 reads one (the `blind-gatt-reads` contract, §8). Until then it
   dials no blinding iPhone at all, and the iPhone's own dials read the Pixel's flag from its service data. The writer's
-  switch is off by default in debug builds and absent from release until A11 merges (ADR 2026-11.prsp).
+  switch is off by default in debug builds and absent from release until A11 merges (ADR 2026-11.prsp). (Amended
+  2026-11-12: A11 reads it since the pin `f018bc8ce`, and the switch is on by default in debug builds, prsp's Phase 7.
+  Release still has none.)
 - No rekeying. The 2^48 frame cap closes a link first.
 - **What keeps it true:**
   - Records, flag and outbox: `LinkSealTests`, `LinkProofTests`, `LinkSealWireTests`, `LinkTests` (tag 12 unknown),

@@ -840,7 +840,7 @@ class IPhone(Node):
     def advert(self, blind: bool | None = None, clear: bool = False, timeout: float = 20) -> dict | None:
         """The bridge's `advert` (ADR 2026-11.prsp): the blinded advert's switch and what is on the air, or None from a build
         before it, whose advert always carries its node id. `blind=` stores the switch and `clear=True` puts the build's
-        default back (off until A11); the reply then says whether the air and the GATT server caught up (`applied`, else
+        default back (on since A11); the reply then says whether the air and the GATT server caught up (`applied`, else
         `why`), after the bridge's own wait of about 6 s."""
         fields: dict[str, str] = {"cmd": "advert"}
         if clear:

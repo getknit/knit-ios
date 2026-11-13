@@ -20,7 +20,10 @@ and whatever the lab posts.
 
 A burst is 4 to 24 posts, 3 to 20 s apart. Posts carry knit-next's audit keys, `soak <phase> #<n> peer <hhmmss>` and
 `burst <id> #<i>/<n>`, so its `cleanup.sh` purges them from the fleet afterwards. DMs go to the phones the first scan
-heard and to any the peer links since, never to the stale identities their back-fill pins.
+heard and to any the peer links since, never to the stale identities their back-fill pins. A blinding phone's advert
+carries a tag, never its id, so the run leaves it out and says so. A debug iPhone blinds by default (ADR 2026-11.prsp,
+Phase 7), so keep its `-blind off`, or `interop.py bridge '{"cmd":"advert","blind":"off"}'`, for a soak meant to
+cover it.
 
 Everything lands in the run's directory, `.build/soak/<start>/` unless `--out` says otherwise, and
 `.build/soak/current` names the latest; `status`, `report` and `stop` read it when given no directory:
@@ -396,6 +399,8 @@ class Soak:
         (self.out / "run.json").write_text(json.dumps(record, indent=2, sort_keys=True, default=str) + "\n", encoding="utf-8")
         summary = {"soak": str(self.out), "nodeId": node_id, "inRange": sorted(self.phones), "above": above, "blinded": len(nodes) - len(phones)}
         print(json.dumps(summary), flush=True)
+        if summary["blinded"]:
+            print(f"soak: {summary['blinded']} blinding node(s) left out: no DM, never counted in range", file=sys.stderr, flush=True)
         self.start_peer()
         self.started = time.monotonic()
         end = self.started + self.arguments.hours * 3600

@@ -47,13 +47,13 @@ public struct LaunchOptions: Sendable, Equatable {
     /// What this launch's `-ratchet` chose, for the app to keep, or `nil` when it chose nothing.
     public var ratchetChoice: Choice?
     /// Whether a debug build's blinded advert starts with its runtime switch on (ADR 2026-11.prsp, "Two gates"): `-blind
-    /// on|off`, or the choice an earlier launch or the bridge's `advert` kept, else off, the debug default until companion
-    /// change A11 merges (``Choice``). It sets the writer's switch and the radio's expectation at construction, never the
-    /// gate, which a debug build always opens. A release build reads no choice, and its factory has no switch.
+    /// on|off`, or the choice an earlier launch or the bridge's `advert` kept, else on, the debug default since companion
+    /// change A11 (``Choice``). It sets the writer's switch and the radio's expectation at construction, never the gate,
+    /// which a debug build always opens. A release build reads no choice, and its factory has no switch.
     public var blind = Self.blindDefault
-    /// The blinded advert's switch with no choice made or kept: off until companion change A11 merges and its trial passes,
-    /// then on, by an amendment to ADR 2026-11.prsp (its Phase 7).
-    public static let blindDefault = false
+    /// The blinded advert's switch with no choice made or kept: on since companion change A11 merged and its trial passed
+    /// (ADR 2026-11.prsp's Phase 7, 2026-11-12), and off before.
+    public static let blindDefault = true
     /// What this launch's `-blind` chose, for the app to keep, or `nil` when it chose nothing.
     public var blindChoice: Choice?
 

@@ -517,27 +517,29 @@ explicit direction.** Update this file in the change that ships an item.
     advert. The reader and the receive half of the presence keys, which Android's release N+1 waits on, are done on
     `feat/blind-reader` (ADR 2026-11.sv5t, 2026-11-07), and their device trials are owed: the ADR lists them, and
     `interop.py --keep-blind iphone` and `iphone-seek` judge them. Who an iPhone's direct contacts are is settled there
-    (`Acquaintances` less blocks; only a block shrinks the set). The writer needs an iOS ADR of its own: CoreBluetooth
-    gives no advertising sets and no say in the address's rotation, and an iPhone's id rides its GATT payload. It takes
-    our own presence keys with it, and the generation number's backup rule while `knit.sqlite` stays out of backups.
+    (`Acquaintances` less blocks; only a block shrinks the set). The writer needed an iOS ADR of its own, ADR
+    2026-11.prsp: CoreBluetooth gives no advertising sets and no say in the address's rotation, and an iPhone's id rides
+    its GATT payload. It took our own presence keys with it, and the generation number's backup rule while `knit.sqlite`
+    stays out of backups.
     One cost the reader's review left: a suspended iPhone keeps only the newest `TAG_NEXT` of a read, which can swap a
     stranger's link once (ADR 2026-11.sv5t, "A locked hour's announcements").
-    - **The writer** (proposed on `feat/blind-writer`, ADR 2026-11.prsp, 2026-11-11). Our own keys are sent in every
-      build. The writer is debug-only behind a runtime switch, which defaults to off until A11 lands. The phases are:
+    - **The writer** (ADR 2026-11.prsp, proposed on `feat/blind-writer` on 2026-11-11 and accepted on 2026-11-12). Our
+      own keys are sent in every build. The writer is debug-only behind a runtime switch, which defaults to on since A11
+      landed and its trial passed, and to off before. The phases are:
       - 0: the ADR, A11's spec and the design pass;
       - 1: our own keys (crypto plane);
       - 2: the link-layer writer (Bluetooth plane);
       - 3: KnitBLE, KnitBlueZ and the device probe of the address and PSM;
       - 4: the debug gate, the bridge and `interop.py`;
-      - 5: A11;
-      - 6: device trials;
-      - 7: the debug default flips to on.
+      - 5: A11, merged to knit-next's `main` as `f018bc8ce` on 2026-11-12, the pin since;
+      - 6: device trials, A11's among them, which passed in run `70c5df` (`.agents/context/linux-peer.md`);
+      - 7: the debug default flips to on, done the same day (`LaunchOptions.blindDefault`).
 
       Phases 0 to 4 are committed (`edf12b8`, `1a2d9ff`, `032e57e`, `fc56ab2`, `6795964`). The phone-only trials passed on
       2026-11-11 (`.agents/context/linux-peer.md`, "What the blinded-advert writer showed"), and the dongle runs and
       btmon's handle check passed the same afternoon ("What the writer's dongle runs showed"). On 2026-11-12
       `iphone-wake`, a cold launch and a restoration relaunch passed with the switch on ("What the writer's relaunches
-      and the locked wake showed"), so A11 is next. The iPhone's link to a KnitBlueZ reader drops at
+      and the locked wake showed"), so A11 came next. The iPhone's link to a KnitBlueZ reader drops at
       each of the iPhone's address changes, with the switch off too: the reader makes a second connection to the new
       address to read its payload, and iOS ends the older connection from the same address. An Android link meets the
       same while the phone's private address is the one its link was made from. That is not the writer's. This port
@@ -549,26 +551,29 @@ explicit direction.** Update this file in the change that ships an item.
       lapsed. ADR 2026-11.sv5t's 2026-11-11 amendment fixes that (`2e82f18`), and a 45-minute hold across four
       address changes showed no redial while linked.
     - **A11 (Android reads a blinded GATT payload):** a paired change that iOS leads, knit-next's half of ADR
-      2026-11.prsp. At `cad69c77b` and at knit-next's HEAD, `BleGattPayloadReader.kt:86-88` reads a payload carrying
-      `FLAG_BLINDED` as `stranger(PHASE_BLINDED)`. So a blinding iPhone is never sighted, never resolved by a contact's
-      key, and never dialed, and every 10 minutes it costs a read that is never refunded. The contract:
+      2026-11.prsp, merged to knit-next's `main` as `f018bc8ce` on 2026-11-12 (knit-next ADR 2026-11.89gg) after run
+      `70c5df` passed. Before it, at `cad69c77b`, `BleGattPayloadReader.kt:86-88` read a payload carrying `FLAG_BLINDED`
+      as `stranger(PHASE_BLINDED)`. So a blinding iPhone was never sighted, never resolved by a contact's key, and never
+      dialed, and every 10 minutes it cost a read that was never refunded. The contract:
       - **The read.** A payload that carries `FLAG_BLINDED` and a valid `zzzz` prefix is a blinded sighting at the GATT
         address, with its PSM and flags. It goes through the path a blinded advert takes (`offerBlind`, `readBlind`,
         `AdvertAliases`): resolved by a contact's key, then a claim, then a hint, and otherwise held under a handle. A
         flagged payload without the prefix stays a stranger, as now.
       - **The payload's lifetime.** `GattPayloads.confirmed` refunds the read once a link to that address proves itself.
-        A tag dial takes the proven id. `forgetGattPayloadIfOther` (ADR 2026-09.kwq2's rule 2) compares a HELLO's `t`
-        with the payload's tag, or with a tag announced for that link, never with the id.
+        A tag dial takes the proven id. `forgetGattPayloadIfOther` (ADR 2026-09.kwq2's rule 2) compares the payload's
+        tag with a HELLO's `t` and with the tag that node announced, never with the id.
       - **Who dials.** `AdvertOrder.iDial` on forms, as for any blinded advert, with no rule of its own for a GATT
-        source. So a clear Android leaves every dial to the blinding iPhone. The design pass of 2026-11.prsp may revise
-        this for a suspended iPhone; any revision goes to both workers.
+        source. So a clear Android leaves every dial to the blinding iPhone, but for the lonely dial that already
+        exists: after 180 s with no Bluetooth link it may dial a form the order leaves to the other side. Until then a
+        suspended blinding iPhone waits for its own dial, a residual both sides record (knit/knit-next#317).
       - **The payload's slot.** A blinded payload is forgotten after the first slot edge since it was read, 35 to 65 s
         past it: the 30 s minimum lead of an announced rotation plus 5 s, then 0 to 30 s of jitter. A reader never keeps
         a rotated tag past the edge, never re-reads the old tag in the 30 s a writer may still air it, and each address
         costs at most one read per slot. The address a link holds is spared, and a clock set back below the read
         forgets it (`GattPayloads.forgetPastEdge`).
-      - **Rule 2 on a blinded payload.** A HELLO forgets a blinded payload only when its `t`, or a tag announced on that
-        link, differs from the payload's tag.
+      - **Rule 2 on a blinded payload.** A HELLO heard at that address, on a dial or an accept, forgets a blinded
+        payload unless the payload's tag equals the HELLO's `t` or the tag that node has announced (its pending
+        `TAG_NEXT`, found by node id over any link). A HELLO with no `t` forgets it.
       - **The doorbell.**
         - `doorbellTrusted`'s `sightedViaGatt` holds for a sighting held under a handle or resolved from a GATT tag.
         - **The layout while blinding.** A blinding iPhone serves two `0xFE30` services: one holding the doorbell alone,
@@ -577,8 +582,7 @@ explicit direction.** Update this file in the change that ships an item.
           `BleDoorbell` search every `0xFE30` service (`gatt.services.filter { it.uuid == FE30 }`), never only
           `getService(UUID)`'s first.
         - `BleDoorbell.lookUp` treats a lookup that finds no doorbell within `doorbellSettleMilliseconds` (10 s) of the
-          link's open or of `onServiceChanged` as a failure the next ring retries, never `absent`; past it `absent`
-          stands.
+          link's open as a failure the next ring retries, never `absent`; past it `absent` stands.
         - **No Service Changed reaches a Pixel.** A Pixel never subscribes to an iPhone's Service Changed, so
           `onServiceChanged` never fires toward one (`linux-peer.md`, "What the writer's relaunches and the locked wake
           showed"). The settle bound counts from the link's open alone. A payload read never uses a handle found before

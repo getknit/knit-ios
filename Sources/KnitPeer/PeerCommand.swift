@@ -181,7 +181,8 @@ public struct RunOptions: Equatable, Sendable {
     /// Whether the peer starts airing a rotating tag in place of its node id (`--blind`: the runtime switch,
     /// ``LinkManager/Configuration/blindSwitchOn``, behind a gate knit-peer always opens; ADR 2026-11.prsp): the `ios` profile
     /// serves it as a blinding iPhone's GATT payload, with the advert's `FLAG_BLINDED`, and the `android` profile airs it as
-    /// service data. Off by default, as in a debug build until A11; `advert` turns it while the peer runs.
+    /// service data. Off by default, unlike a debug build's app since A11, so a run that judges ids gets them unasked;
+    /// `advert` turns it while the peer runs.
     public var blind = false
     /// Seconds after start the radio stops reading its channels, a trial's switch (`--stop-reading-after`); `nil` never stops.
     public var stopReadingAfterSeconds: Int?

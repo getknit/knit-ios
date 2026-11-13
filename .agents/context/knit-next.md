@@ -445,10 +445,12 @@ Kotlin wins.
     - **Owed here:**
       - **The blinded advert's writer** (knit-ios #42's rest; knit-next's `NEXT_WIRE_BREAK.md` item 13): airing a tag,
         writing `t` and `TAG_NEXT`, and minting, rotating and sending presence keys of our own, with `REMARK_OWN`'s
-        marker and the generation number's backup rule. They wait for an iOS ADR of their own: CoreBluetooth gives no
-        advertising sets and no say in the address's rotation, and an iPhone's id rides its GATT payload. A blinded
-        GATT payload carries `FLAG_LINK_SEAL` in its flags byte as a clear one does, but Android at the pin reads
-        nothing from a blinded one, so it learns that a blinding iPhone seals only once companion change A11 reads it
+        marker and the generation number's backup rule. They waited for an iOS ADR of their own, since CoreBluetooth
+        gives no advertising sets and no say in the address's rotation, and an iPhone's id rides its GATT payload: ADR
+        2026-11.prsp, accepted 2026-11-12, which sends our keys in every build and airs the tag in debug builds alone,
+        on by default there since its Phase 7. `REMARK_OWN` stays owed with the restore's reset (prsp). A blinded GATT
+        payload carries `FLAG_LINK_SEAL` in its flags byte as a clear one does. Android at this pin read nothing from a
+        blinded one, and learns that a blinding iPhone seals since companion change A11 reads it, at the pin `f018bc8ce`
         (ADR 2026-11.6zhj, knit-next ADR 2026-11.8mhs, the `blind-gatt-reads` contract, §8).
       - **Wire decoding** (knit-ios #14's parity): `lang` and `reads` (`e427941fd`, `8d078afe5`), a transfer's `md`
         (`0219a1a46`) and ctl 11's `pk` are typed here as on Android since knit-ios #43 (`wire-format.md`). The `link`

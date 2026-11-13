@@ -2,7 +2,7 @@ import KnitAppCore
 import Testing
 
 /// `-blind on` and `-blind off`, a debug build's runtime switch for the blinded advert (ADR 2026-11.prsp, "Two gates"): kept
-/// for every launch after it that names none, as `-ratchet` is, and off with neither until companion change A11 merges. The
+/// for every launch after it that names none, as `-ratchet` is, and on with neither since companion change A11. The
 /// app reads and keeps it only in a debug build, whose factory always opens the gate; a release build hands `LaunchOptions`
 /// no arguments and no kept choice, and its factory has no switch.
 @Suite struct LaunchBlindTests {
@@ -21,10 +21,12 @@ import Testing
         #expect(!LaunchOptions(arguments: ["Knit"], storedBlind: .off).blind)
     }
 
-    @Test func withNeitherTheDebugDefaultStandsAndItIsOff() {
-        #expect(!LaunchOptions.blindDefault, "off until A11 merges and its trial passes")
+    @Test func withNeitherTheDebugDefaultStandsAndItIsOn() {
+        #expect(LaunchOptions.blindDefault, "on since A11 merged and its trial passed")
         #expect(LaunchOptions(arguments: ["Knit"]).blind == LaunchOptions.blindDefault)
-        #expect(!LaunchOptions(arguments: []).blind && LaunchOptions(arguments: []).blindChoice == nil, "a release build")
+        // A release build hands no arguments and no kept choice, so it reads the default too, and its factory has no switch
+        // to set: what keeps it clear is the gate (`AppEnvironment+BlindAdvert.swift`), not this value.
+        #expect(LaunchOptions(arguments: []).blind && LaunchOptions(arguments: []).blindChoice == nil, "a release build")
     }
 
     /// The two switches are apart: one flag never sets the other.
@@ -36,7 +38,8 @@ import Testing
 
     @Test(arguments: [["Knit", "-blind"], ["Knit", "-blind", "yes"], ["Knit", "-blind", "-seedDemo"]])
     func aMalformedValueChoosesNothing(arguments: [String]) {
-        #expect(!LaunchOptions(arguments: arguments).blind)
+        #expect(LaunchOptions(arguments: arguments).blind == LaunchOptions.blindDefault)
+        #expect(!LaunchOptions(arguments: arguments, storedBlind: .off).blind)
         #expect(LaunchOptions(arguments: arguments, storedBlind: .on).blind)
         #expect(LaunchOptions(arguments: arguments).blindChoice == nil)
     }

@@ -8,9 +8,11 @@ topics: [ble, mesh, privacy, wire, crypto]
 
 # ADR 2026-11.prsp — The iPhone airs a rotating tag and sends its own presence keys
 
-Status: Proposed (2026-11-11). Mirrors the writer half of knit-next ADR 2026-11.xp6d (its steps 5b Part A, Part B1,
-Part B2 and 6) at the pin `cad69c77b`: the rest of knit-ios #42. Companion change A11 in knit-next
-(`.agents/memory/roadmap.md`). Once accepted it amends ADR 2026-11.sv5t (the iPhone sends keys), ADR 2026-09.xzpt (a
+Status: Accepted (2026-11-12), once companion change A11 merged to knit-next's `main` as `f018bc8ce` (the pin since;
+`.agents/context/knit-next.md`) and its trial passed (run `70c5df`, `.agents/context/linux-peer.md`); proposed
+2026-11-11. Mirrors the writer half of knit-next ADR 2026-11.xp6d (its steps 5b Part A, Part B1, Part B2 and 6) at the
+pin `cad69c77b`: the rest of knit-ios #42. Companion change A11 in knit-next (`.agents/memory/roadmap.md`). It amends
+ADR 2026-11.sv5t (the iPhone sends keys), ADR 2026-09.xzpt (a
 blinded GATT payload is read as a form, and this port writes one), ADR 2026-09.6es2, ADR 2026-10.6eyf, ADR
 2026-10.mueg and ADR 2026-11.hpmt (the dial rules once our own form is a tag), and ADR 2026-09.khjj (`TAG_NEXT` never
 rings).
@@ -53,8 +55,8 @@ value survives while `knit.sqlite` stays out of backups. Four facts shape what t
     debug build has a runtime switch on top of it: the `-blind on|off` launch flag, kept in UserDefaults under
     `debug.launch.blind`, and the bridge's `advert blind`. The stored switch (or its default) sets the writer's state at
     construction and feeds `BLERadio(expectsBlinding:)`; it never sets the gate, or a process launched with the switch
-    off could never be turned on from the bridge. The switch's default is **off until A11 merges and its trial
-    passes**, then on, by an amendment here.
+    off could never be turned on from the bridge. The switch's default was **off until A11 merged and its trial
+    passed**, and is on since (amended 2026-11-12, Phase 7, below).
   - **A flip with the radio up closes every live link,** with its cause logged, so each peer relinks and looks the
     doorbell up again. A flip moves the doorbell between the combined service and D, so its handle changes, and a ring
     client that looked it up once would write to a dead handle for the rest of the link. The relink can be slow after a
@@ -305,7 +307,8 @@ iPhones.
 **Consequences / limits:**
 
 - **Before A11, a blinding iPhone is a stranger to every Android**, contacts included, and only its own dials link
-  it. That is why the debug default stays off until A11 merges.
+  it. That is why the debug default stayed off until A11 merged and its trial passed (Phase 7). An Android build from
+  before `f018bc8ce` still meets a blinding iPhone that way.
 - **A continuous observer can chain the iPhone's forms.** iOS rotates the address on its own schedule, which our slots
   do not follow, so an observer who never loses sight of the iPhone can link tag to address to tag. The PSM may stay
   across rotations too, until the probe says otherwise. What blinding removes is a stable name across gaps in
@@ -508,3 +511,15 @@ leaves open:
   `iphone-rotate` are left out: the last holds the switch on itself. With `--keep-blind`, a blinding iPhone toward a clear
   phone must dial it, refuse nothing as legacy and be refused nothing, and `--edge-wait` judges an announced rotation the phone
   took across an edge. `iphone-rotate` is the probe's scripted part.
+
+Phase 7, the debug default (2026-11-12): `LaunchOptions.blindDefault` is true, so a debug build with no `-blind` and no
+kept choice starts with the switch on. It waited on A11, merged to knit-next's `main` as `f018bc8ce`, and on its trial,
+run `70c5df` (`.agents/context/linux-peer.md`). Release builds stay clear: the `#else` factory
+(`AppEnvironment.blindAdvert`) shuts the gate and passes the switch off whatever `LaunchOptions` reads, and
+`check_release_app` fails a store build holding `debug.launch.blind` or the factory's debug line. knit-peer's `--blind`
+still starts off, so a Linux run that judges ids gets them unasked. A lab iPhone with no kept choice now blinds after an
+install, so a run that judges ids flips it to its id at the start and back at the end (`IPhoneAdvert`), and several
+of those runs stop the mesh within a minute of the flip. A flip, then a mesh stop 25 s later, is where knit/knit-ios#53
+was seen: the next start's PSM had no bluetoothd endpoint, and no run but `iphone-blind-reads` checks for that. So a
+lab iPhone that runs those keeps `-blind off`, which spares the flips. A soak (`scripts/soak.py`) leaves a blinding
+node out too. Guards: `LaunchBlindTests` and `scripts/check.sh release`.
