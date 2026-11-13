@@ -2386,3 +2386,51 @@ The run had 36 steps: 33 passed, 1 failed and 2 were inconclusive. It crossed th
 - **No read raced an iPhone dial.** The iPhone's one link timeout, at 13:32:21, had no Pixel read within 3 s of it. A
   `bt gatt read <address> failed (connect)` right after each edge forget, while the iPhone was about to dial that phone,
   is bounded: one unrefunded charge per address per slot (the Android worker's reading of `12dee50e3`).
+
+## What the blinded GATT reads reruns showed
+
+On 2026-11-12, after knit-next's fix for the stranger's redial in run `223e21`, both Pixels ran knit-next's local trial
+build `a55ae9a96`. The iPhone ran `main` at `4fc71c3` (the same `Sources/` as this branch, schema v24). The maintainer
+gave the go-ahead for each run, nothing wiped a phone's data, and every switch went back to its default after.
+
+**Run `3a7576` (15:56 to 16:39, stopped by SIGINT): the iPhone's listener died, knit/knit-ios#53.** The run flipped the
+iPhone's switch on at its start. About 25 s later its fresh-reads mesh stop logged `ble heard no answer to 1 unpublishes
+in 5000 ms, so publishes`. At the start it logged `ble listening on PSM 193`, but bluetoothd had no endpoint for 193. Every
+Pixel dial was answered `Rejecting connection for PSM:0x00c1 (Could not find a session, endpoint or pipe)`, at 16:36:22
+and 16:36:52 and, after the switch was cleared, at 16:40:36, 16:40:41 and 16:40:47. No Pixel's dial linked in the whole
+run, and once the order gave the Pixels the dial, neither pair could link. Earlier, from 16:16 to 16:22, the Pixel 9's
+link went down at the cycle and the iPhone's three dials back to it timed out at connect, so nothing reached it at the
+link layer. Its own HCI log showed its connectable set up throughout, while it carried seven ACLs (an Oura ring, a Jiobit
+tracker and a watch beside its three Knit links). That one came back on its own. The step results before the stop were
+10 passed and 2 failed (both relinks). The strict no-redial check held on both Pixels over a 16 to 19 s window, past the
+16:30 edge, where the order had turned toward them while their links were still up. On the Pixel 3 that window had run
+`223e21`'s shape exactly: a stale payload from the last slot, a dead claim and a live hint.
+
+**The recovery.** `advert blind on` over the bridge, then `devicectl … launch --terminate-existing` from the Mac, which
+answered "process identifier … could not be determined" while iOS relaunched Knit in the background. The new process
+logged `ble listening on PSM 192`, with no unanswered unpublish. A plain `devicectl` launch brought it forward, and
+bluetoothd accepted the Pixel 9's own dial on `0x00c0` at once.
+
+**Run `70c5df` (17:06 to 18:02, lease G): 44 steps, 42 passed, 1 failed and 1 inconclusive.** The run found the iPhone
+blinding and moved nothing. The listener gate passed on PSM 192 without rotating a Pixel, since the Pixel 9's own dial
+linked first. Four edges went late, early, late, early, and the run then stopped on its own rule.
+
+| What | What it showed |
+| --- | --- |
+| Resolution | The contact resolved all 7 reads by key. The stranger resolved 7 by claim and never by key. Its first blinded read came after its first link, which was the iPhone's dial, so this run held nothing under a handle first (runs `223e21` and `3a7576` did). |
+| Links | Both Pixels linked in both dial orders by the order, with no head start and no legacy refusal. On the early edges the iPhone dialed each back within 65 s of the 18:00 edge, and each Pixel dialed again once a link ended. No Pixel dialed the iPhone while it held a link to it. That includes the late edge after an early one, where the Pixel 9's link held through rule 4's window. |
+| Refunds and budget | 3 refunds on each Pixel, with 1 excused on each. `gattBudget` agreed at all 102 `bt state` lines. The Pixel 9's budget peaked at 12 of 12. |
+| Rule 4 | On time or spared on both, none twice and none missed. |
+| The seal | `linksSealed` rose by 12 on the iPhone, one per link-up, 6 on the Pixel 9 and 10 on the Pixel 3, with no failed seal or refused plain link. |
+| The doorbell | 89 rings from the phones and 89 `ble rung by`, with no `absent`. The Pixel 9 logged `bt doorbell settling … (8680ms since link up)` at 17:30:36, then `bt doorbell found` at 17:30:40, the contract's settle path, which came up by chance on the early cycle. |
+| The listener | bluetoothd took 8 channels on PSM 192 and rejected none. |
+| `TAG_NEXT` (recorded) | Both Pixels announced to the iPhone at all four edges, at edge − 210 s. |
+
+- **The failure: the stranger's link dropped across the 17:45 edge.** It went down at 17:46:09, edge + 69.6 s (`eof`).
+  The Pixel 3's own Bluetooth stack restarted then: `scan failed: 3` and `scan failed: 2` at 17:46:09.600, `bluetooth
+  adapter off` at 17:46:09.633 and .646, and `bluetooth adapter on` at 17:46:12.086. All four of its links ended in the
+  same second. It came during the third of its tag dials to the Pixel 9, which sends it no `TAG_NEXT`, an
+  Android-to-Android gap. The supervisor attributes the failure to the adapter. Re-judged offline as information only,
+  with links that ended within 3 s of an adapter-off left out, the step would read inconclusive, with one edge held where
+  two are wanted.
+- **The inconclusive one:** the stranger's doorbell settle, since no lookup came before the doorbell's service.
