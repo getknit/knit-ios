@@ -2437,3 +2437,22 @@ linked first. Four edges went late, early, late, early, and the run then stopped
   with links that ended within 3 s of an adapter-off left out, the step would read inconclusive, with one edge held where
   two are wanted.
 - **The inconclusive one:** the stranger's doorbell settle, since no lookup came before the doorbell's service.
+
+## What the default-on check showed
+
+On 2026-11-12, 23:08 to 23:22, after ADR 2026-11.prsp's Phase 7 (`3c112bb`) turned a debug build's blinded advert on by
+default. bluetooth-reviewer owed it on that change. The iPhone ran `main` at `f240b5b` Debug, installed with no kept
+switch (`debug.launch.blind` absent). The Pixel 9 and the Pixel 3 ran knit-next `main` at `f018bc8ce` Debug, checked by
+their APKs' hash, blinding by default. bluetoothd and Knit were read over USB (`idevicesyslog`), with both Pixels'
+logcat, throughout.
+
+| Step | What it showed |
+| --- | --- |
+| A cold launch with no kept switch (`devicectl … launch --terminate-existing`) | `advert` read `default` and `value` true, `stored` null, `blinding` and `expectsBlinding` true, and the split layout. Knit logged `the blinded advert writer is on in this debug build, its switch on`, served the doorbell's service, then `ble listening on PSM 192`. bluetoothd took 5 incoming channels on `0x00c0` in the first minute and rejected none. |
+| A restoration relaunch: Knit in the background, then `devicectl … process terminate` | bluetoothd resurrected Knit 1.4 s after the terminate. The new process started with the switch on, logged `ble restored the peripheral` and `ble restored 2 0xFE30 services, to remove once powered on`, and listened on PSM 192 again. It relinked every peer by its own dials first. Every incoming channel below reached this process. |
+| `interop.py iphone-react --device <Pixel 9>` | 18 of 18. `IPhoneAdvert` flipped the iPhone to its id with the radio up at 23:17:00, and the run stopped the mesh 111 s later. The unpublish was answered in 0.27 s and PSM 192 came back. bluetoothd took 3 channels on it before the run ended, and 2 within 12 s of the exit's flip back to the default (`restored null, applied true`). |
+
+- **No `Rejecting connection for PSM` and no `ble heard no answer`** in the whole session, so knit/knit-ios#53 did not
+  show. The run's stop came 111 s after its flip, not within 30 s as in run `3a7576`, so this was not that run's timing.
+- **A legacy run now flips a lab iPhone with no kept choice twice** (ADR 2026-11.prsp, Phase 7). A kept `-blind off`
+  spares those flips.
