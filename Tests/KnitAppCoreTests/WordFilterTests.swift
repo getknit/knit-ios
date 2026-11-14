@@ -52,6 +52,26 @@ import Testing
         #expect(filter.flags("you ass"))
     }
 
+    /// `xxx` collapses to `x`, so a lone x matched it until knit-next `df7d33012`: a word meets a listed word's collapsed
+    /// form only when it was stretched itself (`LexicalTextFilterTest.aTermWhoseCollapsedFormIsOneLetterMatchesOnly…`).
+    @Test func aTermThatCollapsesToOneLetterMatchesOnlyWhenWrittenOrStretched() {
+        let kisses = WordFilter(words: ["xxx"])
+        for text in ["the room is 2 x 3 meters", "Malcolm X", "thanks x", "x"] {
+            #expect(!kisses.flags(text), "\(text)")
+        }
+        for text in ["xxx", "xxxxx", "x x x"] {
+            #expect(kisses.flags(text), "\(text)")
+        }
+    }
+
+    @Test func noSingleLetterIsBlockedByTheShippedList() throws {
+        let list = WordFilter(
+            list: try String(contentsOf: CopyTests.root.appendingPathComponent("App/Models/Profanity.txt"), encoding: .utf8))
+        for letter in "abcdefghijklmnopqrstuvwxyz" {
+            #expect(!list.flags("press the \(letter) key"), "\(letter)")
+        }
+    }
+
     @Test func anAllowedWordPassesAndAnEmptyListFlagsNothing() {
         #expect(!WordFilter(words: ["ass"], allowed: ["ass"]).flags("you ass"))
         #expect(!WordFilter(words: []).flags("shit fuck ass"))

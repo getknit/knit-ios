@@ -65,11 +65,18 @@ public struct WordFilter: Sendable {
         return isBlocked(singles)
     }
 
+    /// Whether `word` is a listed word as written, or, only when it was itself stretched, a listed word's collapsed
+    /// form (knit-next `df7d33012`). A word with nothing to collapse is not stretched: asking it anyway made a lone `x`
+    /// match `xxx`, whose collapsed form is `x`, so "2 x 3" was blocked in the room.
     private func isBlocked(_ word: String) -> Bool {
         guard !word.isEmpty, !allowed.contains(word) else {
             return false
         }
-        return blocked.contains(word) || blockedCollapsed.contains(Self.collapsed(word))
+        if blocked.contains(word) {
+            return true
+        }
+        let collapsed = Self.collapsed(word)
+        return collapsed != word && blockedCollapsed.contains(collapsed)
     }
 
     /// `raw` lowercased, NFKD with its nonspacing marks dropped, and its leetspeak read as letters.

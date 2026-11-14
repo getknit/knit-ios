@@ -153,6 +153,11 @@ document:
   that's over their limit, as they already do for photos from Android. A big photo in Nearby also spreads more
   slowly between those phones.
 
+### Fixed
+
+- Knit refused to send a Nearby post with a lone "x" in it, like "2 x 3" or a kiss at the end, and hid one
+  that someone else sent. Those posts now go through.
+
 ## About this file
 
 This heading does not match the release-heading grammar, so a consumer skips it, the same way it skips
