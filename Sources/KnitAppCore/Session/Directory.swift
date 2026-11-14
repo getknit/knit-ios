@@ -33,13 +33,22 @@ public struct Directory: Sendable {
     public let me: NodeId
     /// Our own photo, or `nil` for none.
     public let myPhoto: BlobHash?
+    private let person: NamePresenter
+    private let group: NamePresenter
 
-    /// The directory over `peers`, the people blocked, and our own id, name and photo.
-    public init(peers: [PeerRecord], blocked: Set<NodeId> = [], me: NodeId, myName: String, myPhoto: BlobHash? = nil) {
+    /// The directory over `peers`, the people blocked, and our own id, name and photo. With `names`, the content filter
+    /// is on: someone else's name, status or group name that the name screen flags draws blank (knit-next ADR
+    /// 2026-11.y4pc). Without it, everything draws as it is stored.
+    public init(
+        peers: [PeerRecord], blocked: Set<NodeId> = [], me: NodeId, myName: String, myPhoto: BlobHash? = nil,
+        names: ShownNames? = nil
+    ) {
         self.peers = Dictionary(peers.map { ($0.nodeId, $0) }) { first, _ in first }
         verified = Set(peers.filter(\.verified).map(\.nodeId))
         self.blocked = blocked
-        labels = PeerLabelIndex(peers: peers.map { ($0.nodeId.string, $0.name) }, me: (me.string, myName))
+        person = names?.person ?? .asStored
+        group = names?.group ?? .asStored
+        labels = PeerLabelIndex(peers: peers.map { ($0.nodeId.string, $0.name) }, me: (me.string, myName), presenter: person)
         self.me = me
         self.myPhoto = myPhoto
     }
@@ -47,6 +56,26 @@ public struct Directory: Sendable {
     /// The label for `nodeId`: a pinned peer's name, our own, or the alias of someone not pinned yet.
     public func label(for nodeId: NodeId) -> PeerLabel {
         labels.label(for: nodeId.string)
+    }
+
+    /// Someone else's name or status as strangers may see it, or blank when the content filter hides it. Our own never
+    /// comes here: it is drawn as we set it.
+    public func shown(_ text: String) -> String {
+        person(text)
+    }
+
+    /// A group's name as its members see it, or blank when the content filter hides a slur in it.
+    public func shownGroup(_ name: String) -> String {
+        group(name)
+    }
+
+    /// The name `nodeId` set, when the content filter draws them by their alias instead, for a report, which carries
+    /// what the filter hid (ADR 2026-10.f6kf); `nil` when their name shows, or they have none.
+    public func hiddenName(of nodeId: NodeId) -> String? {
+        guard nodeId != me, let name = peers[nodeId]?.name, !NameKey.isBlankName(name), NameKey.isBlankName(person(name)) else {
+            return nil
+        }
+        return name
     }
 }
 

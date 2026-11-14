@@ -27,12 +27,17 @@ the `knit-peer` test tool, which is not distributed.
 | `App/Models/ToxicityTokenizer.json`, its tokenizer (ALBERT base v2's SentencePiece vocabulary) | [albert/albert-base-v2](https://huggingface.co/albert/albert-base-v2) | Apache-2.0 |
 | `App/Models/Profanity.txt`, the Nearby room's word list (copyright 2021 David Sojevic) | [dsojevic/profanity-list](https://github.com/dsojevic/profanity-list) | MIT |
 | `App/Models/Slurs.txt`, the slur list every conversation runs (copyright 2021 David Sojevic) | [dsojevic/profanity-list](https://github.com/dsojevic/profanity-list) | MIT |
+| `App/Models/NameEmbeddable.txt`, the terms of both lists the name screen looks for inside a word (copyright 2021 David Sojevic) | [dsojevic/profanity-list](https://github.com/dsojevic/profanity-list) | MIT |
+| `App/Models/NameAllowed.txt`, the profanity terms that are also real names (copyright 2021 David Sojevic) | [dsojevic/profanity-list](https://github.com/dsojevic/profanity-list) | MIT |
 
 The photo classifier is release 1.2.0's SavedModel converted to Core ML, the same weights Knit for Android bundles as
 `nsfw.tflite`. The message classifier is Detoxify's v0.1.2 checkpoint `unbiased-albert-c8519128.ckpt`, which builds
 on ALBERT base v2, converted to Core ML; Knit for Android bundles an int8 copy of the same weights as
 `toxicity.tflite`. The tokenizer and the word list are Android's files, byte for byte; knit-next's
-`scripts/gen-profanity-list.py` derives the list from dsojevic/profanity-list at commit `c279243`.
+`scripts/gen-profanity-list.py` derives the list from dsojevic/profanity-list at commit `c279243`. The name screen's
+lists are Android's files too: knit-next's `scripts/gen-name-screen-lists.py` picks their terms out of the two lists
+with the SCOWL English dictionaries and US baby-name and census surname data, none of which ships, and
+`App/Models/NameExclusions.txt` is knit-next's own list of five ordinary words that hold a term.
 `tools/models/nsfw/` and `tools/models/toxicity/` hold the recipes. The Detoxify weights were trained on Jigsaw's
 Unintended Bias in Toxicity Classification data, which is not redistributed.
 

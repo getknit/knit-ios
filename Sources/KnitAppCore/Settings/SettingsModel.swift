@@ -31,6 +31,18 @@ public struct ThirdPartyNotice: Sendable, Equatable, Identifiable {
         ),
         Self(id: "App/Models/Profanity.txt", name: "profanity-list", license: "MIT", url: "https://github.com/dsojevic/profanity-list"),
         Self(id: "App/Models/Slurs.txt", name: "profanity-list, slurs", license: "MIT", url: "https://github.com/dsojevic/profanity-list"),
+        Self(
+            id: "App/Models/NameEmbeddable.txt",
+            name: "profanity-list, inside names",
+            license: "MIT",
+            url: "https://github.com/dsojevic/profanity-list"
+        ),
+        Self(
+            id: "App/Models/NameAllowed.txt",
+            name: "profanity-list, real names",
+            license: "MIT",
+            url: "https://github.com/dsojevic/profanity-list"
+        ),
     ]
 }
 

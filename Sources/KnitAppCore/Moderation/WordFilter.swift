@@ -14,7 +14,7 @@ import KnitWire
 /// catch is left to the model behind it.
 public struct WordFilter: Sendable {
     /// Characters that read as letters (`LexicalTextFilter.LEET`).
-    private static let leet: [Unicode.Scalar: Unicode.Scalar] = [
+    static let leet: [Unicode.Scalar: Unicode.Scalar] = [
         "0": "o", "1": "i", "3": "e", "4": "a", "5": "s", "7": "t", "8": "b", "@": "a", "$": "s", "!": "i", "|": "i",
     ]
     /// The shortest run of one letter that collapses to one.
@@ -35,10 +35,14 @@ public struct WordFilter: Sendable {
     /// The list in `text`, one word a line, where a line that is blank or starts with `#` says nothing
     /// (`WordList.loadProfanity`).
     public init(list text: String) {
-        self.init(
-            words: text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
-                .filter { !$0.isEmpty && !$0.hasPrefix("#") }
-        )
+        self.init(words: Self.terms(in: text))
+    }
+
+    /// The terms of a bundled list, one a line: each line trimmed as Kotlin's `trim` trims it, and a line that is blank
+    /// or starts with `#` left out (`WordList.load`). The name screen reads its lists the same way.
+    public static func terms(in text: String) -> [String] {
+        text.split(whereSeparator: \.isNewline).map { TextLimits.trimmed(String($0)) }
+            .filter { !$0.isEmpty && !$0.hasPrefix("#") }
     }
 
     /// Whether `text` holds a listed word.
@@ -79,16 +83,18 @@ public struct WordFilter: Sendable {
         return collapsed != word && blockedCollapsed.contains(collapsed)
     }
 
-    /// `raw` lowercased, NFKD with its nonspacing marks dropped, and its leetspeak read as letters.
-    private static func fold(_ raw: String) -> String {
+    /// `raw` lowercased, NFKD with its nonspacing marks dropped, and its leetspeak read as letters
+    /// (`LexicalTextFilter.normalize`, which ``NameScreen`` shares).
+    static func fold(_ raw: String) -> String {
         let folded = raw.lowercased().decomposedStringWithCompatibilityMapping.unicodeScalars
             .filter { $0.properties.generalCategory != .nonspacingMark }
             .map { leet[$0] ?? $0 }
         return String(String.UnicodeScalarView(folded))
     }
 
-    /// `word` with each run of ``stretched`` or more of one letter made one, and a pair left alone.
-    private static func collapsed(_ word: String) -> String {
+    /// `word` with each run of ``stretched`` or more of one letter made one, and a pair left alone
+    /// (`LexicalTextFilter.collapseRuns`, which ``NameScreen`` shares).
+    static func collapsed(_ word: String) -> String {
         var out = String.UnicodeScalarView()
         var run: (letter: Unicode.Scalar, count: Int)?
         func close() {

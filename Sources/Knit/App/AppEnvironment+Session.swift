@@ -15,6 +15,7 @@
                 mesh: service,
                 notifier: alerts,
                 textScreening: .bundled(classifier: parts.textClassifier, log: parts.log),
+                names: .bundled(log: parts.log),
                 photoDimensions: { PhotoDecoder.dimensions($0) },
                 voiceNotes: voiceNotes(log: parts.log, demoClip: parts.demoVoice),
                 linkPreviews: linkPreviews,

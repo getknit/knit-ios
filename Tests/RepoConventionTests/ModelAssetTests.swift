@@ -48,4 +48,18 @@ import Testing
             #expect(digest == pinned, "\(path) is no longer knit-next's file")
         }
     }
+
+    /// The name screen's three lists are knit-next's files, byte for byte (its ADR 2026-11.y4pc), generated there by
+    /// `scripts/gen-name-screen-lists.py` and never edited by hand, so both phones read a name the same way.
+    @Test func theNameListsAreAndroids() throws {
+        let pins = [
+            "App/Models/NameEmbeddable.txt": "4689ddaaaae5058a561ecaab4bfe9b691021900a009317374e3b10adc810a995",
+            "App/Models/NameExclusions.txt": "a0b2e2685655aafb575b67ada8fc643930c76d6a687cf3deedbd4485bda658a7",
+            "App/Models/NameAllowed.txt": "78362263b92aa9818dd3abc803ddb9422eba015ffb02fd04230abe41edb1b1e8",
+        ]
+        for (path, pinned) in pins {
+            let digest = SHA256.hash(data: try RepoFiles.data(path)).map { String(format: "%02x", $0) }.joined()
+            #expect(digest == pinned, "\(path) is no longer knit-next's file")
+        }
+    }
 }

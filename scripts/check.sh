@@ -300,17 +300,17 @@ PY
 		echo "$app has no whole NSFW.mlmodelc: the content filter would let every photo through" >&2
 		return 1
 	fi
-	# Its text model, tokenizer and word list (ADR 2026-10.e4kz). The float16 weights come to about 23 MB, and the tokenizer
-	# and the list are Android's files, byte for byte.
+	# Its text model, tokenizer and word lists (ADR 2026-10.e4kz), and the name screen's lists (knit-next ADR 2026-11.y4pc).
+	# The float16 weights come to about 23 MB, and the tokenizer and the lists are Android's files, byte for byte.
 	weights="$app/Toxicity.mlmodelc/weights/weight.bin"
 	if [ ! -f "$weights" ] || [ $(($(wc -c <"$weights"))) -lt 20000000 ]; then
 		echo "$app has no whole Toxicity.mlmodelc: the content filter would let every message through" >&2
 		return 1
 	fi
 	local file
-	for file in ToxicityTokenizer.json Profanity.txt; do
+	for file in ToxicityTokenizer.json Profanity.txt Slurs.txt NameEmbeddable.txt NameExclusions.txt NameAllowed.txt; do
 		if ! cmp -s "$app/$file" "App/Models/$file"; then
-			echo "$app/$file is missing or is not App/Models/$file: the content filter would screen messages without it" >&2
+			echo "$app/$file is missing or is not App/Models/$file: the content filter would screen words without it" >&2
 			return 1
 		fi
 	done

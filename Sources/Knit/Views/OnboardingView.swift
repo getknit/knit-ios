@@ -184,11 +184,23 @@
                         PageHeading(text: Copy.Onboarding.nameTitle)
                     }
                 } footer: {
-                    SectionNote(Copy.Onboarding.nameBody(alias: model.alias))
+                    // A refused name says so in place of the page's note, until it is edited (knit-next ADR 2026-11.y4pc).
+                    if model.nameRefused {
+                        Text(Copy.Moderation.nameRefused)
+                            .font(.footnote)
+                            .foregroundStyle(Palette.critical)
+                            .accessibilityIdentifier(AccessibilityID.onboardingNameRefused)
+                    } else {
+                        SectionNote(Copy.Onboarding.nameBody(alias: model.alias))
+                    }
                 }
                 InlinePageButton(button: button, inline: typeSize.isAccessibilitySize)
             }
             .onAppear { focused = true }
+            // The page stays where it was, so VoiceOver hears why, as Android's polite live region says it.
+            .onChange(of: model.nameRefused) { _, refused in
+                if refused { AccessibilityNotification.Announcement(Copy.Moderation.nameRefused).post() }
+            }
             .accessibilityIdentifier(AccessibilityID.onboardingNamePage)
             .safeAreaInset(edge: .bottom) {
                 if !typeSize.isAccessibilitySize {

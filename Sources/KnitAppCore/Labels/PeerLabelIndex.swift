@@ -32,37 +32,52 @@ public struct PeerLabel: Sendable, Equatable {
 /// still coincide: a name chosen to read like someone's label, or an alias ground to match one. Distinct ids have
 /// distinct digests, so every label in an index is distinct. This makes a collision evident; it does not stop
 /// impersonation, which is what the safety number is for.
+///
+/// Someone else's name is indexed as its ``NamePresenter`` draws it, so a name the content filter hides is blank here
+/// and takes the alias path an invisible name takes, and two hidden names still read apart (knit-next ADR
+/// 2026-11.y4pc). Our own name is never presented.
 public struct PeerLabelIndex: Sendable {
     private let storedNames: [String: String]
     private let idsByKey: [String: Set<String>]
     private let idsByText: [String: Set<String>]
     private let consumed: [String: Int]
     private let phrases: [String: [String]]
+    private let presenter: NamePresenter
+    private let selfId: String?
 
     /// An index over nothing, which discriminates nothing.
-    public static let empty = Self(storedNames: [:], idsByKey: [:], idsByText: [:], consumed: [:], phrases: [:])
+    public static let empty = Self(
+        storedNames: [:], idsByKey: [:], idsByText: [:], consumed: [:], phrases: [:], presenter: .asStored, selfId: nil)
 
     private init(
         storedNames: [String: String],
         idsByKey: [String: Set<String>],
         idsByText: [String: Set<String>],
         consumed: [String: Int],
-        phrases: [String: [String]]
+        phrases: [String: [String]],
+        presenter: NamePresenter,
+        selfId: String?
     ) {
         self.storedNames = storedNames
         self.idsByKey = idsByKey
         self.idsByText = idsByText
         self.consumed = consumed
         self.phrases = phrases
+        self.presenter = presenter
+        self.selfId = selfId
     }
 
-    /// The index over `peers`, each a node id and its stored, possibly blank, name, and `me`, keyed by node id: a
-    /// peer row for our own id and `me` are one identity. Every member sharing a ``NameKey`` takes one token, then
-    /// every member still sharing a rendered text takes one more, until all texts differ.
-    public init(peers: [(nodeId: String, name: String)], me: (nodeId: String, name: String)? = nil) {
+    /// The index over `peers`, each a node id and its stored, possibly blank, name drawn as `presenter` draws it, and
+    /// `me`, keyed by node id: a peer row for our own id and `me` are one identity, under our name as it is. Every
+    /// member sharing a ``NameKey`` takes one token, then every member still sharing a rendered text takes one more,
+    /// until all texts differ.
+    public init(
+        peers: [(nodeId: String, name: String)], me: (nodeId: String, name: String)? = nil, presenter: NamePresenter = .asStored
+    ) {
         var stored: [String: String] = [:]
         var order: [String] = []
-        for (nodeId, name) in peers + (me.map { [$0] } ?? []) where stored.updateValue(name, forKey: nodeId) == nil {
+        let shown = peers.map { (nodeId: $0.nodeId, name: presenter($0.name)) }
+        for (nodeId, name) in shown + (me.map { [$0] } ?? []) where stored.updateValue(name, forKey: nodeId) == nil {
             order.append(nodeId)
         }
         var words: [String: [String]] = [:]
@@ -92,17 +107,31 @@ public struct PeerLabelIndex: Sendable {
         for (nodeId, text) in texts {
             textGroups[text, default: []].insert(nodeId)
         }
-        self.init(storedNames: stored, idsByKey: keyGroups, idsByText: textGroups, consumed: spent, phrases: words)
+        self.init(
+            storedNames: stored,
+            idsByKey: keyGroups,
+            idsByText: textGroups,
+            consumed: spent,
+            phrases: words,
+            presenter: presenter,
+            selfId: me?.nodeId
+        )
     }
 
     /// The label for `nodeId`, under the name the index holds for it. A node id outside the index, a sender whose
     /// profile has not pinned, grows as far as it must to read apart from every member, and never changes one.
     public func label(for nodeId: String) -> PeerLabel {
-        label(for: nodeId, storedName: storedNames[nodeId])
+        label(for: nodeId, shown: storedNames[nodeId])
     }
 
-    /// The label for `nodeId` under `storedName`, which may differ from the name the index holds for it.
+    /// The label for `nodeId` under `storedName`, which may differ from the name the index holds for it: drawn as the
+    /// index draws every name but ours, so a raw name a caller holds reads as the index's own would.
     public func label(for nodeId: String, storedName: String?) -> PeerLabel {
+        label(for: nodeId, shown: nodeId == selfId ? storedName : storedName.map { presenter($0) })
+    }
+
+    /// The label for `nodeId` under `storedName` as it is drawn.
+    private func label(for nodeId: String, shown storedName: String?) -> PeerLabel {
         let name = Alias.displayName(stored: storedName, nodeId: nodeId)
         let words = phrases[nodeId] ?? Alias.tokens(for: nodeId)
         let held = storedNames[nodeId] == storedName ? consumed[nodeId] : nil

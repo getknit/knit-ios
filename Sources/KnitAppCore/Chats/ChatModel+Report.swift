@@ -5,7 +5,7 @@ import KnitStore
 extension ChatModel {
     /// A report of `message`, from its bubble's menu (ADR 2026-10.f6kf), or `nil` for one of ours or a status line. It
     /// names the author as the thread does, and keeps the words whatever the content filter hid, a reply's quote's
-    /// included (ADR 2026-10.mn29).
+    /// included (ADR 2026-10.mn29), and so the author's name and the group's (knit-next ADR 2026-11.y4pc).
     public func reporting(_ message: ChatMessage) -> AbuseReport? {
         guard !message.isMine, message.notice == nil else {
             return nil
@@ -16,7 +16,10 @@ extension ChatModel {
             case .room:
                 .room
             case .group:
-                .group(thread.title)
+                .group(
+                    session.threads().group(conversationId).map { group in
+                        GroupNaming.reportedTitle(of: group, me: session.identity.nodeId, directory: session.directory)
+                    } ?? thread.title)
             case .direct:
                 thread.isRequest ? .request : .direct
             }
@@ -36,7 +39,8 @@ extension ChatModel {
                 }
                 let carried = session.stores.messages.message(message.id)?.replyTo?.snippet ?? ""
                 return AbuseReport.Quote(author: quote.author, words: carried.isEmpty ? quote.line ?? "" : carried)
-            }
+            },
+            hiddenName: session.directory.hiddenName(of: message.author)
         )
     }
 }

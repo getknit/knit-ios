@@ -610,6 +610,19 @@ Kotlin wins.
     claim after putting a link in its table (this port's admission and registration are one synchronous step in the
     `Mesh` actor), and it re-runs an id's link-up after a displacement (this port's `.down` then `.up` does). The wire
     change is additive.
+  - **Mirrored ahead of the pin, after `f018bc8ce`** (knit-ios #54, ADR 2026-11.gjtd): the name screen, knit-next ADR
+    2026-11.y4pc, as `ec44d865a` shipped it on `main` (the issue cites it as `4e782849e`, the same patch before a
+    rebase), and the lone-x fix before it, `df7d33012` (`4e47bc518`). The port took only those two:
+    - `NameScreen.kt`, `ShownNames.kt` and `LexicalTextFilter.isBlocked`'s collapsed rule;
+    - the three generated lists, `name_embeddable_en.txt`, `name_exclusions_en.txt` and `name_allowed_en.txt`, byte
+      for byte as `App/Models/Name*.txt`;
+    - `vectors/name-screen-v1.json`, copied with `sync-vectors.py --only name-screen-v1.json` from `2c32655b`, which
+      holds it unchanged.
+
+    The other commits since the pin were not read, so the pin stays. `sync-vectors.py --check` at the pin skips the
+    file as not there yet. knit-next's roadmap still lists the iPhone half as owed, and only that repo's own session
+    updates it. Reading the change turned up knit/knit-next#323: Android screens a group's stored name but draws it
+    cleaned.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `f018bc8ce`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

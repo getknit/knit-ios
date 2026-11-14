@@ -91,13 +91,20 @@ public final class PeerProfileModel {
         }
     }
 
-    /// A report of the person, with their status line (ADR 2026-10.f6kf), or `nil` on our own profile.
+    /// A report of the person, with their status line (ADR 2026-10.f6kf), or `nil` on our own profile. It carries their
+    /// name and status as they set them, whatever the content filter hid: the user is reporting them.
     public var reporting: AbuseReport? {
         guard !isSelf else {
             return nil
         }
-        let profile = state
-        return AbuseReport(person: nodeId, name: profile.title, place: .profile, status: profile.status)
+        let directory = session.directory
+        return AbuseReport(
+            person: nodeId,
+            name: state.title,
+            place: .profile,
+            status: directory.peers[nodeId]?.status ?? "",
+            hiddenName: directory.hiddenName(of: nodeId)
+        )
     }
 
     /// Files `report` on this iPhone: the person is blocked.
@@ -130,11 +137,13 @@ public final class PeerProfileModel {
         let peer = directory.peers[nodeId]
         let label = directory.label(for: nodeId)
         let theirs = peer.flatMap { PublicKeyBundle(encoded: $0.publicKey) }
+        // Someone else's status draws blank when the content filter hides it (knit-next ADR 2026-11.y4pc); ours never.
+        let status = peer?.status ?? ""
         return PeerProfileState(
             nodeId: nodeId,
             title: label.text,
             alias: label.alias,
-            status: peer?.status ?? "",
+            status: isSelf ? status : directory.shown(status),
             openToChat: peer?.openToChat ?? false,
             isLinked: false,
             safetyNumber: theirs.map { Self.lines(SafetyNumber.compute(mine: session.identity.bundle, theirs: $0)) },

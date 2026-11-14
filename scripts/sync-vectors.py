@@ -13,8 +13,9 @@ number, the link records and an advert. Both are copied into `Tests/Vectors/` un
 `ratchet-v1.json` (companion change A9, ADR 2026-10.5sk9) holds the ratchet's known answers and transcripts, and
 `custody-v1.json` (knit-next ADR 2026-10.7mqm) the custody contract: steps stored through one store and what each
 must keep, evict and hold. `name-key-v1.json` (knit-next #228) holds the name key's lookalike fold and drop set, and
-names with the key, the display blank and the cleaned text each must give. A checkout from before any of these changes
-has none of that file, so each is copied and checked only where it exists.
+names with the key, the display blank and the cleaned text each must give, and `name-screen-v1.json` (knit-next ADR
+2026-11.y4pc) the name screen's verdict on names over the shipped word lists, with each list's digest. A checkout from
+before any of these changes has none of that file, so each is copied and checked only where it exists.
 
 `--only` copies or checks the files it names and nothing else, and leaves the alias words alone. It is for a
 file that lands on a knit-next branch before the pin moves: the other copies keep the provenance they have.
@@ -45,8 +46,9 @@ EMITTED = "ios-emitted-v1.json"
 RATCHET = "ratchet-v1.json"
 CUSTODY = "custody-v1.json"
 NAME_KEY = "name-key-v1.json"
+NAME_SCREEN = "name-screen-v1.json"
 # Copied where the knit-next checkout has them; a checkout from before the change that added one has none.
-OPTIONAL = (RATCHET, CUSTODY, NAME_KEY)
+OPTIONAL = (RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN)
 ALIAS_OUTPUT = ROOT / "Sources" / "KnitCrypto" / "AliasWords.swift"
 ALIAS_SOURCE = Path("app/src/main/java/app/getknit/knit/identity/AliasWords.kt")
 ALIAS_LISTS = (("ALIAS_ADVERBS", "adverbs"), ("ALIAS_ADJECTIVES", "adjectives"), ("ALIAS_NOUNS", "nouns"))
@@ -141,7 +143,7 @@ def main() -> int:
     parser.add_argument(
         "--only",
         action="append",
-        choices=(WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY),
+        choices=(WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN),
         help="copy or check only this vector file (repeatable); the alias words are left alone",
     )
     args = parser.parse_args()
@@ -154,7 +156,7 @@ def main() -> int:
         print(f"sync-vectors: copied {EMITTED} to {target}")
         return 0
 
-    names = args.only or [WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY]
+    names = args.only or [WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN]
     files: dict[str, dict] = {}
     absent: list[str] = []
     for name in names:

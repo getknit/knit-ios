@@ -36,8 +36,15 @@
                 ToolbarItem(placement: .confirmationAction) {
                     Button(Copy.Common.save) {
                         Task {
-                            await model.save()
-                            dismiss()
+                            if await model.save() {
+                                dismiss()
+                            } else {
+                                // A refused name or status keeps the screen up, with a note under the field. VoiceOver
+                                // hears it too, as Android's polite live region says it (knit-next ADR 2026-11.y4pc).
+                                AccessibilityNotification.Announcement(
+                                    model.nameRefused ? Copy.Moderation.nameRefused : Copy.Moderation.statusRefused
+                                ).post()
+                            }
                         }
                     }
                     .disabled(!model.hasChanges)
@@ -71,15 +78,22 @@
 
         var body: some View {
             Section {
-                LimitedField(label: Copy.Profile.nameLabel, prompt: model.alias, text: $model.name, remaining: model.nameRemaining)
-                    .accessibilityIdentifier(AccessibilityID.profileName)
+                LimitedField(
+                    label: Copy.Profile.nameLabel,
+                    prompt: model.alias,
+                    text: $model.name,
+                    remaining: model.nameRemaining,
+                    identifier: AccessibilityID.profileName,
+                    refusal: model.nameRefused ? (Copy.Moderation.nameRefused, AccessibilityID.profileNameRefused) : nil
+                )
                 LimitedField(
                     label: Copy.Profile.statusLabel,
                     prompt: Copy.Profile.statusLabel,
                     text: $model.status,
-                    remaining: model.statusRemaining
+                    remaining: model.statusRemaining,
+                    identifier: AccessibilityID.profileStatus,
+                    refusal: model.statusRefused ? (Copy.Moderation.statusRefused, AccessibilityID.profileStatusRefused) : nil
                 )
-                .accessibilityIdentifier(AccessibilityID.profileStatus)
                 Toggle(Copy.Profile.openToChat, isOn: $model.openToChat)
                     .accessibilityIdentifier(AccessibilityID.profileOpenToChat)
             } header: {
@@ -131,20 +145,31 @@
         }
     }
 
-    /// A field that says how much room it has left once it nears its limit.
+    /// A field that says how much room it has left once it nears its limit, and why Save refused what it holds.
     private struct LimitedField: View {
         let label: String
         let prompt: String
         @Binding var text: String
         let remaining: Int?
+        let identifier: String
+        /// The note under a refused field and its identifier, or `nil` while the field is fine.
+        let refusal: (note: String, identifier: String)?
 
         var body: some View {
             VStack(alignment: .leading, spacing: Layout.hairline) {
                 TextField(label, text: $text, prompt: Text(prompt))
+                    .accessibilityIdentifier(identifier)
                 if let remaining {
                     Text(Copy.Profile.remaining(remaining))
                         .font(.caption)
                         .foregroundStyle(Palette.secondaryText)
+                }
+                // A note, not an alert, as the photo's refusal is (ADR 2026-10.spcy); it stays until the field changes.
+                if let refusal {
+                    Text(refusal.note)
+                        .font(.footnote)
+                        .foregroundStyle(Palette.critical)
+                        .accessibilityIdentifier(refusal.identifier)
                 }
             }
         }

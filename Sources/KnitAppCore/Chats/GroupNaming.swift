@@ -7,9 +7,18 @@ public enum GroupNaming {
     /// "Group". Each phone titles an unnamed group from its own side, leaving itself out. The name is cleaned here, at
     /// display, and kept raw in the store, because the frames we send carry it (knit-next #228). A cleaned name whose
     /// ``NameKey`` is empty, such as U+3164 or a run of controls alone, titles the group as an unnamed one, though it is
-    /// still a name on the wire (contract revision 2).
-    public static func title(of group: GroupRecord, me: NodeId, directory: Directory) -> String {
-        shown(group.name) ?? membersTitle(of: group, me: me, directory: directory)
+    /// still a name on the wire (contract revision 2). So does one the content filter hides: a slur, read as members
+    /// read it, or, on a request's row, a slur or profanity, since a stranger made the group and added us
+    /// (`MessageRequestsViewModel`, knit-next ADR 2026-11.y4pc).
+    public static func title(of group: GroupRecord, me: NodeId, directory: Directory, asRequest: Bool = false) -> String {
+        shown(group.name, in: directory, asRequest: asRequest) ?? membersTitle(of: group, me: me, directory: directory)
+    }
+
+    /// A group's title for a report, which carries what the content filter hid (ADR 2026-10.f6kf): its name as received,
+    /// cleaned, or the members' title when it has none.
+    public static func reportedTitle(of group: GroupRecord, me: NodeId, directory: Directory) -> String {
+        let cleaned = TextLimits.cleanReceived(group.name, limit: TextLimits.groupName)
+        return NameKey.isBlankName(cleaned) ? membersTitle(of: group, me: me, directory: directory) : cleaned
     }
 
     /// An unnamed group's title, from the other members' labels.
@@ -19,10 +28,12 @@ public enum GroupNaming {
     }
 
     /// A received group name as a person reads it, one line with no controls and at most ``TextLimits/groupName`` units,
-    /// or `nil` when that is display-blank (``NameKey/isBlankName(_:)``).
-    private static func shown(_ name: String) -> String? {
+    /// or `nil` when that is display-blank (``NameKey/isBlankName(_:)``) or the content filter hides it. The filter reads
+    /// the cleaned name, the one drawn: a control inside a slur must not split it for the screen and then go.
+    private static func shown(_ name: String, in directory: Directory, asRequest: Bool = false) -> String? {
         let cleaned = TextLimits.cleanReceived(name, limit: TextLimits.groupName)
-        return NameKey.isBlankName(cleaned) ? nil : cleaned
+        let drawn = asRequest ? directory.shown(cleaned) : directory.shownGroup(cleaned)
+        return NameKey.isBlankName(drawn) ? nil : drawn
     }
 
     /// Who started `group`, as a request names them: its creator when that is someone else on its roster, else the
@@ -53,7 +64,7 @@ public enum GroupNaming {
             return Copy.Groups.rejoined(subject)
         case .groupRenamed:
             let unnamed = group.map { membersTitle(of: $0, me: me, directory: directory) } ?? Copy.Groups.unnamed
-            return Copy.Groups.renamed(by: subject, to: shown(message.body) ?? unnamed)
+            return Copy.Groups.renamed(by: subject, to: shown(message.body, in: directory) ?? unnamed)
         default:
             return nil
         }

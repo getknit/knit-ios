@@ -42,7 +42,7 @@ public final class RequestsModel {
                 let preview = request.head.map { head in
                     ChatListAssembler.preview(head, namingSpeaker: request.group != nil, reader: reader)
                 }
-                let title = request.group.map { GroupNaming.title(of: $0, me: me, directory: directory) }
+                let title = request.group.map { GroupNaming.title(of: $0, me: me, directory: directory, asRequest: true) }
                 return RequestRow(
                     id: request.id,
                     title: title ?? directory.labels.label(for: request.id).text,
@@ -80,7 +80,7 @@ public final class RequestsModel {
         guard !row.isGroup, let peer = NodeId(row.id) else {
             return nil
         }
-        return AbuseReport(person: peer, name: row.title, place: .request)
+        return AbuseReport(person: peer, name: row.title, place: .request, hiddenName: session.directory.hiddenName(of: peer))
     }
 
     /// Files `report` on this iPhone: the stranger is blocked, and their request goes with the block.

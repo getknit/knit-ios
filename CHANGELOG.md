@@ -114,6 +114,9 @@ document:
 - Bluetooth connections between phones on this version, or on the matching Knit for Android update, are
   encrypted, so a radio listening nearby can't read what crosses them, such as who messages whom (knit-next
   #286). Connections with older Android versions stay unencrypted, as before.
+- With Content filtering on, someone whose name or status uses slurs or profanity now shows under their
+  alias, and a group whose name has a slur shows its members' names instead. Knit won't let you set such a
+  name or status for yourself either.
 
 ### Changed
 

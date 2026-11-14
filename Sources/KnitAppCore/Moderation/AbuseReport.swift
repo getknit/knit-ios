@@ -40,6 +40,9 @@ public struct AbuseReport: Sendable, Equatable, Identifiable {
     public var status: String
     /// What the message quoted, when it was a reply (ADR 2026-10.mn29): a quote can be what was abusive.
     public var quote: Quote?
+    /// The name they set, when the content filter showed them by their alias instead (knit-next ADR 2026-11.y4pc): the
+    /// name can be what the user reports.
+    public var hiddenName: String?
 
     /// What a reported reply quoted: whom, as the thread named them, and the words the reply carried, whatever this
     /// iPhone hid of them.
@@ -66,7 +69,8 @@ public struct AbuseReport: Sendable, Equatable, Identifiable {
         sentAt: Int64? = nil,
         hadPhoto: Bool = false,
         status: String = "",
-        quote: Quote? = nil
+        quote: Quote? = nil,
+        hiddenName: String? = nil
     ) {
         self.person = person
         self.name = name
@@ -77,6 +81,7 @@ public struct AbuseReport: Sendable, Equatable, Identifiable {
         self.hadPhoto = hadPhoto
         self.status = status
         self.quote = quote
+        self.hiddenName = hiddenName
     }
 
     /// The message's id, or the person's.
@@ -101,6 +106,11 @@ public struct ReportEmail: Sendable, Equatable, Identifiable {
             Copy.Report.emailIntro(version: version, at: Self.stamp(now)),
             "",
             Copy.Report.emailPerson(report.name),
+        ]
+        if let hiddenName = report.hiddenName {
+            lines.append(Copy.Report.emailName(hiddenName))
+        }
+        lines += [
             Copy.Report.emailNodeId(report.person.string),
             Copy.Report.emailPlace(report.place),
         ]

@@ -56,6 +56,10 @@ public final class AppSession {
     }
     /// What a message's words are checked with, sent or received; `nil` checks nothing.
     @ObservationIgnored public let textScreening: TextScreening?
+    /// What people's names, statuses and group names are screened with (knit-next ADR 2026-11.y4pc): someone else's,
+    /// where it is drawn while the content filter is on, and ours, when it is set, whatever the filter says. `nil`
+    /// screens nothing.
+    @ObservationIgnored public let names: ShownNames?
     /// Reads a photo's upright size from its bytes without decoding it, or `nil` for bytes that are no photo. Without
     /// it no size is read, and a thread holds a photo's place at a square until the photo decodes.
     @ObservationIgnored let photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)?
@@ -79,14 +83,15 @@ public final class AppSession {
     @ObservationIgnored private var cachedDirectory = Cached<Int, Directory>()
 
     /// A session over `mesh` and the stores it writes, posting notifications through `notifier`, screening words with
-    /// `textScreening`, reading photos' sizes with `photoDimensions`, recording, playing and reading voice notes with
-    /// `voiceNotes`, drawing link previews' cards with `linkPreviews`, and keeping the content filter's toggle in
-    /// `preferences`.
+    /// `textScreening` and names with `names`, reading photos' sizes with `photoDimensions`, recording, playing and
+    /// reading voice notes with `voiceNotes`, drawing link previews' cards with `linkPreviews`, and keeping the content
+    /// filter's toggle in `preferences`.
     @preconcurrency
     public init(
         identity: OwnIdentity, stores: MeshStores, mesh: any MeshService,
         notifier: (any Notifier)? = nil,
         textScreening: TextScreening? = nil,
+        names: ShownNames? = nil,
         photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)? = nil,
         voiceNotes: VoiceNotes? = nil,
         linkPreviews: LinkPreviews? = nil,
@@ -97,6 +102,7 @@ public final class AppSession {
         self.mesh = mesh
         self.notifier = notifier
         self.textScreening = textScreening
+        self.names = names
         self.photoDimensions = photoDimensions
         self.voiceNotes = voiceNotes
         self.linkPreviews = linkPreviews
@@ -117,7 +123,8 @@ public final class AppSession {
                 blocked: stores.blocks.blockedNodeIds(),
                 me: identity.nodeId,
                 myName: own.name,
-                myPhoto: own.avatarHash
+                myPhoto: own.avatarHash,
+                names: filtersContent ? names : nil
             )
         }
     }

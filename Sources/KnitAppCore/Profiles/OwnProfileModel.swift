@@ -39,6 +39,11 @@ public final class OwnProfileModel {
     /// Whether the last photo cropped looked explicit, so the profile keeps the photo it had; the screen says so until
     /// the next pick (ADR 2026-10.spcy).
     public private(set) var photoRefused = false
+    /// Whether the last Save was refused for the name, which holds a slur or profanity; the screen says so until the
+    /// name is edited (knit-next ADR 2026-11.y4pc).
+    public private(set) var nameRefused = false
+    /// Whether the last Save was refused for the status, as for the name.
+    public private(set) var statusRefused = false
 
     private struct Saved: Equatable {
         var name: String
@@ -73,13 +78,19 @@ public final class OwnProfileModel {
     /// The display name as typed, cut at ``TextLimits/displayName`` UTF-16 units.
     public var name: String {
         get { nameText }
-        set { nameText = TextLimits.truncated(newValue, toUTF16: TextLimits.displayName) }
+        set {
+            nameText = TextLimits.truncated(newValue, toUTF16: TextLimits.displayName)
+            nameRefused = false
+        }
     }
 
     /// The status as typed, cut at ``TextLimits/status`` UTF-16 units.
     public var status: String {
         get { statusText }
-        set { statusText = TextLimits.truncated(newValue, toUTF16: TextLimits.status) }
+        set {
+            statusText = TextLimits.truncated(newValue, toUTF16: TextLimits.status)
+            statusRefused = false
+        }
     }
 
     /// The name field's placeholder: the alias people see while the name is blank.
@@ -172,9 +183,21 @@ public final class OwnProfileModel {
         photoEdit = saved.photo == nil ? .kept : .removed
     }
 
-    /// Publishes what changed, normalized the way every peer reads it: the photo first, then the fields.
-    public func save() async {
+    /// Publishes what changed, normalized the way every peer reads it: the photo first, then the fields. Answers whether
+    /// it did.
+    ///
+    /// Strangers in range see a name and a status, so each is checked against the room's lists, slurs and profanity,
+    /// whatever the content filter says (`ProfileViewModel.save`, knit-next ADR 2026-11.y4pc). When either is flagged
+    /// nothing is published, the photo included: what was typed stays for the user to change, and the screen says which.
+    /// A session with no name screen refuses nothing, as Android's fails open.
+    @discardableResult
+    public func save() async -> Bool {
         let profile = edited
+        nameRefused = session.names?.flagged(profile.name, audience: .everyone) == true
+        statusRefused = session.names?.flagged(profile.status, audience: .everyone) == true
+        guard !nameRefused, !statusRefused else {
+            return false
+        }
         switch photoEdit {
         case .kept:
             break
@@ -190,6 +213,7 @@ public final class OwnProfileModel {
         statusText = profile.status
         photoEdit = .kept
         saved = profile
+        return true
     }
 
     private var edited: Saved {

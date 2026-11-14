@@ -51,6 +51,9 @@ public final class OnboardingModel {
     @ObservationIgnored private let preferences: any AppPreferences
     @ObservationIgnored private let permission: (any NotificationPermission)?
     private var nameText = ""
+    /// Whether the name page refused the name as typed, which holds a slur or profanity; the page says so until the name
+    /// is edited (knit-next ADR 2026-11.y4pc).
+    public private(set) var nameRefused = false
 
     /// Onboarding over `session`, remembering that it finished in `preferences`.
     public init(session: AppSession, preferences: any AppPreferences, permission: (any NotificationPermission)?) {
@@ -64,7 +67,10 @@ public final class OnboardingModel {
     /// The name as typed, cut at ``TextLimits/displayName`` UTF-16 units.
     public var name: String {
         get { nameText }
-        set { nameText = TextLimits.truncated(newValue, toUTF16: TextLimits.displayName) }
+        set {
+            nameText = TextLimits.truncated(newValue, toUTF16: TextLimits.displayName)
+            nameRefused = false
+        }
     }
 
     /// The alias people see while the name is blank.
@@ -104,8 +110,15 @@ public final class OnboardingModel {
         }
     }
 
-    /// The next page.
+    /// The next page. The name page goes on only with a name strangers may see: one that holds a slur or profanity is
+    /// refused, whatever the content filter says, and the page stays (`OnboardingViewModel.next`, knit-next ADR
+    /// 2026-11.y4pc). The name is published only by ``finish()``, so this is the one place it is checked.
     public func next() {
+        let typed = Composer.singleLine(nameText, limit: TextLimits.displayName)
+        if step == .name, session.names?.flagged(typed, audience: .everyone) == true {
+            nameRefused = true
+            return
+        }
         step = OnboardingStep(rawValue: step.rawValue + 1) ?? .permissions
     }
 

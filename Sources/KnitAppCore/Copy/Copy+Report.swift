@@ -147,6 +147,19 @@ extension Copy {
             )
         }
 
+        /// The name they set, which the content filter showed as their alias.
+        public static func emailName(_ name: String) -> String {
+            format(
+                NSLocalizedString(
+                    "report.email.name",
+                    bundle: .main,
+                    value: "Name they set: %@",
+                    comment: "Report email: the name the person set, which the content filter showed as their alias"
+                ),
+                name
+            )
+        }
+
         /// Their node id.
         public static func emailNodeId(_ nodeId: String) -> String {
             format(

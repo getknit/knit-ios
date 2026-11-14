@@ -832,7 +832,12 @@ explicit direction.** Update this file in the change that ships an item.
   its profile photo when it is set. App Review rejected 1.0.0 under 1.2 on 2026-10-21 for an 18+ rating and reports
   acted on within 24 hours: Knit is now rated 18+ and its terms say so, the Knit team reads emailed reports within 24
   hours, and Settings has Report a problem at the top level (ADR 2026-10.tydq). If App Review insists on ejecting
-  people, a ban list fetched when a phone is online is the next step.
+  people, a ban list fetched when a phone is online is the next step. Names are screened too (ADR 2026-11.gjtd,
+  knit-next ADR 2026-11.y4pc). Our own name and status are refused when set if they hold a slur or profanity. With
+  Content filtering on, someone else's flagged name shows as their alias, a flagged status shows nothing, and a group
+  name with a slur shows its members' title. Deferred, as on Android: retitling notifications already posted when the
+  filter turns on, names typed into a message's words, and run-together handles built on a term a real word holds
+  (`bigshit`).
 - **App Store readiness:** started on 2026-10-03 at the maintainer's direction. The privacy manifest and the export
   answer are in, Knit ships for iPhone only (ADR 2026-10.kedu), and `check.sh release`, `archive` and `upload` build,
   check, sign and upload the store build (ADR 2026-10.8cy5). The review notes, the listing and the export filing

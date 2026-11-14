@@ -179,6 +179,27 @@ extension Copy {
             )
         }
 
+        /// Why our own name was refused, under its field: it holds a slur or profanity, and strangers see it (knit-next
+        /// ADR 2026-11.y4pc).
+        public static var nameRefused: String {
+            NSLocalizedString(
+                "moderation.refused.name",
+                bundle: .main,
+                value: "Everyone nearby sees your name, so Knit won't use one with words that look offensive.",
+                comment: "Own profile and onboarding: a name with a slur or profanity is refused"
+            )
+        }
+
+        /// Why our own status was refused, under its field, as for the name.
+        public static var statusRefused: String {
+            NSLocalizedString(
+                "moderation.refused.status",
+                bundle: .main,
+                value: "Everyone nearby sees your status, so Knit won't use one with words that look offensive.",
+                comment: "Own profile: a status with a slur or profanity is refused"
+            )
+        }
+
         /// Why the room refuses an explicit photo, and where it can go instead.
         public static var roomRefusal: String {
             NSLocalizedString(

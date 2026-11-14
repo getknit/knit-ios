@@ -17,6 +17,8 @@ extension KnitUITests {
     private static let newestPost = "room-9"
     /// What the walk tries to post, which the demo's classifier finds abusive like everything else.
     private static let refusedWords = "Heading up now"
+    /// A handle the name screen refuses as our own (knit-next ADR 2026-11.y4pc), typed after whatever name the demo set.
+    private static let refusedName = "Fuck69"
 
     /// Settings: the profile, Report a problem and the terms, About, Support Knit, Diagnostics and its saved crash, each
     /// audited, and Stop, which leaves the chat list saying so.
@@ -121,6 +123,7 @@ extension KnitUITests {
 
         try app.appear(AccessibilityID.chatListSettings).tap()
         try refuseProfilePhoto(in: app)
+        try refuseProfileName(in: app)
         try app.reveal(AccessibilityID.settingsContentFiltering)
         audit(app, screen: AccessibilityID.settingsScreen)
         // A toggle's element spans its row, and a tap on the middle lands on its words: the switch sits at the end. The
@@ -148,6 +151,18 @@ extension KnitUITests {
         try app.reveal(AccessibilityID.profilePhotoRefused)
         audit(app, screen: "the profile photo's refusal")
         XCTAssertFalse(try app.appear(AccessibilityID.profileSave).isEnabled, "the refused photo waits for Save")
+        app.back()
+    }
+
+    /// A name the screen flags is refused on Save: the note shows under the field, and the profile stays up.
+    private func refuseProfileName(in app: XCUIApplication) throws {
+        try app.reveal(AccessibilityID.settingsProfileRow).tap()
+        let name = try app.appear(AccessibilityID.profileName)
+        name.tap()
+        name.typeText(Self.refusedName)
+        try app.appear(AccessibilityID.profileSave).tap()
+        try app.reveal(AccessibilityID.profileNameRefused)
+        XCTAssert(app.element(AccessibilityID.profileScreen).exists, "a refused name keeps the profile up")
         app.back()
     }
 
