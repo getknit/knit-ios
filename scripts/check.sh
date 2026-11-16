@@ -95,13 +95,18 @@ gate_test() {
 
 gate_coverage() {
 	# The longest Linux gate, and often run while the machine has other work: it takes half the cores it may use, or
-	# $KNIT_COVERAGE_CORES, for its compilers (never more than $SWIFT_JOBS), its tests and llvm-cov. `swift test` runs
-	# one test binary at a time, and Swift Testing's width caps how many tests each runs at once.
+	# $KNIT_COVERAGE_CORES, for its compilers (never more than $SWIFT_JOBS) and llvm-cov. `swift test` runs one test
+	# binary at a time, and each runs one test at a time, as said below.
 	local cores=${KNIT_COVERAGE_CORES:-$(($(available_cores) / 2))}
 	((cores < 1)) && cores=1
 	local compilers=$((cores < swift_jobs ? cores : swift_jobs))
 	step "coverage floors ($cores cores)"
-	SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH=$cores swift test -j "$compilers" "${jobs[@]:2}" --disable-xctest \
+	# One test at a time: the coverage counters are plain, and two tests running the same function lose increments. A
+	# branch's count is often derived (a guard's fall-through is the entry count less the else count), so a lost
+	# increment turned a branch run 5 times in 20,938 calls into 0 and failed a 100% floor on one runner but not
+	# another (2026-11-16, AckSync.swept). LLVM's atomic counters would fix it at the root, but Swift Build gives
+	# `-Xswiftc` to host tools alone.
+	SWT_EXPERIMENTAL_MAXIMUM_PARALLELIZATION_WIDTH=1 swift test -j "$compilers" "${jobs[@]:2}" --disable-xctest \
 		--only-use-versions-from-resolved-file --enable-code-coverage --scratch-path .build-cov
 	python3 scripts/coverage-gate.py --scratch-path .build-cov --threads "$cores"
 }

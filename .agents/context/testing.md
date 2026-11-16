@@ -115,6 +115,12 @@ ladder, not the first.
 - **Why the script runs `llvm-cov` itself:** Swift Build runs each test target as its own binary, and
   `swift test --show-codecov-path` exports coverage for only some of them. The script passes every test
   binary to `llvm-cov export`.
+- **The coverage run takes one test at a time.** Its counters are plain, and parallel tests lost increments, so
+  a branch whose count is derived from two others could read 0 on one runner and not another. LLVM's atomic
+  counters (`-instrprof-atomic-counter-update-all`) would fix that at the root, but under Swift Build
+  `-Xswiftc` reaches host tools alone. A test that covers a line only through a dictionary's order is the other
+  way coverage differs between machines: the order follows the process and its heap, so make the test hold one
+  path.
 
 ## Conventions
 
