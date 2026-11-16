@@ -6,8 +6,8 @@ A, the liar, on dongle A with `run --lying`, and B, the honest owner of a small 
 kept off the receiver for the pass through the iPhone's `deny-link`, and both peers refuse every node but the ones a
 step allows. Every case starts B on a fresh photo, so no node holds it and no earlier mark on the receiver applies.
 
-    python3 scripts/door_cap.py --device iphone --other pixel-3.home:5559
-    python3 scripts/door_cap.py --device pixel-3.home:5559 --other iphone
+    python3 scripts/door_cap.py --device iphone --other <adb serial>
+    python3 scripts/door_cap.py --device <adb serial> --other iphone
 
 The cases run in the order 1, 5, 3, 4, 2: 5 needs a liar passed over as in 1; 3 needs a liar that never held the photo,
 so A starts afresh; and 2 goes last, since A's own sweep declines the junk hash. Each prints one `PASS` or `FAIL` line

@@ -693,7 +693,7 @@ class IPhoneRotateTest(unittest.TestCase):
             interop._rings_heard(lambda: entries, phone, IPHONE, 0, 0)
 
     def test_a_head_start_dial_to_a_linked_node_is_a_redial(self) -> None:
-        node = "dlrr2hznxypyove635fmd56xvy"
+        node = IPHONE
         unlinked = [f"link down {node} on ch3", f"link head start over for {node} (dwell=24000ms rssi=-28dBm)", f"link up {node} on ch5"]
         self.assertEqual(interop._redials_while_linked(unlinked, node), {})
         # The handle of a tag nobody resolved is not the node.
