@@ -16,23 +16,24 @@
         private var player: AVAudioPlayer?
         /// Whether the loaded note played to its end, which the player's delegate says.
         private var playedOut = false
-        private var watching: [any NSObjectProtocol] = []
 
         /// A player logging to `log`.
         init(log: any KnitLog) {
             self.log = log
             super.init()
-            let center = NotificationCenter.default
-            watching = [
-                center.addObserver(forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main) { [weak self] note in
-                    let reason = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt).flatMap(
-                        AVAudioSession.RouteChangeReason.init)
-                    guard reason == .oldDeviceUnavailable else {
-                        return
-                    }
-                    MainActor.assumeIsolated { self?.pause() }
+            // The app makes one player for its life (`AppEnvironment.voiceNotes`), so the observer is never removed. It
+            // holds the player weakly, so it does nothing once the player has gone.
+            // swiftlint:disable:next discarded_notification_center_observer - it is never removed, as said above.
+            NotificationCenter.default.addObserver(
+                forName: AVAudioSession.routeChangeNotification, object: nil, queue: .main
+            ) { [weak self] note in
+                let reason = (note.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt).flatMap(
+                    AVAudioSession.RouteChangeReason.init)
+                guard reason == .oldDeviceUnavailable else {
+                    return
                 }
-            ]
+                MainActor.assumeIsolated { self?.pause() }
+            }
         }
 
         func play(_ bytes: [UInt8], from milliseconds: Int) -> Bool {
