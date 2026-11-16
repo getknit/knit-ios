@@ -62,6 +62,13 @@ import Testing
         #expect(rig.links.aliases.standing(tag)?.nodeId == low)
         #expect(rig.clock.monotonicMilliseconds() - closed < 30_000)
         _ = rig.handle(.sighted(LinkRig.sighting(low)))
+        // The sighting meets the window's dwell, so we also dial `low` in the clear. That dial fails here, leaving the tag
+        // dial as the only attempt on `low`: with both open, either held the relink back, and the order the channel map
+        // happened to list them in decided which, so neither the tag's branch nor its coverage was certain.
+        let clear = try #require(rig.radio.dials.last)
+        #expect(clear.channel != dial.channel, "the sighting dialed low in the clear")
+        _ = rig.handle(.dialFailed(clear.channel))
+        #expect(Array(rig.links.channels.keys) == [dial.channel], "only the tag dial is open")
         let hello = peer.hello(told: nil, addressed: high)
         _ = rig.handle(.accepted(ChannelID(101)))
         _ = rig.handle(.received(ChannelID(101), required(LinkRecord(.hello, payload: hello).encoded)))
