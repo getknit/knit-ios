@@ -13,6 +13,9 @@ extension RatchetSessions {
         /// The scope of the session's previous root, while it drains (C-3.1-2): pulled, never refilled (C-3.1-3). `nil`
         /// when there is none, or its drain ended.
         public let retiring: ScopeKeys?
+        /// When ``retiring``'s drain ends (`prevRootExpiresAt`, our clock), `nil` with no retiring scope: the spool plane
+        /// reads the table again then (ADR 2026-11.adrq, P4a).
+        public var retiringUntil: Int64?
     }
 
     /// The DM scopes of every session that exports one, read in a unit of its own (`exportedRoots`,
@@ -36,7 +39,12 @@ extension RatchetSessions {
                 let retiring = session.prevRoot.flatMap { prevRoot in
                     session.prevRootExpiresAt > now ? Self.dmScope(of: prevRoot, ours, peer) : nil
                 }
-                return DMScopes(peerId: peer, live: Self.dmScope(of: session.root, ours, peer), retiring: retiring)
+                return DMScopes(
+                    peerId: peer,
+                    live: Self.dmScope(of: session.root, ours, peer),
+                    retiring: retiring,
+                    retiringUntil: retiring == nil ? nil : session.prevRootExpiresAt
+                )
             }
         }
         guard case .committed(let scopes) = unit else {

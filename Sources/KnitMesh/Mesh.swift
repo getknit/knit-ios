@@ -34,6 +34,9 @@ public actor Mesh {
     private var advertisedRevision = -1
     /// What says the wall clock was set, and its observer while running (``wallClockChanged()``).
     var clockWatch = ClockWatch()
+    /// The spool plane's synchronous core (ADR 2026-11.adrq, P4a), beside the links: its relays' heal loops and connections,
+    /// the scope table and the shared seal cache. It carries no relay until P4b's sockets add one.
+    var spool: SpoolPlane
 
     /// Whether the mesh is running: started, and not stopped since.
     public private(set) var isRunning = false
@@ -86,6 +89,7 @@ public actor Mesh {
         self.radio = radio
         self.clock = clock
         nodeId = identity.nodeId
+        spool = SpoolPlane(me: identity.nodeId)
         (events, continuation) = AsyncStream<MeshEvent>.makeStream()
     }
 
@@ -161,6 +165,7 @@ public actor Mesh {
     public func fireDueTimers() {
         apply(links.advance())
         engine.advance()
+        spool.tick(engine: engine)
         settle()
     }
 
@@ -174,6 +179,7 @@ public actor Mesh {
     /// Accepts a message request, and fetches its photos (``MeshEngine/accept(_:)``).
     public func accept(_ conversationId: String) {
         engine.accept(conversationId)
+        spool.markTableDirty()
         settle()
     }
 
@@ -208,7 +214,10 @@ public actor Mesh {
     /// Deletes a whole thread from this iPhone, sending nothing (``MeshEngine/deleteChat(_:)``, ADR 2026-10.u7cq).
     @discardableResult
     public func deleteChat(_ conversationId: String) -> Bool {
-        defer { settle() }
+        defer {
+            spool.markTableDirty()
+            settle()
+        }
         return engine.deleteChat(conversationId)
     }
 
@@ -244,6 +253,7 @@ public actor Mesh {
     /// accepts.
     public func setVerified(_ peer: NodeId, _ verified: Bool) {
         engine.setVerified(peer, verified)
+        spool.markTableDirty()
         settle()
     }
 
@@ -281,26 +291,6 @@ public actor Mesh {
     /// Who is typing where now (``MeshEngine/typingNow``).
     public var typing: [String: [NodeId]] { engine.typingNow }
 
-    /// What the links did with FILE records so far.
-    public var files: FileCounts {
-        links.fileCounts(rejected: engine.filesRejected)
-    }
-
-    /// What the blob holder query has done so far, both ends.
-    public var blobs: BlobCounts { engine.blobCounts }
-    /// How far each kept file streaming in has got (``LinkManager/arrivingFiles``); one past its END is stored this turn.
-    public var arrivingFiles: [BlobHash: FileIntake.Reading] { links.arrivingFiles }
-    /// Doorbells rung on peers' links, to wake a suspended iPhone (``LinkManager/rings``).
-    public var rings: Int { links.rings }
-    /// Rings of this node's own doorbell (``LinkManager/ringsHeard``).
-    public var ringsHeard: Int { links.ringsHeard }
-    /// Whether the radio is seeking peers (``LinkManager/isSeeking``).
-    public var isSeeking: Bool { links.isSeeking }
-    /// Wakes spent seeking (``LinkManager/seekWakes``).
-    public var seekWakes: Int { links.seekWakes }
-    /// Times seeking began (``LinkManager/seekSpells``).
-    public var seekSpells: Int { links.seekSpells }
-
     /// What the router has done so far.
     public var routerCounters: Router.Counters { engine.routerCounters }
 
@@ -327,7 +317,11 @@ public actor Mesh {
         if engine.custodyRevision != advertisedRevision {
             advertisedRevision = engine.custodyRevision
             links.updateDigestCue(engine.digestCue)
+            // The one place a custody change is noticed: every relay's scopes look again (ADR 2026-11.adrq, P4a).
+            spool.custodyChanged()
         }
+        // After the work's outermost commit: a session row that moved reads the scope table again.
+        spool.refreshTable(engine: engine)
         // Before the timer is aimed: a listing's limiter release and first slot edge are deadlines too (ADR 2026-11.sv5t).
         engine.feedPresenceKeys()
         schedule()
@@ -341,7 +335,7 @@ public actor Mesh {
 
     private func schedule() {
         // A stopped mesh keeps its deadlines, and the next start fires whatever fell due meanwhile.
-        let next = isRunning ? [engine.nextDeadline, links.nextDeadline].compactMap(\.self).min() : nil
+        let next = isRunning ? [engine.nextDeadline, links.nextDeadline, spool.nextDeadline].compactMap(\.self).min() : nil
         guard next != scheduled else {
             return
         }

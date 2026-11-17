@@ -1,5 +1,3 @@
-import KnitCrypto
-import KnitStore
 import KnitWire
 
 /// One relay's heal loop over the DM scopes it carries (`ScopeSync.Worker`, knit-next `ScopeSync.kt:1884-2290`,
@@ -98,12 +96,14 @@ internal struct ScopeHeal: Sendable, CustomStringConvertible, CustomDebugStringC
     }
 
     /// The local fold `scope`'s last heal compared, or `nil` before one.
-    func localFold(_ scope: SpoolID) -> UInt64? {
+    /// Read by the tests alone, through `@testable`, which `swiftlint analyze` (Sources only) does not see.
+    func localFold(_ scope: SpoolID) -> UInt64? { // swiftlint:disable:this unused_declaration
         states[scope]?.localFold
     }
 
     /// `scope`'s state: its accounted, invalid and unpushable sets, park and stamp.
-    func state(_ scope: SpoolID) -> ScopeState? {
+    /// Read by the tests alone, through `@testable`, which `swiftlint analyze` (Sources only) does not see.
+    func state(_ scope: SpoolID) -> ScopeState? { // swiftlint:disable:this unused_declaration
         states[scope]
     }
 

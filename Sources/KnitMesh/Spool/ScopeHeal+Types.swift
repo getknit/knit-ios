@@ -1,4 +1,3 @@
-import KnitCrypto
 import KnitStore
 import KnitWire
 
@@ -91,6 +90,10 @@ extension ScopeHeal {
         var lastHealAt: Int64?
         /// The local fold the last heal compared (`localDigests`), for `status` and the tests.
         var localFold: UInt64?
+        /// Whether the next heal lists whatever the fold says: a candidate the engine could not take (``Settlement/notTaken``)
+        /// left the spool's anchor folding a blob custody lacks only when a pull named it, and a live `event` moves no
+        /// anchor, so a fold equal to the anchor would never list it again (ADR 2026-11.adrq, P4a).
+        var listOwed = false
     }
 
     /// A round: the scopes still due, and the one custody read that serves them all (`healAll`, `:1896-1899`).

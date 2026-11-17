@@ -36,7 +36,7 @@ extension MeshEngine {
         }
         switch envelope.type {
         case .chat:
-            handleChat(envelope, via: frame.from, signed: !frame.wire.sig.isEmpty, origin: .firstVerdict)
+            handleChat(envelope, route: RatchetInbound.Route(hop: frame.from, signed: !frame.wire.sig.isEmpty, origin: .firstVerdict))
         case .profile:
             handleProfile(frame.wire, envelope)
         case .receipt:
@@ -149,11 +149,11 @@ extension MeshEngine {
     }
 
     /// A chat frame (`InboundPipeline.handleChat` and `decryptAndDeliver`): a room post, a DM addressed to us, or a
-    /// group message (``handleGroupChat(_:group:sender:via:origin:)``). Someone else's DM is only relayed. `signed` is false only for
-    /// the v3 live-link tick ``verify(_:)`` admitted unsigned: its AEAD is what authenticates it, so it takes no branch
-    /// before its open. `origin` is the ratchet's alone: whether a DM-form frame's open is its first verdict, or the
-    /// start's replay out of our own custody (``RatchetInbound/Origin``).
-    func handleChat(_ envelope: RelayEnvelope, via hop: NodeId?, signed: Bool, origin: RatchetInbound.Origin) {
+    /// group message (``handleGroupChat(_:group:sender:via:origin:)``). Someone else's DM is only relayed. `route` is where
+    /// it came from (a link, our custody or a spool, kept into the ratchet's replay so a spool's failures feed no reset, ADR
+    /// 2026-11.adrq), whether it came signed (not the v3 tick ``verify(_:)`` admits) and whether this is its first verdict.
+    func handleChat(_ envelope: RelayEnvelope, route: RatchetInbound.Route) {
+        let (hop, signed, origin) = (route.hop, route.signed, route.origin)
         guard let sender = NodeId(envelope.senderId) else {
             return
         }
@@ -194,7 +194,7 @@ extension MeshEngine {
             deliverRoomPost(envelope, chat, sender: sender, via: hop)
             return
         }
-        receiveSealed(envelope, enc, sender: sender, route: RatchetInbound.Route(hop: hop, signed: signed, origin: origin))
+        receiveSealed(envelope, enc, sender: sender, route: route)
     }
 
     /// A cleartext room post (`decryptAndDeliver`'s clear branch, `InboundPipeline.kt:1115-1124` at knit-next `4408e0fca`).
@@ -221,7 +221,10 @@ extension MeshEngine {
         // only (`:950`): this gate never opens, so it is what lets the ratchet delete a spent key, and an unsigned frame
         // proves nothing until it opens.
         if route.signed, stores.messages.contains(envelope.id) {
-            acknowledge(envelope, sender: sender)
+            // A relay's copy of a DM this phone already holds is never acknowledged again (ADR 2026-11.adrq, P4a).
+            if !route.isSpool {
+                acknowledge(envelope, sender: sender)
+            }
             return
         }
         // With the ratchet's switch on, DM-form v2 and v3 frames to us open through it (`:966-971`); off, they drop in

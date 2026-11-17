@@ -179,6 +179,19 @@ internal struct ScopeCandidate: Sendable, CustomStringConvertible, CustomDebugSt
         envelope = decoded
     }
 
+    /// The type the envelope claims, and its id and `signed` length: what the engine's oversize-profile door reads before
+    /// it verifies anything (``MeshEngine/receiveFromSpool(_:relay:)``).
+    var claimedType: FrameType { envelope.type }
+    var frameId: String { envelope.id }
+    var signedByteCount: Int { wire.signed.count }
+
+    /// The frame, once its signature verifies against the key `pick` names for the envelope as served: the engine's
+    /// `verifierBundle(for:)`, which reads the sender, the type and a profile's own key, and nothing that acts. `nil` when
+    /// `pick` names none, or ``verified(by:)`` refuses.
+    func verified(picking pick: (RelayEnvelope) -> PublicKeyBundle?) -> ScopeFrame? {
+        pick(envelope).flatMap(verified(by:))
+    }
+
     /// The frame, once its signature verifies over its bytes as served against `bundle`, which must derive to the claimed
     /// sender (`InboundPipeline.canCarry`'s check). The key is the engine's `verifierBundle`: ours for our own frame, the
     /// payload's own key for a profile, the pinned key otherwise; a candidate with no key is refused. `nil` for an unsigned

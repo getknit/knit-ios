@@ -137,7 +137,7 @@ extension MeshEngine {
         let released = pendingGroupKeys.release(group.id) { !departed.contains(ExactKey($0.envelope.senderId)) }
         for parked in released {
             groupCounts.groupSeedsReplayed += 1
-            handleChat(parked.envelope, via: parked.route.hop, signed: parked.route.signed, origin: parked.route.origin)
+            handleChat(parked.envelope, route: parked.route)
         }
         return released.map(\.envelope.id)
     }

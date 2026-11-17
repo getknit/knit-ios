@@ -185,10 +185,11 @@ extension MeshEngine {
     /// path, its plan and its floors (``sendSessionReset(to:now:cause:)``), and the frame is let past the router once for
     /// the peer's re-seal of it, as a counted failure is. Otherwise, or if that reset declines, it counts toward the
     /// heuristic only as `NO_SESSION`, which the engine answers only while no session is held: with one, it is evidence
-    /// about an era we no longer hold. Never at a start's replay or for an unsigned frame, as no failure counts there.
+    /// about an era we no longer hold. Never at a start's replay, for an unsigned frame or for one a spool served, as no
+    /// failure counts there (ADR 2026-11.adrq, P4a).
     private func resolvedStale(_ open: DirectOpen, failure: RatchetEngine.OpenOutcome.Failed, resetsAtOnce: Bool) {
         refused(open.envelope, failure, header: open.header, stale: true)
-        guard open.route.signed, open.route.origin == .firstVerdict else {
+        guard open.route.signed, open.route.origin == .firstVerdict, !open.route.isSpool else {
             return
         }
         // Whatever follows, the peer may re-seal this id after a reset of either side's: one copy is let past the router,
@@ -291,7 +292,7 @@ extension MeshEngine {
     /// a link, its first verdict. A copy another copy of its id already committed is gone (``RatchetReplay/forget(_:)``).
     /// The rest are decided by their row, read in a unit of its own: a row lets the copy go, so a DM delivered another
     /// way, or deleted since, is not acknowledged again; a read the store fails fails the unit and keeps the copy; with no
-    /// row, the copy opens again. Each goes through ``handleChat(_:via:signed:origin:)`` as it came, so the router's
+    /// row, the copy opens again. Each goes through ``handleChat(_:route:)`` as it came, so the router's
     /// dedup, which marked its id when it arrived, is no part of it.
     func replayFailedRatchetOpens() {
         let kept = ratchetReplay.take()
@@ -305,7 +306,7 @@ extension MeshEngine {
             }
             switch unread {
             case .committed(let copy?):
-                handleChat(copy.envelope, via: copy.route.hop, signed: copy.route.signed, origin: copy.route.origin)
+                handleChat(copy.envelope, route: copy.route)
             case .committed(nil):
                 continue
             case .joined, .abandoned, .failed:
@@ -336,7 +337,7 @@ extension MeshEngine {
             }
             // Custody verified it, and the chat door reads the block list and the rest again. Custody kept no hop, so a
             // photo it carries is asked of its author first.
-            handleChat(envelope, via: nil, signed: !carried.sig.isEmpty, origin: .startReplay)
+            handleChat(envelope, route: RatchetInbound.Route(hop: nil, signed: !carried.sig.isEmpty, origin: .startReplay))
         }
     }
 

@@ -1,5 +1,4 @@
 import KnitCrypto
-import KnitWire
 
 /// A blob the spool sent, from its claim to its settlement (`accept`, `refuse`, `quarantine` and `account`,
 /// `ScopeSync.kt:2996-3049`, `:3145-3228`).
@@ -51,7 +50,8 @@ extension ScopeHeal {
     /// - ``Settlement/unopenable`` or ``Settlement/refusedByCarry``, a refusal of the frame's own bytes: released, and
     ///   quarantined when it was pulled (`refuse`, `:3145-3152`). It is not counted against the relay: anyone who knows the
     ///   scope could have pushed it, or the spool minted it, and the hourly budget bounds what such blobs cost.
-    /// - ``Settlement/notTaken``: released, nothing more, so a later round may pull it again.
+    /// - ``Settlement/notTaken``: released, and the scope's next heal lists whatever its fold says, so a later round pulls
+    ///   it again: a live `event` moves no anchor, and the fold would otherwise match the spool's stale word (P4a).
     /// - delivered: the claim is kept and the connection's set trimmed (`settle`), the blob leaves the unpushable set, and
     ///   it is accounted when custody did not keep it live or it was late (C-9.6-1). Asking custody rather than
     ///   re-deriving its rule is Kotlin's choice (`:3042-3047`): its TTL and quotas decide, and a second copy here would
@@ -65,6 +65,9 @@ extension ScopeHeal {
             }
         case .notTaken:
             session.release(candidate.scope, blobId: candidate.blobId)
+            // A live blob moved no anchor, so only a listing finds it again once the store recovers.
+            states[candidate.scope]?.listOwed = true
+            markDirty(candidate.scope)
         case .delivered(let keptLive):
             session.settle(candidate.scope)
             if candidate.isLate || !keptLive {

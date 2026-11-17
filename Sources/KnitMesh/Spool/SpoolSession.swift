@@ -1,4 +1,3 @@
-import KnitCrypto
 import KnitWire
 
 /// One spool connection's record layer, as a value (`SpoolConnection.kt` in knit-next at `0832b8462`, spec §7.1–7.2,

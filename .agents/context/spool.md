@@ -66,7 +66,8 @@ commons, attachments, TURN, tickets, casts and signals stay out.
   deliver one blob twice); per spool and scope, the invalid set (512, pulled blobs that failed, never an `event`) and
   the accounted set (512, delivered ids custody did not keep, which outlives a connection).
 - **The bridge** (§9.4): a pulled frame that passes enters as a re-served copy (ttl reset, hops 0), through the
-  ordinary inbound path. The SeenSet dedupes it; it never counts as a radio overhear; it is relayed onto the radios.
+  engine's one spool door. The SeenSet dedupes it; it never counts as a radio overhear; it is relayed onto the radios
+  when this delivery newly carried it and it is not late, under one budget per engine (this port's own, P4a).
 - **Proof of work** (§8): `SHA-256("knit/spool/v1/pow" ‖ scopeId ‖ u64be(day) ‖ u64be(n))` with at least `powBits`
   leading zero bits, `day` the UTC day number, accepted for yesterday to tomorrow. Mined only after `err pow` on a
   request that carried no stamp, then sent at once. Refused above 24 bits; at most 2^26 tries; a stamp is reused
@@ -109,7 +110,7 @@ commons, attachments, TURN, tickets, casts and signals stay out.
 | `SpoolConnection.kt` | `Sources/KnitMesh/Spool/SpoolSession.swift` (with `+Inbound`, `+Anchors` and `SpoolSessionEvent.swift`) | blobs, security |
 | `SpoolBackoffPolicy.kt`, the wait in `ScopeSync.Worker.runLoop` | `Sources/KnitMesh/Spool/SpoolBackoff.swift` | blobs, security |
 | `ScopeFrames.kt` (DM half), `ScopeRegistry.kt` (DM half), `ScopeSync.kt` | `Sources/KnitMesh/Spool/` (P3b, P4) | blobs, security |
-| `MeshManager.kt:1185` (`handleInbound(…, "spool:<url>")`) | a `.spool` source on `InboundFrame`, `Mesh.receiveFromSpool` | blobs, crypto, security |
+| `MeshManager.kt:1185` (`handleInbound(…, "spool:<url>")`) | `MeshEngine.receiveFromSpool` (`Spool/MeshEngine+Spool.swift`), a `.spool` source on `RatchetInbound.Route`; `InboundFrame` stays link-only | blobs, crypto, security |
 | `OkHttpSpoolDialer.kt` | `Sources/KnitSpoolNet/` (`URLSessionWebSocketTask`, FoundationNetworking on Linux) | security |
 | `InternetRelayScreen.kt`, `RelayInviteApplier.kt`, `SettingsStore` keys | `Sources/KnitAppCore/` and `Sources/Knit/`, `AppPreferences` | security |
 | `FakeSpool.kt`, `LabInternet.kt` | `Tests/KnitMeshTests/FakeSpool.swift` (the text subset), `LabInternet` in P4 | — |
@@ -136,7 +137,8 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 | P2 | the export (`RatchetCrypto.exportRoot`), scope crypto and proof of work (`KnitCrypto/Scope`: `ScopeKeys`, `ScopeCrypto`, `SpoolPow`), `RatchetSessions.dmScopes(now:)` in `RatchetSessions+Scopes`; `FuzzSpool` opens blobs | done 2026-11-16 |
 | P3a | the connection (`SpoolSession`), `SpoolBackoff`, the fake spool's record layer, hostile-input tests | done 2026-11-16 |
 | P3b | the DM frame rules (`ScopeFrames`, `mayRefill`), the heal loop (`ScopeHeal`), the gated scope table (`ScopeTable`), the seal cache, the pull budget (`SpoolIntake`), convergence tests | done 2026-11-17 |
-| P4 | the engine's wiring, the `.spool` source, the bridge, two-engine tests | next |
+| P4a | the engine's spool door, settlement, the bridge and its budget, reset evidence, the table's inputs and re-reads, `SpoolPlane`, two-engine tests over `FakeSpool` | done 2026-11-17 |
+| P4b | sockets, mining tasks, backgrounding, backoff, logging, `status` | next |
 | P5 | `KnitSpoolNet`, `check.sh spool` against the daemon | |
 | P6 | the app: settings, consent, invites, the release gate | |
 | P7 | device trials | |
@@ -222,9 +224,10 @@ any set. What P4 wires:
   `verifierBundle(for:)` (ours for our own frame, the payload's own key for a profile, the pinned key otherwise), or the
   `ScopeFrame` passes through the engine's `verify` path; a candidate with no key settles `.unopenable`.
 - **Settle every candidate in the turn that delivers it,** with a two-engine test:
-  - `.delivered(keptLive: custody.frame(id, now:) != nil)`, read in the same turn, when the engine took the frame **or its
-    router dropped it as already seen**. A second relay's pull of a frame the first relay delivered is such a drop: it
-    is accounted, never quarantined.
+  - `.delivered(keptLive: custody.frame(id, now:) != nil)`, read in the same turn, when the engine took the frame. A
+    copy whose id the router already saw is carried and delivered when custody does not hold it, and settles
+    `.delivered(keptLive: true)` with nothing else done when custody does. A second relay's pull of a frame the first
+    relay delivered is the second case: it is accounted, never quarantined.
   - `.unopenable` for a signature that fails or a sender with no key; `.refusedByCarry` only for a refusal about the
     frame's own bytes (both quarantine a pulled blob).
   - `.notTaken` when a store unit failed: the claim is released and nothing else (no quarantine, no intake count).
@@ -239,6 +242,59 @@ any set. What P4 wires:
 - A log line per kind per interval for `Counts` (overlong listings, quarantines, faults, parks, budget deferrals, capped
   stamps, replays), in Kotlin's words where it has one, naming at most a scope id's prefix, never beside a node id.
 - `custodyChanged()` from every path that writes or sweeps custody, and `adopt` after every table change.
+
+### The engine entry as P4a left it (2026-11-17)
+
+- **Where the plane lives.** `SpoolPlane` (`Spool/SpoolPlane.swift`) is a struct `Mesh` owns beside `links`: the
+  `ScopeTable`, one `ScopeHeal` and `SpoolSession` per relay, and one `ScopeSealCache` lent to each heal for the input it
+  runs. Every input (`add`, `remove`, `connected`, `receive`, `socketClosed`, `stampMined`, `tick`) runs to completion in
+  one turn, and each candidate a heal raises is settled through the engine before the heal's next input. The driver
+  takes `takeOutgoing(relay)` (records and a close) and `takeMining()` (`.mine`, `.cancel`). It carries no relay until
+  P4b adds one, so it keeps no timer and reads no table. `SpoolLab` (`Tests/KnitMeshTests/SpoolLab.swift`) is the
+  synchronous driver the two-engine tests use.
+- **The door** is `MeshEngine.receiveFromSpool(_:relay:)` (`Spool/MeshEngine+Spool.swift`), in this order: the oversize
+  profile check (`.delivered(keptLive: false)`, nothing marked seen); the signature against `verifierBundle(for:)`'s key,
+  read in a unit of its own (`.notTaken` when it did not commit), never `verify(_:)`, so no key request and no
+  `PendingInbound` hold (`.unopenable`); "custody held it before" in a unit of its own (`.notTaken` on failure); the carry
+  gate and `Router.admitPulled` (no ingress budget, no overhear). A copy the router already saw is carried and delivered
+  when custody does not hold it, never bridged, and settles kept with nothing else done when custody does
+  (`MeshEngine.pulledAdmission`). Then custody's carry through `CustodySync.carrying`, which surfaces `.writeFailed`
+  (`.notTaken`); delivery with no link (a chat's route is `.spool`, its hop `nil`; a profile as any is); `keptLive` in a
+  unit of its own (`.notTaken` on failure). Every custody outcome, refusals included, is `.delivered`.
+- **A failed unit takes back the mark this turn made** (`Router.reopenPulled`, `SeenSet.forget`), never `reopen`, which is
+  once per window: a second failure must not leave an id seen and unheld. An id the router saw before the turn keeps its
+  mark. And a `.notTaken` candidate owes its scope a listing (`ScopeState.listOwed`): a live `event` moves no anchor, so
+  the fold would otherwise match the spool's stale word and never list the blob again.
+- **The bridge**: only a frame this delivery newly carried (not held before, custody changed, held after) that is not
+  late, as a flood heard from nobody (`Router.relayPulled`), under one `SpoolBridgeBudget` per engine shared by every relay
+  (32 in a burst, one back every two seconds), a token spent only on a frame the router schedules (`Router.relaysPulled`).
+  Over it, the frame is kept and custody's digest exchange carries it. Counts: `spoolInbound.counts.bridged`,
+  `.bridgeDeferred`, the router's `spoolAdmitted`, `spoolDeduplicated`, `spoolNonCanonical`, `spoolBridged`.
+- **No reset evidence from a spool** (`.agents/context/crypto.md`, the reset heuristic). A relay's copy of a DM this phone
+  already holds is never acknowledged again; a first delivery over the relay is. Accepted limit: a peer's re-sealed copy
+  of a DM this phone already holds, reaching it only by a relay, earns no new ✓✓ until a radio copy arrives; it belongs to
+  the deferred reset unit.
+- **The table's inputs** (`Spool/MeshEngine+SpoolTable.swift`): `dmScopes`, `DirectContacts.candidates`, the blocked ids
+  (the device-tag blocks resolved over every pinned peer) and our own activity (our send time, a peer's arrival here,
+  from the thread heads) are each read in a unit of their own; any `nil` keeps the table and keeps it dirty. It is read
+  again when `RatchetSessions.generation` moved, when `markTableDirty()` says so (`Mesh`'s unblock, accept, delete, verify
+  and add-contact), at the earliest drain end, and every 60 s, and only between inputs, so after the outermost commit. A
+  table change cancels the mining of a scope that left in the same turn. A block (`SpoolPlane.block`, from `Mesh.block`)
+  drops the peer's scopes in its own turn whatever the stores answer; a later read of the blocked set that succeeds
+  decides, and one that fails keeps the table without them.
+- **Custody changed** is called once, where `Mesh.settle` notices a custody revision change, beside the digest cue.
+- **Kotlin's cases left out of the lab**: `InternetPlaneLabTest`'s group, photo, file, ticket, commons and invite cases;
+  all six of `ResetOverRelayLabTest`, which wait for the deferred reset unit (`SpoolResetLabTests` names them).
+
+### What P4b owes from P4a (2026-11-17)
+
+- Sockets and miners are tasks that post into `Mesh` methods wrapping the plane's inputs, then `settle()`; a cancelled
+  search is never answered. `Mesh.fireDueTimers` already ticks the plane, and `schedule()` reads its deadline.
+- `status` and a log line per kind per interval for `SpoolInbound.Counts`, the heal's `Counts` and `unreadableTables`.
+- The drain end is on the wall clock and is read at the next input or the 60 s reconcile at the latest.
+- A `Mesh.block`-level test with a live relay: no `sub`, `pull` or `.mine` for the peer's scope in the block's turn.
+- Remove the `unused_declaration` disables on `SpoolPlane`'s inputs and outputs (`add`, `remove`, `connected`, `receive`,
+  `socketClosed`, `takeOutgoing`, `takeMining`, `stampMined`) and on `SpoolBackoff` once their callers land.
 
 ### What later phases owe from P3a's reviews (2026-11-16)
 

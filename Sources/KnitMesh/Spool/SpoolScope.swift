@@ -92,8 +92,10 @@ internal struct BoundedIDSet: Sendable, Equatable {
         self.bound = max(bound, 1)
     }
 
-    var count: Int { order.count }
-    var isEmpty: Bool { order.isEmpty }
+    /// How many ids it holds, and whether none. Read by the tests alone, through `@testable`, which `swiftlint analyze`
+    /// (Sources only) does not see.
+    var count: Int { order.count } // swiftlint:disable:this unused_declaration
+    var isEmpty: Bool { order.isEmpty } // swiftlint:disable:this unused_declaration
     /// The ids, oldest first.
     var ordered: [SpoolID] { order }
 

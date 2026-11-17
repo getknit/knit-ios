@@ -51,6 +51,10 @@ public final class RatchetSessions {
     /// Per peer, when a session we initiated was confirmed: the peer adopted our init no later than it sealed that answer,
     /// so its replacement floor runs until at least a minute past this (`confirmedAt`, `:106-111`).
     var confirmedAt: [NodeId: Int64] = [:]
+    /// Bumped by every settlement that may have moved a session row's DM scopes (``Settlement/movesScopes``), once its unit
+    /// commits as the outermost or its caller settles it: the spool plane reads ``dmScopes(now:)`` again when it moves
+    /// (ADR 2026-11.adrq, P4a). In memory: a fresh process reads the table at its first turn anyway.
+    public private(set) var generation = 0
 
     /// A session service for `identity` over `store`, whose units `transactor` runs, logging to `log`. `engine` draws from
     /// the system's generator unless a test or a vector replay passes another.
@@ -123,6 +127,9 @@ public final class RatchetSessions {
     /// the caller's outermost unit commits.
     public func settle(_ settlement: Settlement) {
         let peer = settlement.peer
+        if settlement.movesScopes {
+            generation &+= 1
+        }
         if let adopted = settlement.replacementAdoptedAt {
             lastReplacementAt[peer] = adopted
         }

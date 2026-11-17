@@ -6,6 +6,8 @@ extension Mesh {
     /// the cleared face.
     public func block(_ peer: NodeId) {
         engine.block(peer)
+        // The peer's scopes, and their mining, go in this turn whatever the stores answer (ADR 2026-11.adrq, P4a).
+        spool.block(peer, engine: engine)
         settle()
     }
 
@@ -13,6 +15,7 @@ extension Mesh {
     /// asked for when its bytes are gone.
     public func unblock(_ peer: NodeId) {
         engine.unblock(peer)
+        spool.markTableDirty()
         settle()
     }
 }

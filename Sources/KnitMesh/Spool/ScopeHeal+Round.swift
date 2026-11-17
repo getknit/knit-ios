@@ -64,11 +64,12 @@ extension ScopeHeal {
         state.lastHealAt = now.monotonic
         states[id] = state
         // The `sub` has not been answered yet: there is nothing to compare against (`:1931`).
-        guard let anchor = session.anchor(id), anchor.digest != fold else {
+        guard let anchor = session.anchor(id), anchor.digest != fold || state.listOwed else {
             return
         }
         // The session sends a LIST for every scope it anchored while it stands.
         if let request = session.list(id, now: now.monotonic) {
+            states[id]?.listOwed = false
             counts.listings += 1
             step = Step(
                 scope: scope,

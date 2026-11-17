@@ -67,6 +67,11 @@ internal struct ScopeTable: Sendable, Equatable {
         return next == self ? .unchanged : .table(next)
     }
 
+    /// This table without `peer`'s scopes: what a block's turn holds until a read of the blocked set decides.
+    func dropping(_ peer: NodeId) -> Self {
+        Self(scopes: scopes.filter { $0.peer != peer }, relays: relays)
+    }
+
     /// The scopes with each id once, the first kept: two peers can never derive one id, but a table keyed by id must not
     /// trust that.
     private static func unique(_ scopes: [SpoolScope]) -> [SpoolScope] {

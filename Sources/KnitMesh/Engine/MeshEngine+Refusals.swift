@@ -23,15 +23,17 @@ extension MeshEngine {
     /// and logged with the id's first characters and the length, never the payload; not a ``DropReason``, so it is never
     /// read as a missing key.
     func refusesOversizeProfile(_ frame: InboundFrame) -> Bool {
-        let length = frame.wire.signed.count
-        guard frame.envelope.type == .profile, length > stores.custody.limits.maxProfileSignedBytes else {
+        refusesOversizeProfile(type: frame.envelope.type, id: frame.envelope.id, signedCount: frame.wire.signed.count)
+    }
+
+    /// ``refusesOversizeProfile(_:)`` over a frame's type, id and `signed` length: what the spool's door reads before it
+    /// verifies a candidate (ADR 2026-11.adrq, P4a).
+    func refusesOversizeProfile(type: FrameType, id: String, signedCount length: Int) -> Bool {
+        guard type == .profile, length > stores.custody.limits.maxProfileSignedBytes else {
             return false
         }
         profileDoorRefused += 1
-        log.log(
-            .debug,
-            "mesh refused \(frame.envelope.id.prefix(CustodySync.idCharacters)) (profile): \(length) signed bytes over the profile cap"
-        )
+        log.log(.debug, "mesh refused \(id.prefix(CustodySync.idCharacters)) (profile): \(length) signed bytes over the profile cap")
         return true
     }
 }

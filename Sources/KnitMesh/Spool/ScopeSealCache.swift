@@ -32,7 +32,8 @@ internal struct ScopeSealCache: Sendable {
     private var clock = 0
 
     /// How many verdicts are kept.
-    var count: Int { entries.count }
+    /// Read by the tests alone, through `@testable`, which `swiftlint analyze` (Sources only) does not see.
+    var count: Int { entries.count } // swiftlint:disable:this unused_declaration
 
     /// Every frame of `frames` that may ride `scope`, sealed, in custody's order: what `ScopeSync.held` builds, keyed by
     /// blob id there and in order here.

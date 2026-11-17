@@ -72,6 +72,14 @@ public struct Router: Sendable {
         public var suppressed = 0
         /// Point-to-point frames handed their last hop.
         public var handedOn = 0
+        /// Frames a spool served admitted as new, counted apart from ``admitted`` (ADR 2026-11.adrq, P4a).
+        public var spoolAdmitted = 0
+        /// Frames a spool served that were already seen, counted apart from ``deduplicated``.
+        public var spoolDeduplicated = 0
+        /// Frames a spool served with an id not of their type's shape, counted apart from ``nonCanonical``.
+        public var spoolNonCanonical = 0
+        /// Spool frames scheduled onto the radios (the bridge), counted apart from the relays they become.
+        public var spoolBridged = 0
     }
 
     private struct PendingRelay: Sendable {
@@ -141,6 +149,36 @@ public struct Router: Sendable {
         return .new
     }
 
+    /// Decides whether a frame a spool served is new (ADR 2026-11.adrq, P4a): the id's shape and the seen set, and nothing
+    /// a link's door adds. No ingress budget, which meters a link, and no overhear: a spool is no neighbour, so its copy
+    /// neither counts toward cancelling a relay nor is ever skipped when one fires (`MeshRouter.kt:64`, `:132-136` at
+    /// knit-next `0832b8462`). The heal loop's hourly budget bounds what a spool can bring.
+    public mutating func admitPulled(envelope: RelayEnvelope, now: Int64) -> Admission {
+        guard FrameId.admits(envelope) else {
+            counters.spoolNonCanonical += 1
+            return .nonCanonical
+        }
+        guard seen.insert(envelope.id, now: now) else {
+            counters.spoolDeduplicated += 1
+            return .duplicate
+        }
+        counters.spoolAdmitted += 1
+        return .new
+    }
+
+    /// Schedules the bridge of a frame a spool served, admitted by ``admitPulled(envelope:now:)`` and delivered: a flood
+    /// heard from nobody, so it goes to every neighbour when it fires, and the first radio copy that follows is the first
+    /// overhear, not the second. `wire` is the re-served copy (ttl reset, hops 0). Answers whether it was scheduled.
+    public mutating func relayPulled(_ wire: WireEnvelope, id: String, jitter: Int64, now: Int64) -> Bool {
+        guard relaysPulled(wire) else {
+            return false
+        }
+        pending[ExactKey(id)] = PendingRelay(relayed: wire.relayed(), heardFrom: [], fireAt: now + jitter, sequence: nextSequence)
+        nextSequence += 1
+        counters.spoolBridged += 1
+        return true
+    }
+
     /// Schedules the relay of a frame just admitted and delivered, and answers the one write that cannot wait.
     ///
     /// A flooded frame waits `jitter` milliseconds, drawn by the caller from `0..<jitterWindowMilliseconds`,
@@ -190,6 +228,19 @@ public struct Router: Sendable {
     /// Cancels every pending relay (`MeshRouter.stop`).
     public mutating func cancelAll() {
         pending.removeAll()
+    }
+
+    /// Whether ``relayPulled(_:id:jitter:now:)`` would schedule `wire`: a flood with hops left. The spool's door asks first,
+    /// so it spends a bridge token only on a frame the router will send.
+    public func relaysPulled(_ wire: WireEnvelope) -> Bool {
+        wire.relay && hasHopsLeft(wire)
+    }
+
+    /// Takes back the seen mark ``admitPulled(envelope:now:)`` just made for `id`, when the spool's door could not take the
+    /// frame (a store unit failed): the next round's copy is new again, however many times the store fails, so a frame is
+    /// never left seen and unheld (ADR 2026-11.adrq, P4a). Only after an admission that answered ``Admission/new``.
+    mutating func reopenPulled(_ id: String) {
+        seen.forget(id)
     }
 
     /// Lets one more copy of `id` in inside its window (``SeenSet/reopen(_:now:)``).

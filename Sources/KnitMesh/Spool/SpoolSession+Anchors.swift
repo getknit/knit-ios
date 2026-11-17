@@ -93,7 +93,8 @@ extension SpoolSession {
     }
 
     /// How many ids `scope` has claimed on this connection, delivered and in flight.
-    func claimCount(_ scope: SpoolID) -> Int {
+    /// Read by the tests alone, through `@testable`, which `swiftlint analyze` (Sources only) does not see.
+    func claimCount(_ scope: SpoolID) -> Int { // swiftlint:disable:this unused_declaration
         claims[scope]?.count ?? 0
     }
 
@@ -104,7 +105,8 @@ extension SpoolSession {
 
     /// How many entries the per-connection books hold, each pull's named and oversize ids and each waiting `sub`'s scopes
     /// counted, for the tests that flood a session.
-    var bookSize: Int {
+    /// Read by the tests alone, through `@testable`, which `swiftlint analyze` (Sources only) does not see.
+    var bookSize: Int { // swiftlint:disable:this unused_declaration
         let requests = pending.values.reduce(0) { $0 + 1 + $1.unserved.count + $1.oversize.count }
         let subs = subsInFlight.values.reduce(0) { $0 + $1.waiting.count }
         return requests + subs + subscriptions.count + anchors.count + claims.values.reduce(0) { $0 + $1.count }

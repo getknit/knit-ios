@@ -147,6 +147,16 @@ extension RatchetSessions {
         let resetSealedAt: Int64?
         /// Our init's answer is moot: we left that root.
         let clearsConfirmedAt: Bool
+        /// An open moved the session row's root, previous root or confirmation without any of the above: a first session
+        /// established, or a responder's confirmed from the start (ADR 2026-11.adrq, P4a).
+        var movedRow = false
+
+        /// Whether the session row's scopes may have moved (``RatchetSessions/dmScopes(now:)``): a replacement or reset
+        /// adopted, our reset sealed, our init answered, a row moved, or every row forgotten. What bumps
+        /// ``RatchetSessions/generation`` once the unit commits.
+        var movesScopes: Bool {
+            movedRow || replacementAdoptedAt != nil || initAnsweredAt != nil || resetSealedAt != nil || clearsConfirmedAt
+        }
 
         /// Whether the heuristic's frame ids go: a fresh session or our own reset makes them moot (`RatchetSessions.kt:211`,
         /// `:435`, `:466`).

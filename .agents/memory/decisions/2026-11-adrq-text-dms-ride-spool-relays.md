@@ -176,3 +176,35 @@ protocol byte for byte and needs no Android change.
   senders. A spool's `maxScopes` is each session's own cap, never the table's.
 - None of it changes what a spool or a peer receives beyond fewer `list`, `pull` and stamped records: no record, field or
   capability moves.
+
+**Amended 2026-11-17 (P4a, the engine's spool door; a draft until the maintainer accepts it):**
+
+- **One door.** A frame a spool served enters the engine through `MeshEngine.receiveFromSpool` alone, in one synchronous
+  turn: the oversize profile check, the signature against the key the engine already picks for the frame, whether custody
+  held it before, the router's seen set, custody's carry, delivery with no link, and whether custody holds it after. The
+  read of the key and each custody read is a store unit of its own. `InboundFrame` stays the radio's. A candidate with no
+  key or a bad signature marks nothing seen, asks for no key and parks nothing. A pulled copy that custody does not hold
+  is carried and delivered even when the router has already seen its id, and is never bridged.
+- **Settlement.** Every custody outcome, refusals included, settles as delivered with whether custody holds the frame
+  live. A failed store unit settles as not taken: the router's mark this turn made for that frame is taken back whatever
+  the window, and the scope owes a listing, so the frame comes again once the store recovers.
+- **The bridge.** A pulled frame goes onto the radios only when this delivery newly carried it (custody did not hold it
+  before, the carry changed custody, custody holds it after) and it is not late, as a flood heard from no neighbour, and
+  under one budget per engine, shared by every relay, of 32 frames in a burst and one more every two seconds; a token is
+  spent only on a frame the router schedules. A frame over the budget is kept, and custody's digest exchange carries it.
+- **Spool frames feed no reset evidence.** A failure of a frame a spool served never counts toward the reset heuristic,
+  resets nothing at once and lets nothing past the router, until the deferred reset unit. The frame's source rides with
+  it into the ratchet's replay and a seed's wait.
+- **A relay's copy of a DM this phone already holds is never acknowledged again.** A first delivery over the relay is
+  acknowledged as any is. The accepted limit: a peer's re-sealed copy of a DM this phone already holds, reaching it only by
+  a relay, earns no new ✓✓ until a radio copy arrives; it belongs to the deferred reset unit.
+- **A reset's re-sealed tail never crosses the relay.** Custody keeps the first bytes stored under an id, and the heal
+  pushes only what custody holds, so a re-seal of an id reaches a peer over the radios alone.
+- **The table.** Its inputs (the confirmed sessions' scopes, the accepted peers, the blocked peers and this phone's own
+  activity) are each read in a store unit of their own, and any that fails keeps the table. It is read again after every
+  commit that may move a session row's scopes, after a block, an unblock, an acceptance, a deleted thread or a
+  verification, when a retiring scope's drain ends, and every 60 s; a scope that leaves cancels its stamp search in the
+  same turn. A block drops the peer's scopes in its own turn whatever the stores answer, and a later read of the blocked
+  set that succeeds decides. Our own reset takes the pair's scopes out before the next heal input.
+- None of it changes what a spool or a peer receives beyond fewer bridged frames on the radios: no record, field or
+  capability moves.

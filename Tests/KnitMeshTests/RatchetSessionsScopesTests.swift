@@ -172,4 +172,31 @@ import Testing
         )
         #expect(!RatchetSessions.exports(ownReset), "Kotlin's pendingResetInit exception is deferred")
     }
+
+    /// The generation the spool plane reads (ADR 2026-11.adrq, P4a) moves with each settlement that may move a row's scopes,
+    /// and with nothing else.
+    @Test func theGenerationMovesOnlyWhenARowsScopesMay() throws {
+        let (alice, bob) = try RatchetSessionSide.pair()
+        let opener = try alice.seal("hello", now: Self.t0)
+        #expect(alice.sessions.generation == 0, "a plain seal: 0")
+        #expect(plaintext(try bob.open(opener, now: Self.t0)) != nil)
+        #expect(bob.sessions.generation == 1, "a responder's first open: +1")
+        #expect(plaintext(try alice.open(bob.seal("hi", now: Self.t0 + 1), now: Self.t0 + 1)) != nil)
+        #expect(alice.sessions.generation == 1 && bob.sessions.generation == 1, "an init answered: +1, the reply's seal: 0")
+        #expect(plaintext(try bob.open(opener, now: Self.t0 + 2)) == nil)
+        #expect(bob.sessions.generation == 1, "a refused open: 0")
+
+        let (carol, dave) = try RatchetSessionSide.pair()
+        let fromCarol = try carol.seal("carol opens", now: Self.t0)
+        let fromDave = try dave.seal("dave opens", now: Self.t0)
+        let roots = [carol.session?.root, dave.session?.root]
+        _ = try carol.open(fromDave, now: Self.t0 + 1)
+        _ = try dave.open(fromCarol, now: Self.t0 + 1)
+        let sides = [carol, dave]
+        let losers = sides.indices.filter { sides[$0].session?.root != roots[$0] }
+        #expect(losers.count == 1, "one side lost the race")
+        for index in losers {
+            #expect(sides[index].sessions.generation == 1, "a lost race: +1")
+        }
+    }
 }

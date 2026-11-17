@@ -42,6 +42,13 @@ public struct SeenSet: Sendable {
         return now - last < window
     }
 
+    /// Forgets `id` whatever its window, for an insert its caller takes back in the same turn: the spool's door, whose
+    /// delivery a failed store unit undid (``Router/reopenPulled(_:)``). Not ``reopen(_:now:)``, which a peer's re-serve
+    /// may buy once per window: the door's insert is its own, and a second failure must not leave the id marked seen.
+    mutating func forget(_ id: String) {
+        seen.remove(id)
+    }
+
     /// Lets one more copy of `id` through inside its window, for a sealed DM this node took but could not open
     /// because it no longer holds the session. The sender's answer to our reset is a fresh seal under the same id
     /// (no wire change, and the exists-gate dedups it), which can land seconds after the copy custody just served

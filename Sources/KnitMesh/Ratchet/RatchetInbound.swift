@@ -27,15 +27,50 @@ internal enum RatchetInbound {
         case startReplay
     }
 
-    /// How a sealed DM reached the inbound path: the neighbour that handed it over, if one did, whether it came signed,
-    /// and where it comes from.
+    /// How a sealed DM reached the inbound path: where it came from, whether it came signed, and whether this open is its
+    /// first verdict.
     struct Route: Equatable, Sendable {
-        /// The neighbour it came over; `nil` out of our own custody, which kept no hop.
-        let hop: NodeId?
+        /// Where a frame came from (ADR 2026-11.adrq, P4a): what its failures may set in motion, and whether a photo it
+        /// carries is asked of a neighbour first.
+        enum Source: Equatable, Sendable {
+            /// Off a link, handed over by this neighbour.
+            case link(NodeId)
+            /// Out of our own custody, which kept no hop.
+            case custody
+            /// Pulled from a spool relay (``MeshEngine/receiveFromSpool(_:relay:)``): no neighbour handed it over, and a
+            /// frame from a spool is never evidence for a reset.
+            case spool
+        }
+
+        /// Where it came from.
+        let source: Source
         /// Whether its signature verified; `false` only for the v3 live-link tick.
         let signed: Bool
         /// Whether this open is its first verdict.
         let origin: Origin
+
+        /// A route from `source`.
+        init(source: Source, signed: Bool, origin: Origin) {
+            self.source = source
+            self.signed = signed
+            self.origin = origin
+        }
+
+        /// A route off the link `hop`, or out of our own custody when `hop` is `nil`.
+        init(hop: NodeId?, signed: Bool, origin: Origin) {
+            self.init(source: hop.map(Source.link) ?? .custody, signed: signed, origin: origin)
+        }
+
+        /// The neighbour it came over; `nil` out of our own custody or from a spool.
+        var hop: NodeId? {
+            guard case .link(let neighbor) = source else {
+                return nil
+            }
+            return neighbor
+        }
+
+        /// Whether a spool served it.
+        var isSpool: Bool { source == .spool }
     }
 
     /// Whether `enc` is the DM form the ratchet arm takes: v2 or v3, both of which carry the header `r`
@@ -100,9 +135,10 @@ internal enum RatchetInbound {
     /// ``RatchetResetPolicy/triggeringFailures``, from a frame whose signature verified, at its first verdict. `AEAD_FAIL`
     /// may count only because the signature came first (knit-next `d1984ea9`); the unsigned tick never counts, or three
     /// forged frames with distinct ids would buy an attacker a reset per pair; and a start's replay never does, or the
-    /// tail an era left in our custody would buy a reset at every restart past the 6 h floor.
+    /// tail an era left in our custody would buy a reset at every restart past the 6 h floor. A frame from a spool is never
+    /// evidence for a reset (ADR 2026-11.adrq, P4a), until the deferred reset unit.
     static func countsTowardReset(_ failure: RatchetEngine.OpenOutcome.Failed, route: Route) -> Bool {
-        route.signed && route.origin == .firstVerdict && RatchetResetPolicy.triggeringFailures.contains(failure)
+        route.signed && route.origin == .firstVerdict && !route.isSpool && RatchetResetPolicy.triggeringFailures.contains(failure)
     }
 
     /// The ids a receipt acknowledges, the single `ack` first, each once by its bytes, at most ``maxReceiptAcks``

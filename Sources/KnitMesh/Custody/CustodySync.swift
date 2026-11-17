@@ -66,10 +66,21 @@ public struct CustodySync: Sendable {
     /// "Changed" is not "held": a frame its own write evicted changed custody and is not held (``CustodyStoreResult``).
     /// Nothing here pulls a carried frame's photo (ADR 2026-10.ym9y), so nothing reads ``CustodyStoreResult/held`` yet.
     public mutating func carry(_ frame: CarriedFrame, in store: some CustodyStore, now: Int64, authenticate: () -> Bool) -> Bool {
+        carrying(frame, in: store, now: now, authenticate: authenticate).changed
+    }
+
+    /// What ``carry(_:in:now:authenticate:)`` did, whole: whether custody changed, and the store's answer when the frame
+    /// reached the store, `nil` when this side's own gates kept it out (not custodial, held, tombstoned, an early receipt,
+    /// or `authenticate` refused it). The spool's door reads ``CustodyStoreResult/refusal`` for a write that failed
+    /// (ADR 2026-11.adrq, P4a); the radio's door reads ``changed`` alone.
+    public mutating func carrying(
+        _ frame: CarriedFrame, in store: some CustodyStore, now: Int64, authenticate: () -> Bool
+    ) -> (changed: Bool, stored: CustodyStoreResult?) {
         guard admits(frame, in: store, now: now), authenticate() else {
-            return false
+            return (false, nil)
         }
-        return noted(store.store(frame, origin: .relayed, now: now), for: frame)
+        let result = store.store(frame, origin: .relayed, now: now)
+        return (noted(result, for: frame), result)
     }
 
     /// Takes a frame of ours into custody (ORIGIN_SELF): trivially authentic, and under the same quotas, the same byte cap

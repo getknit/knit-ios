@@ -396,7 +396,11 @@ ADR 2026-11.adrq carries text DMs through knit-next's spools; `.agents/context/s
   from `root` and, while `prevRootExpiresAt` is past `now`, the retiring one from `prevRoot`. No root or
   `pairwiseRoot` leaves `KnitMesh/Ratchet`. `nil` means a store could not answer, which a caller reads as no change.
   Kotlin's exception for our own unanswered reset (knit-next ADR 2026-10.j67x) is deferred until the reset's slot and
-  race rules are ported, so such a reset exports nothing.
+  race rules are ported, so such a reset exports nothing. Each scope pair says when its retiring scope's drain ends
+  (`retiringUntil`), and `RatchetSessions.generation` moves at every settlement that may move a row's scopes
+  (`Settlement.movesScopes`: a replacement adopted, our reset sealed, our init answered, a root, previous root or
+  confirmation an open moved, every row forgotten), once the unit commits, so the plane reads `dmScopes` again only after
+  the outermost commit (P4a).
 - **The seal** is deterministic (§4.3), so two members push one blob. `open` checks the blob's hash, then its length
   (at least 94 bytes, before any slice, where Kotlin leaves a short tag to `doFinal`), the version byte `0x01`, the
   AEAD under `"knit/scope/v1" ‖ scopeId`, and splits 64 bytes of signature from `signed`. Every failure is `nil`.
@@ -684,6 +688,10 @@ epoch export             "knit/dm/v2/export/epoch": reserved for a spool seal ve
     rule off until the peer seals under the new root. So a reset's re-seal no longer recovers a DM late behind live
     traffic on a cap-retired base, a cost knit-next accepts (its #180).
   - Each counted frame gets one copy past the router's dedup (`reopen`).
+  - **A frame a spool served is never evidence** (ADR 2026-11.adrq, P4a), until the deferred reset unit: its route
+    carries `RatchetInbound.Route.Source.spool`, `countsTowardReset` is false for it, and `resolvedStale` neither resets
+    at once nor calls `unreadable()` for it. The source rides `ratchetReplay.keep` and a seed's wait (`PendingGroupKeys`);
+    `PendingInbound` never holds a spool frame, since the spool's door verifies without parking.
 - **Reset plans** (knit-next ADR 2026-09.qerd; `RatchetSessions.kt:393-469`):
   - **Re-root:** a fresh init flagged `FLAG_RESET`, numbering again from 1.
   - **Mark:** flag our own init that is still unanswered.

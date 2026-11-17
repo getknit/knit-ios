@@ -5,6 +5,7 @@ extension Mesh {
     /// 2026-10.tpr5).
     public func addContact(_ card: ContactCard.Card, from source: ContactSource, unblock: Bool) -> ContactAdded {
         let added = engine.addContact(card, from: source, unblock: unblock)
+        spool.markTableDirty()
         settle()
         return added
     }

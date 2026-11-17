@@ -65,6 +65,7 @@ extension RatchetSessions {
                     adoptedReplacement: opened.delta.purgePeerRecvState,
                     answeredOurInit: Self.answeredOurInit(was: held, next: opened.delta.session)
                 )
+                settlement.movedRow = Self.movesScopes(was: held, next: opened.delta.session)
                 return stale ? .openedStale(plaintext: opened.plaintext, work: work) : .opened(plaintext: opened.plaintext, work: work)
             }
         }
@@ -135,6 +136,16 @@ extension RatchetSessions {
             allowReplacement: now &- (lastReplacementAt[peer.nodeId] ?? 0) >= RatchetResetPolicy.replacementFloor(flags: header.flags),
             resetRequested: header.flags & RatchetHeader.resetFlag != 0
         )
+    }
+
+    /// Whether an open moved what ``dmScopes(now:)`` derives from the row: its root, its previous root and that root's
+    /// drain, or its confirmation (ADR 2026-11.adrq, P4a).
+    static func movesScopes(was: RatchetEngine.SessionState?, next: RatchetEngine.SessionState) -> Bool {
+        guard let was else {
+            return true
+        }
+        return was.root != next.root || was.confirmed != next.confirmed || was.prevRoot != next.prevRoot
+            || was.prevRootExpiresAt != next.prevRootExpiresAt
     }
 
     /// Whether an open answered our own init: a session we initiated, unconfirmed, now confirmed and still ours, not a race
