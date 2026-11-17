@@ -364,7 +364,8 @@ any set. What P4 wires:
   - The backgrounding trial: iPhone and Pixel 9 apart over `public-1`, Knit in the background at least 10 minutes while
     the Pixel sends 5 DMs, then foregrounded: every DM lands, ✓✓ within 2 minutes, `failures` 0 and `dropFaults` 0 in
     `status` after the resume, the first redial within about 1 s.
-- **Before P5**, the first phase a relay serves real frames, a two-engine test on the two seen sets (`SpoolMeshRig` with
+- **Before P5** (met: `SpoolSeenSetsTests.aFrameFirstSeenFromASpoolAndThenByRadioCountsTowardNoReset`, 2026-11-17),
+  the first phase a relay serves real frames, a two-engine test on the two seen sets (`SpoolMeshRig` with
   a radio `TestPeer`): a ratchet DM X reaches A first by the spool and fails to open; the same X then arrives by radio
   inside 10 minutes. Pass: no reset counted, no second open, `noteUndecryptable` never called for X; the peer's
   reset-evidence counters can stand in for a `noteUndecryptable` hook. Not written in P4b1: serving X sealed under a
