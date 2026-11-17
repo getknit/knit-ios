@@ -169,7 +169,8 @@ protocol byte for byte and needs no Android change.
 - **Parks and stamps.** A `sub` refusal under `quota` or `pow` parks the scope for the session's clamped
   `parkMilliseconds`, and a refused stamp on a push parks it the same way; any other refused push parks nothing. At most
   two stamps are mined per scope per UTC day, counting only searches that found one; past them the scope parks until the
-  day rolls. A search that found none parks the scope for the shortest park.
+  day rolls. A search that found none parks the scope for the shortest park (amended by P4b2 below: the allowance counts
+  stamps obtained, mined or from the engine's cache, and a whole search that found none parks until the next UTC day).
 - **A live event already accounted or quarantined is dropped** before it is claimed.
 - **The gate reads `DirectContacts.candidates`**, the facts the presence keys already read (accepted and authored DM
   threads, verified peers), less every blocked id; never `Conversations.isAccepted`, whose group branch counts a group's
@@ -253,8 +254,8 @@ protocol byte for byte and needs no Android change.
   every relay.
 - **A stamp answer reaches the heal with no session.** It clears the search, keeps and counts the stamp and marks the
   scope wanted; only the `sub` waits for a session. An answer the heal no longer waits on changes and counts nothing. A
-  request is matched by its value until P4b2 gives each one a plane-assigned serial. Every search in `mining` has exactly one search queued or running,
-  and ends in exactly one answer or one cancel.
+  request is matched by its plane-assigned serial (P4b2 below). Every request in `mining` is attached to exactly one search
+  queued or running, and ends in exactly one answer or one cancel.
 - **The spool's own seen set.** A pulled id goes into a seen set of the spool's own, of the radios' size and window, and
   both doors check both sets, so a spool backlog never evicts a radio id. A failed store unit forgets the id from the
   spool's set; a reopen reopens it in whichever set holds it, each set at most once per window.
@@ -264,3 +265,55 @@ protocol byte for byte and needs no Android change.
   per-frame debug lines say `spool` and name neither the relay nor the scope. `status` gains a `spool` key of handles and counts.
 - None of it changes what a spool or a peer receives beyond fewer pushes and bounded reads: no record, field or
   capability moves.
+
+**Amended 2026-11-17 (P4b2, the stamp miner; a draft until the maintainer accepts it):**
+
+- **One miner per engine.** The plane holds the miner's bookkeeping as a value (`SpoolMiner`): the requests by serial, the
+  values they wait on, the one run, the cache and the budget. Only the runner is off the actor: one serial `DispatchQueue`
+  per engine at `.utility` (Linux ignores the QoS), never the cooperative pool, a detached task or the `Mesh` actor. It
+  hashes one search with a stop flag behind a KnitSync `Lock`, read every 65,536 counters, and posts the result through a
+  task that holds the mesh weakly. A mesh that goes only sets the flag; a shutdown a test awaits waits for the queue
+  without blocking a thread.
+- **Identity by serial.** Each request takes a serial from one counter per engine, and an answer clears a scope's search
+  only when its serial matches: an identical request asked again is a new request.
+- **One search per value.** A value is (scope, day, bits). Every request for it attaches to it, across relays, and at most
+  one search runs engine-wide. A cancel detaches its request; the search is told to stop only when none is left, and a
+  request that attaches again clears the stop. Every request ends in exactly one answer (found, exhausted or over budget)
+  or in its own cancel. A stopped search is never answered: it resumes from the counter it reached while requests remain,
+  or is dropped.
+- **The heal's answers.** Found: the stamp is kept with the bits it actually meets, and counts toward the day's two stamps
+  whether a search or the engine's cache produced it, so the allowance is two stamps obtained (mined or from the engine's
+  cache) per scope per UTC day. Exhausted, a whole search of 2^26 counters that found none: the scope parks until the UTC
+  day after the request's day, which replaces P3b's shortest park. Over budget: the scope parks for the answer's park, at
+  least 5 minutes and at most a day. Every answer reaches the heal with or without a session. The heal's daily count is
+  not the CPU bound; the engine's charge per peer is, and it outlives a scope leaving the table.
+- **The cache,** per (scope, day): the best stamp found with the bits it actually has, the fewest bits a whole search came
+  up empty at, and per bits the counter a stopped search reached. An ask at a find's bits or fewer, or at an exhaustion's
+  bits or more, is answered at once; a search resumes from the furthest counter reached at its bits or fewer. It is read when
+  a request is asked and whenever the queue is looked at. An entry leaves when its day is past reuse on the wall clock,
+  never because its scope left the table; past 512 entries (two days of two scopes for each of the table's 128 peers) the
+  scopes not in the table go first, then the oldest day.
+- **The budget.** Over a rolling 24 h on the monotonic clock, charged with each search's `tried`: the engine at most 2^29
+  counters, one relay at most 2^28, one peer at most 2^27, kept in hourly buckets so a charge stays at least 24 h. A
+  search starts only when the engine and both shares hold its whole remaining range (2^26 less where it resumes);
+  otherwise its requests are answered over budget at once, with the park until that much frees, counted apart (over
+  budget, over the relay's share, over the peer's share). A value several relays ask for is charged to the least-spent of
+  those relays whose share holds, ties by handle; it is refused for want of a relay share only when none holds.
+- **Order.** A free runner takes the value whose charged relay has spent the fewest counters in the window, then whose
+  peer has, then the scope's rank in the table (live before retiring, most recent activity first), then the oldest request.
+- **Stamp bits.** A stamp is sent only while the bits it meets reach the session's `powBits`. Kotlin's stamp cache keys by
+  scope alone; the bits rule, the shares and the engine cache are this port's own.
+- **Retiring scopes.** A retiring scope whose drain ends within the table's 60 s reconcile asks for no search and parks
+  until the drain ends, at least the shortest park, counted.
+- **Pause.** No search starts while the plane is paused. A pause stops the running search with its requests attached, and
+  the resume starts it again from the counter it reached, before any other value, in the resume's own turn.
+- **Counts.** `status`'s `spool` key gains the miner's counts (searches started, found, exhausted, stopped, resumed;
+  values refused over budget, over a relay's share, over a peer's share; requests answered from the cache, and asks not
+  taken for a scope the miner's table no longer carried; counters spent in the window) and each relay's `stampsRetiring`,
+  as counts alone.
+- **Owed.** P6 persists the window's buckets and the cache's found entries (scope, day, counter, bits) in the database, not
+  `UserDefaults`, and the plane does not ship in a store build before then. P5's `check.sh spool` runs at
+  `SPOOL_POW_BITS=24` with many scopes (oracle: the `status` counts show at most one search per (scope, day, bits) and at
+  most 2^29 counters spent in 24 h). P7 keeps an energy log over an hour against a lab spool at 24 bits with Knit in the
+  background half the time (pass: no hashing while paused, no termination for CPU use).
+- None of it changes what a spool or a peer receives beyond fewer stamped `sub`s: no record, field or capability moves.

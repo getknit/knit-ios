@@ -41,8 +41,10 @@ public actor Mesh {
     let spoolSockets: (any SpoolSocketFactory)?
     /// Each relay's socket task.
     var spoolTasks = SpoolTasks()
-    /// Stamp searches the plane asked for, waiting for a runner.
-    var spoolMiningQueue: Set<SpoolMiningRequest> = []
+    /// What runs the miner's stamp searches off this actor, made on the first search (``DispatchStampRunner``).
+    var spoolRunner: (any SpoolStampRunner)?
+    /// The search the runner holds, and its stop flag.
+    var spoolSearch: (run: Int64, flag: SpoolStopFlag)?
     /// Whether the spool runs while the mesh does: ``pauseSpool()`` clears it and ``resumeSpool()`` sets it.
     var spoolWanted = true
     /// How many times the timer fired, for the tests that bound it.
@@ -108,7 +110,7 @@ public actor Mesh {
     deinit {
         eventLoop?.cancel()
         timer?.cancel()
-        Self.release(spoolTasks)
+        Self.release(spoolTasks, search: spoolSearch?.flag)
         continuation.finish()
     }
 

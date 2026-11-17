@@ -11,7 +11,7 @@ enum SpoolCandidates {
     /// `me`'s view of a scope shared with `peer`, from a fixed root.
     static func scope(_ me: TestPeer, _ peer: TestPeer, seed: Int = 40) -> SpoolScope {
         let keys = ScopeCrypto.dmScope(pairwiseRoot: fixtureBytes(32, seed: seed), me.nodeId, peer.nodeId)
-        guard let scope = SpoolScope.of(keys, peer: peer.nodeId, retiring: false) else {
+        guard let scope = SpoolScope.of(keys, peer: peer.nodeId, retiring: false, retiringUntil: nil) else {
             preconditionFailure("a derived scope id is 32 bytes")
         }
         return scope

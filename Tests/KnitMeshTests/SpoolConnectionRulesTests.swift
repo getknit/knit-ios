@@ -109,10 +109,10 @@ import Testing
         lab.run(2)
         let request = try #require(lab.pendingMining.first)
         lab.socketClosed(1)
-        let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits).counter
-        lab.planes[1].stampMined(request, counter: counter, engine: lab[1].engine)
+        let found = HealMember.found(request)
+        lab.planes[1].stampMined(request, found, engine: lab[1].engine)
         #expect(lab.link(1)?.counts.stampsAnsweredOffline == 1)
-        lab.planes[1].stampMined(request, counter: counter, engine: lab[1].engine)
+        lab.planes[1].stampMined(request, found, engine: lab[1].engine)
         #expect(lab.link(1)?.counts.stampsAnsweredOffline == 1, "the second answer was stale")
     }
 
@@ -153,7 +153,7 @@ import Testing
         let wall = fixture.clock.wallMilliseconds()
         for (index, peer) in peers.enumerated() {
             try fixture.pin(peer)
-            guard let scope = SpoolScope.of(ScopeFixture.keys(100 + index), peer: peer.nodeId, retiring: false) else {
+            guard let scope = SpoolScope.of(ScopeFixture.keys(100 + index), peer: peer.nodeId, retiring: false, retiringUntil: nil) else {
                 Issue.record("a scope")
                 return
             }

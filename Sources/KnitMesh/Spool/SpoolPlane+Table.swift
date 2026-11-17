@@ -65,6 +65,7 @@ extension SpoolPlane {
     /// its connection.
     mutating func adopt(_ next: ScopeTable) {
         table = next
+        miner.adopt(next.scopes)
         for (handle, var state) in relays {
             state.heal.adopt(next.scopes)
             mining += state.heal.drain().compactMap(Mining.init)

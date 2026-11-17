@@ -1,3 +1,4 @@
+import KnitCrypto
 public import KnitWire
 
 /// The spool's sockets (ADR 2026-11.adrq, P4b1): one task per dial that opens the socket, reads it and posts every message
@@ -9,8 +10,9 @@ public import KnitWire
 /// - The reader calls ``SpoolSocket/receive()`` only after its last post returned, and waits on a continuation this actor
 ///   resumes when the plane says the inbound budget came back, or a close ends it.
 /// - At most one send is in flight per relay.
-/// - A stamp search the plane asks for waits in ``spoolMiningQueue`` until a runner takes it (a later phase); the plane's
-///   cancel takes it out.
+/// - The plane's miner (``SpoolMiner``, P4b2) decides every stamp search; this side carries its runner's actions: a job to
+///   ``spoolRunner``, which hashes it on its own queue and posts the result to ``spoolStampMined(_:_:)`` through a task that
+///   holds the mesh weakly, and the stop flag set or cleared under its lock.
 extension Mesh {
     /// One relay's task, its socket once open, and its reader's wait.
     struct SpoolTask {
@@ -67,7 +69,7 @@ extension Mesh {
     }
 
     /// The spool plane as `status` shows it: relays by handle and counts.
-    public var spoolStatus: SpoolStatus { spool.status(inbound: engine.spoolInbound.counts) }
+    public var spoolStatus: SpoolStatus { spool.status(inbound: engine.spoolInbound.counts, now: engine.clock.monotonicMilliseconds()) }
 
     /// The plane's next deadline, and the redial of `relay` while it has no session.
     /// Read by the tests alone, through `@testable`, which `swiftlint analyze` (Sources only) does not see.
@@ -129,12 +131,27 @@ extension Mesh {
         settle()
     }
 
-    /// A stamp search ended: what the runner calls with what it found, or `nil` when it ran out of tries.
-    /// P4b2's miner calls it; until then the tests alone do, through `@testable`, which `swiftlint analyze` does not see.
-    func spoolStampMined(_ request: SpoolMiningRequest, counter: Int64?) { // swiftlint:disable:this unused_declaration
-        spoolMiningQueue.remove(request)
-        spool.stampMined(request, counter: counter, engine: engine)
+    /// The runner's result for the miner's run `run`: what ``SpoolPow`` answered, found, exhausted or cancelled.
+    func spoolStampMined(_ run: Int64, _ search: SpoolPow.Search) {
+        if spoolSearch?.run == run {
+            spoolSearch = nil
+        }
+        spool.searchEnded(run, search, engine: engine)
         settle()
+    }
+
+    /// Uses `runner` for every search from now on, in place of the queue a mesh makes on its first search.
+    /// Called by the tests alone, through `@testable`, which `swiftlint analyze` (Sources only) does not see.
+    func useSpoolRunner(_ runner: any SpoolStampRunner) { // swiftlint:disable:this unused_declaration
+        spoolRunner = runner
+    }
+
+    /// Stops the running search and waits until the runner has returned it, blocking no thread: what a test awaits before it
+    /// lets the mesh go. ``deinit`` only sets the flag.
+    /// Called by the tests alone, through `@testable`, which `swiftlint analyze` (Sources only) does not see.
+    func shutdownSpoolMiner() async { // swiftlint:disable:this unused_declaration
+        spoolSearch?.flag.set(true)
+        await spoolRunner?.drain()
     }
 
     // MARK: Carrying the plane's asks
@@ -142,13 +159,8 @@ extension Mesh {
     /// Carries out what the plane asked since the last turn, queues its stamp searches, and writes its log lines. ``settle()``
     /// calls it after every input.
     func serviceSpool() {
-        for ask in spool.takeMining() {
-            switch ask {
-            case .mine(let request):
-                spoolMiningQueue.insert(request)
-            case .cancel(let request):
-                spoolMiningQueue.remove(request)
-            }
+        for action in spool.serviceMiner(engine: engine) {
+            carry(action)
         }
         // A close can make another (a send that finds no socket ends its session), so carry until none is left.
         var actions = spool.takeActions()
@@ -160,6 +172,27 @@ extension Mesh {
         }
         for line in spool.logLines(inbound: engine.spoolInbound.counts, now: engine.clock.monotonicMilliseconds()) {
             engine.log.log(.warning, line)
+        }
+    }
+
+    /// The miner's one run goes to the runner, with a fresh stop flag; a stop or a proceed sets or clears that flag. The
+    /// miner names only its running search, which is the one held here.
+    private func carry(_ action: SpoolMiner.Action) {
+        switch action {
+        case .start(let job):
+            let flag = SpoolStopFlag()
+            spoolSearch = (job.run, flag)
+            let runner = spoolRunner ?? DispatchStampRunner()
+            spoolRunner = runner
+            runner.run(job, stop: flag) { [weak self] search in
+                Task { [weak self] in
+                    await self?.spoolStampMined(job.run, search)
+                }
+            }
+        case .stop:
+            spoolSearch?.flag.set(true)
+        case .proceed:
+            spoolSearch?.flag.set(false)
         }
     }
 
@@ -263,8 +296,10 @@ extension Mesh {
         }
     }
 
-    /// Ends every task when the actor goes: their posts find nothing, and a parked reader stops.
-    nonisolated static func release(_ tasks: SpoolTasks) {
+    /// Ends every task when the actor goes: their posts find nothing, and a parked reader stops. A running search is only
+    /// told to stop, never waited for.
+    nonisolated static func release(_ tasks: SpoolTasks, search: SpoolStopFlag?) {
+        search?.set(true)
         for entry in tasks.running.values {
             entry.task?.cancel()
             entry.socket?.close(code: SpoolCloseCode.goingAway)

@@ -7,8 +7,9 @@ import Testing
 
 /// Engines of this port over one ``FakeSpool`` and, when a test links them, the radios of an ``EngineLab``: the P4a driver
 /// (ADR 2026-11.adrq). Each node owns a ``SpoolPlane`` as ``Mesh`` does, and the lab ferries each relay's records between
-/// the plane and its connection, hands the plane every custody revision change as ``Mesh/settle()`` does, and mines a
-/// stamp the moment one is asked for. Every clock moves together; the spool's runs on the wall clock.
+/// the plane and its connection, hands the plane every custody revision change as ``Mesh/settle()`` does, and carries the
+/// heals' stamp asks through the plane's miner (P4b2), running each search the moment the miner starts it, or holding it for
+/// the test. Every clock moves together; the spool's runs on the wall clock.
 final class SpoolLab {
     /// The radios, and each node's engine and stores.
     let radio: EngineLab
@@ -27,8 +28,15 @@ final class SpoolLab {
     private(set) var sent: [[SpoolRecord]]
     /// Every mining request each node's plane made.
     private(set) var mined: [[SpoolMiningRequest]]
-    /// Whether a stamp is mined the moment it is asked for; otherwise it waits in ``pendingMining``.
+    /// Whether the heals' asks go to the plane's miner; otherwise they wait in ``pendingMining`` and the test answers them
+    /// with ``answerMining(_:)``, as P4b1's tests did before the miner.
     var minesAtOnce = true
+    /// Whether the miner's runs wait in ``heldRuns`` for ``endRun(_:_:)``; otherwise each runs at once with ``SpoolPow``.
+    var holdsRuns = false
+    /// The runs held, by node, oldest first.
+    private(set) var heldRuns: [(index: Int, job: SpoolMinerJob)] = []
+    /// Every action each node's miner asked of its runner.
+    private(set) var runnerActions: [[SpoolMiner.Action]]
     /// The searches asked for and not answered, and those the planes cancelled.
     private(set) var pendingMining: [SpoolMiningRequest] = []
     private(set) var cancelledMining: [SpoolMiningRequest] = []
@@ -44,6 +52,7 @@ final class SpoolLab {
         revisions = fixtures.map(\.engine.custodyRevision)
         sent = Array(repeating: [], count: fixtures.count)
         mined = Array(repeating: [], count: fixtures.count)
+        runnerActions = Array(repeating: [], count: fixtures.count)
         for index in fixtures.indices {
             Self.add(&planes[index], relay, engine: radio[index].engine)
         }
@@ -214,24 +223,41 @@ final class SpoolLab {
         return exchange(index, over: connection) || asked
     }
 
-    /// Answers or holds what node `index`'s plane asked of its miner. Answers whether it asked anything.
+    /// Carries node `index`'s heals' asks to its miner, as ``Mesh/serviceSpool()`` does, or holds them; then runs or holds
+    /// what the miner starts. Answers whether anything moved.
     private func mine(_ index: Int) -> Bool {
         let engine = radio[index].engine
         var moved = false
-        for request in planes[index].takeMining() {
-            moved = true
-            switch request {
-            case .mine(let asked):
-                mined[index].append(asked)
-                guard minesAtOnce else {
-                    pendingMining.append(asked)
-                    continue
+        repeat {
+            let asks = planes[index].takeMining()
+            for ask in asks {
+                moved = true
+                switch ask {
+                case .mine(let asked):
+                    mined[index].append(asked)
+                    if !minesAtOnce {
+                        pendingMining.append(asked)
+                    }
+                case .cancel(let cancelled):
+                    cancelledMining.append(cancelled)
+                    pendingMining.removeAll { $0 == cancelled }
                 }
-                let counter = SpoolPow.mine(scopeId: asked.scope.bytes, day: asked.day, bits: asked.bits).counter
-                planes[index].stampMined(asked, counter: counter, engine: engine)
-            case .cancel(let cancelled):
-                cancelledMining.append(cancelled)
-                pendingMining.removeAll { $0 == cancelled }
+            }
+            if minesAtOnce {
+                planes[index].mine(asks, engine: engine)
+            }
+        } while !planes[index].mining.isEmpty
+        for action in planes[index].miner.takeActions() {
+            moved = true
+            runnerActions[index].append(action)
+            guard case .start(let job) = action else {
+                continue
+            }
+            if holdsRuns {
+                heldRuns.append((index, job))
+            } else {
+                let search = SpoolPow.mine(scopeId: job.scope.bytes, day: job.day, bits: job.bits, from: job.from)
+                planes[index].searchEnded(job.run, search, engine: engine)
             }
         }
         return moved
@@ -282,10 +308,28 @@ extension SpoolLab {
         let asked = pendingMining.filter { $0.relay == relay && mined[index].contains($0) }
         for request in asked {
             pendingMining.removeAll { $0 == request }
-            let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits).counter
-            planes[index].stampMined(request, counter: counter, engine: radio[index].engine)
+            planes[index].stampMined(request, HealMember.found(request), engine: radio[index].engine)
         }
         pump()
+    }
+
+    /// The runner returns node `index`'s oldest held run with `search`, or with what a search from its counter finds when
+    /// `search` is `nil`. Answers the job.
+    @discardableResult
+    func endRun(_ index: Int, _ search: SpoolPow.Search? = nil) -> SpoolMinerJob? {
+        guard let at = heldRuns.firstIndex(where: { $0.index == index }) else {
+            return nil
+        }
+        let job = heldRuns.remove(at: at).job
+        let result = search ?? SpoolPow.mine(scopeId: job.scope.bytes, day: job.day, bits: job.bits, from: job.from)
+        planes[index].searchEnded(job.run, result, engine: radio[index].engine)
+        pump()
+        return job
+    }
+
+    /// Clears node `index`'s record log.
+    func forgetSent(_ index: Int) {
+        sent[index].removeAll()
     }
 
     /// Takes node `index`'s actions now, as ``Mesh`` does after every input.
@@ -310,73 +354,5 @@ extension SpoolLab {
     /// Hands node `index`'s plane `candidate` as its relay's heal would, and answers the settlement: the door alone.
     func deliver(_ candidate: ScopeCandidate, to index: Int, relay: SpoolRelayHandle? = nil) -> ScopeHeal.Settlement {
         radio[index].engine.receiveFromSpool(candidate, relay: relay ?? self.relay)
-    }
-
-    // MARK: Oracles
-
-    /// Clears node `index`'s record log.
-    func forgetSent(_ index: Int) {
-        sent[index].removeAll()
-    }
-
-    /// How many `list` records node `index` sent.
-    func lists(_ index: Int) -> Int {
-        sent[index].count { if case .list = $0 { true } else { false } }
-    }
-
-    /// How many records of any scope operation (`sub`, `list`, `pull`, `push`) node `index` sent naming `scope`.
-    func operations(_ index: Int, on scope: SpoolID) -> Int {
-        sent[index].count { record in
-            switch record {
-            case .sub(let sub):
-                sub.subs.contains { $0.scope == scope.bytes }
-            case .list(let list):
-                list.scope == scope.bytes
-            case .pull(let pull):
-                pull.scope == scope.bytes
-            case .push(let push):
-                push.scope == scope.bytes
-            default:
-                false
-            }
-        }
-    }
-
-    /// The scopes node `index`'s table carries, live ones first.
-    func scopes(_ index: Int) -> [SpoolScope] {
-        planes[index].table.scopes
-    }
-
-    /// Node `index`'s heal loop.
-    func heal(_ index: Int) -> ScopeHeal? {
-        planes[index].relays[relay]?.heal
-    }
-
-    /// The spool's digest of `scope`.
-    func spoolDigest(_ scope: SpoolID) -> UInt64 {
-        ScopeCrypto.digest(of: spool.liveIds(scope).map(\.bytes))
-    }
-
-    /// The live frames node `index`'s custody holds between it and node `peer`, as the scope's rule admits them, by id.
-    func pairIds(_ index: Int, with peer: Int) -> Set<String> {
-        let me = radio[index].me.nodeId
-        let other = radio[peer].me.nodeId
-        let frames = radio[index].stores.custody.liveFrames(now: radio[index].clock.wallMilliseconds())
-        return Set(frames.filter { ScopeFrames.eligible($0.envelope, me: me, peer: other) }.map(\.envelope.id))
-    }
-
-    /// Every blob the spool holds in `scope`, opened under `keys`.
-    func opened(_ scope: SpoolScope) -> [(sig: [UInt8], envelope: RelayEnvelope)] {
-        guard let held = spool.scopes[scope.id]?.live else {
-            return []
-        }
-        return held.compactMap { blob in
-            guard let opened = ScopeCrypto.open(scope.keys, blobId: blob.id.bytes, blob: blob.data),
-                let envelope = try? RelayEnvelope(decoding: opened.signed)
-            else {
-                return nil
-            }
-            return (opened.sig, envelope)
-        }
     }
 }

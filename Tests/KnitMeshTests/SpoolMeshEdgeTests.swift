@@ -27,32 +27,37 @@ import Testing
         await mesh.stop()
     }
 
-    /// Test 11 through the meshes: the stamp is answered while Bob has no session, and his next connection's first `sub`
-    /// carries it with no second search; then a removal cancels what is still asked.
-    @Test func aStampAnsweredWithNoSessionRidesTheNextSubThroughTheMesh() async throws {
-        let rig = try await SpoolMeshRig.make(spool: FakeSpool(powBits: 8, now: EngineFixture.start))
+    /// Test 11 through the meshes, and P4b2's session drop: the socket drops mid-search, the search lands with no session,
+    /// the reconnect starts no second run and its first `sub` carries the stamp; then a removal cancels what is still asked.
+    @Test func aSessionDropMidSearchStartsNoSecondRunAndTheReconnectsSubCarriesTheStamp() async throws {
+        let runner = FakeStampRunner()
+        let rig = try await SpoolMeshRig.make(spool: FakeSpool(powBits: 8, now: EngineFixture.start), runners: [runner, runner])
         await rig.run(2)
-        let asked = await rig[1].spoolMiningQueue
-        let request = try #require(asked.first, "the spool asked a stamp")
-        await rig[1].pauseSpool()
+        let job = try #require(runner.held.first, "the spool asked a stamp")
+        let request = try #require(await rig[1].spool.relays[SpoolMeshRig.relay]?.heal.mining.values.first)
+        rig.net.dropAll()
         await rig.settle()
-        let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits).counter
-        await rig[1].spoolStampMined(request, counter: counter)
-        #expect(await rig[1].spoolMiningQueue.isEmpty)
-        #expect(await rig[1].spoolStatus.relays.first?.counts["stampsAnsweredOffline"] == 1)
+        #expect(await rig[1].spool.relays[SpoolMeshRig.relay]?.session == nil, "no session")
         rig.net.forgetSent()
-        await rig[1].resumeSpool()
-        await rig.run(2)
+        for _ in 0..<2 {
+            runner.release()
+        }
+        await rig.until {
+            let alice = await rig[0].spool.miner.running
+            let bob = await rig[1].spool.miner.running
+            return alice == nil && bob == nil
+        }
+        #expect(await rig[1].spool.relays[SpoolMeshRig.relay]?.heal.mining.isEmpty == true)
+        await rig.run(30, every: SpoolBackoff.maxRetryAfterMilliseconds)
         let subs = rig.net.sent(by: 1).compactMap { record -> SpoolSub? in if case .sub(let sub) = record { sub } else { nil } }
         #expect(subs.first?.subs.contains { $0.scope == request.scope.bytes && $0.pow != nil } == true, "the first sub carries it")
-        #expect(await rig[1].spoolMiningQueue.isEmpty, "no second search")
+        #expect(runner.started.filter { $0.scope == job.scope }.count <= 2, "one run a mesh, none after the reconnect")
+        #expect(await rig[1].spoolStatus.counts["minerRuns"] == 1)
 
-        // Alice still waits on hers, if the spool asked one; a removal cancels it in its turn.
+        // A removal cancels whatever a mesh still asks, in its turn.
         await rig[0].removeSpoolRelay(SpoolMeshRig.relay)
-        let queue = await rig[0].spoolMiningQueue
         let relays = await rig[0].spoolStatus.relays
-        #expect(queue.isEmpty && relays.isEmpty)
-        await rig[1].spoolStampMined(request, counter: counter)
+        #expect(await rig[0].spool.miner.requests.isEmpty && relays.isEmpty)
     }
 
     /// A pause and a resume in one breath: the new dial waits for the old task to end, then goes.

@@ -38,13 +38,15 @@ extension SpoolPlane {
     /// failure, and only a process start or a removal makes a fresh heal (this port's rule).
     mutating func pause(engine: MeshEngine) {
         paused = true
+        // The running search stops at its next check; its requests stay, and the resume carries it on (P4b2).
+        miner.pause()
         for relay in relays.keys.sorted() {
             end(relay, .paused, keepToken: false, engine: engine)
             relays[relay]?.link.nextDialAt = nil
         }
     }
 
-    /// Dials every relay at once, its failure count reset.
+    /// Dials every relay at once, its failure count reset, and lets the miner run again in this turn.
     mutating func resume(engine: MeshEngine) {
         paused = false
         let now = engine.clock.monotonicMilliseconds()
@@ -53,6 +55,7 @@ extension SpoolPlane {
             relays[relay]?.link.nextDialAt = now
         }
         dialDue(engine: engine)
+        deliver(miner.resume(now: SpoolNow(monotonic: now, wall: engine.clock.wallMilliseconds())), engine: engine)
     }
 
     // MARK: The socket's posts

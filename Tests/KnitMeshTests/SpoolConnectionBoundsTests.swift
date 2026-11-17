@@ -101,7 +101,7 @@ import Testing
         }
         #expect(parked >= 2 && lab.link(1)?.counts.inboundDeferred == parked)
         #expect(lab.link(1)?.counts.textDropped == 67)
-        let status = lab.planes[1].status(inbound: lab[1].engine.spoolInbound.counts)
+        let status = lab.planes[1].status(inbound: lab[1].engine.spoolInbound.counts, now: lab[1].clock.monotonicMilliseconds())
         let drops = status.relays.first?.counts.filter { $0.key.hasPrefix("dropped.") }.values.reduce(0, +) ?? 0
         #expect(status.relays.first?.counts["inboundDeferred"] == parked && drops == 200 - 67, "every junk record counted dropped")
     }
@@ -118,9 +118,9 @@ import Testing
             #expect(current == token, "the dial in place stands")
         }
         #expect(lab.link(1)?.counts.dialFailures == 0, "a stale failure counts nothing")
-        let request = SpoolMiningRequest(
-            relay: SpoolRelayHandle(number: 9), scope: try #require(SpoolID([UInt8](repeating: 1, count: 32))), day: 1, bits: 8)
-        lab.planes[1].stampMined(request, counter: 1, engine: engine)
+        let scope = try #require(SpoolID([UInt8](repeating: 1, count: 32)))
+        let request = SpoolMiningRequest(serial: 1, relay: SpoolRelayHandle(number: 9), scope: scope, day: 1, bits: 8)
+        lab.planes[1].stampMined(request, .found(counter: 1, bits: 8), engine: engine)
         #expect(lab.planes[1].takeMining().isEmpty, "an answer for a relay not carried does nothing")
     }
 

@@ -54,7 +54,8 @@ final class FakeSpool {
     /// The spool's clock, in milliseconds; ``advance(to:)`` moves it and expires what is due.
     private(set) var now: Int64
     let limits: SpoolLimits
-    let powBits: Int
+    /// The bits its `hello` asks; a test may change them, and the next connection's `hello` carries the new ones.
+    var powBits: Int
     /// Scopes this spool will hold at most; a new one past it is refused `quota` (the daemon's store rule).
     var scopeQuota: Int?
     var quotaRetryMs: Int64?
@@ -73,6 +74,8 @@ final class FakeSpool {
     var oversizeServes: Int?
     var garblesServes = false
     var refusesEveryPushPow = false
+    /// Every `sub` that carries a stamp is refused `pow`, valid or not.
+    var refusesEveryStampedSub = false
     /// The bytes every `blob` record this spool sent carried.
     var servedBytes = 0
     /// The bytes `blob` records carried, by connection.

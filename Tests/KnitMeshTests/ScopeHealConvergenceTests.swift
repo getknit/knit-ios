@@ -46,7 +46,7 @@ import Testing
         lab.expectQuiet(scope)
     }
 
-    @Test func membersConvergeWhenOnesStampSearchesAreCancelledTwice() {
+    @Test func membersConvergeWhenOnesStampSearchesAreAnsweredOverBudgetTwice() {
         var lab = HealLab([Fixture.alice, Fixture.bob], spool: FakeSpool(powBits: 8, now: Fixture.wall), manualMiner: Fixture.alice)
         let alice = lab.members[0]
         alice.hold([Fixture.dm(1)])

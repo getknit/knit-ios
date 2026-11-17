@@ -34,9 +34,9 @@ extension ScopeHeal {
     enum Output: Sendable {
         /// A blob that opened and passed the rule: verify its signature, deliver it, and settle it.
         case candidate(ScopeCandidate)
-        /// Mine this stamp off the engine and answer ``ScopeHeal/stampMined(_:counter:session:now:)``.
+        /// Mine this stamp off the engine and answer ``ScopeHeal/stampMined(_:_:session:now:)``.
         case mine(SpoolMiningRequest)
-        /// Stop mining this stamp: its scope left the table.
+        /// Drop this request: its scope left the table. It gets no answer.
         case cancelMining(SpoolMiningRequest)
     }
 
@@ -60,6 +60,8 @@ extension ScopeHeal {
         var replays = 0
         /// Stamps refused for want of the day's mining allowance.
         var stampsCapped = 0
+        /// Stamps not asked for a retiring scope whose drain ends within the table's reconcile (P4b2).
+        var stampsRetiring = 0
         /// Rounds skipped because custody could not be read.
         var unreadableRounds = 0
         /// Ids a round left unpulled because the hour's byte budget was spent.
@@ -93,6 +95,9 @@ extension ScopeHeal {
         /// Whether the spool asked a stamp of it (`stampDemanded`); a `digest` clears it.
         var stampDemanded = false
         var stamp: PowStamp?
+        /// The leading zero bits ``stamp`` actually meets (P4b2): it is sent only while they are at least the session's
+        /// `powBits` (``ScopeHeal/usableStamp(_:session:now:)``).
+        var stampBits = 0
         /// When it last healed, on the monotonic clock.
         var lastHealAt: Int64?
         /// The local fold the last heal compared (`localDigests`), for `status` and the tests.

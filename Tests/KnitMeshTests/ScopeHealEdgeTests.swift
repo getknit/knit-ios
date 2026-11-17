@@ -156,15 +156,19 @@ import Testing
         let scope = Fixture.scope(for: Fixture.alice, retiring: true)
         let whole = Hex.encode(scope.id.bytes)
         #expect(String(reflecting: scope) == "\(scope.id) (retiring)" && Mirror(reflecting: scope).children.isEmpty)
-        let request = SpoolMiningRequest(relay: SpoolRelayHandle(number: 2), scope: scope.id, day: 7, bits: 20)
-        #expect("\(request)" == "relay 2 \(scope.id) day 7, 20 bits")
+        let request = SpoolMiningRequest(serial: 5, relay: SpoolRelayHandle(number: 2), scope: scope.id, day: 7, bits: 20)
+        #expect("\(request)" == "stamp 5: relay 2 \(scope.id) day 7, 20 bits")
+        let job = SpoolMinerJob(run: 3, scope: scope.id, day: 7, bits: 20, from: 9)
+        #expect("\(job)" == "run 3: \(scope.id) day 7, 20 bits from 9" && Mirror(reflecting: job).children.isEmpty)
+        let miner = SpoolMiner()
+        #expect("\(miner)" == "miner: 0 requests, 0 values, idle" && Mirror(reflecting: miner).children.isEmpty)
         let sealed = Fixture.sealed(Fixture.dm(1))
         #expect("\(sealed)" == "\(sealed.id), \(sealed.blob.count) bytes" && Mirror(reflecting: sealed).children.isEmpty)
         var cache = ScopeSealCache()
         let held = try #require(
             cache.held([Fixture.carried(Fixture.dm(1))], in: Fixture.scope(for: Fixture.alice), me: Fixture.alice.nodeId).first)
         #expect("\(held)" == "\(sealed)" && Mirror(reflecting: held).children.isEmpty)
-        for text in ["\(scope)", "\(request)", "\(sealed)", "\(held)"] {
+        for text in ["\(scope)", "\(request)", "\(job)", "\(sealed)", "\(held)"] {
             #expect(!text.contains(whole) && !text.contains(Fixture.bob.nodeId.string))
         }
     }

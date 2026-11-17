@@ -1,3 +1,4 @@
+import KnitCrypto
 import KnitStore
 import KnitWire
 
@@ -106,7 +107,12 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
     var readGeneration: Int?
     var reconcileAt: Int64?
     var drainEndAt: Int64?
+    /// The heals' asks of the miner since the last ``serviceMiner(engine:)``.
     var mining: [Mining] = []
+    /// The engine's stamp miner (P4b2): its requests, its one run, its cache and its budget.
+    var miner = SpoolMiner()
+    /// The next stamp request's serial, lent to each heal for the input it runs.
+    var nextSerial: Int64 = 1
     var actions: [SocketAction] = []
     /// Whether the plane is paused: no dial, and no session.
     var paused = true
@@ -122,25 +128,56 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
         self.me = me
     }
 
-    /// What the miner should start or stop.
+    /// The heals' asks of the miner since the last take.
     mutating func takeMining() -> [Mining] {
         defer { mining.removeAll() }
         return mining
     }
 
-    /// A stamp search ended: `counter` found, or `nil` when it ran out of tries. The answer reaches the heal whether or not
-    /// the relay has a session (``ScopeHeal/stampMined(_:counter:session:now:)``); a search for a relay since removed answers
-    /// nothing.
-    mutating func stampMined(_ request: SpoolMiningRequest, counter: Int64?, engine: MeshEngine) {
+    // MARK: The miner
+
+    /// After every input (``Mesh/serviceSpool()``): the heals' asks go to the miner, and what it answers at once (the cache,
+    /// the budget) goes back to the heals, after their turn and never inside ``run(_:engine:cause:_:)``'s serve, until an
+    /// answer raises no ask. Then the runner's actions. It ends: an answer parks its scope or gives it a stamp, so a scope
+    /// asks again only on a later input.
+    mutating func serviceMiner(engine: MeshEngine) -> [SpoolMiner.Action] {
+        repeat {
+            mine(takeMining(), engine: engine)
+        } while !mining.isEmpty
+        return miner.takeActions()
+    }
+
+    /// Hands `asks` to the miner and its answers at once to the heals.
+    mutating func mine(_ asks: [Mining], engine: MeshEngine) {
+        deliver(miner.take(asks, now: now(engine)), engine: engine)
+    }
+
+    /// The runner's result for `run` (``Mesh/spoolStampMined(_:_:)``).
+    mutating func searchEnded(_ run: Int64, _ search: SpoolPow.Search, engine: MeshEngine) {
+        deliver(miner.ended(run: run, search, now: now(engine)), engine: engine)
+    }
+
+    mutating func deliver(_ answers: [SpoolMiner.Answer], engine: MeshEngine) {
+        for answer in answers {
+            stampMined(answer.request, answer.answer, engine: engine)
+        }
+    }
+
+    private func now(_ engine: MeshEngine) -> SpoolNow {
+        SpoolNow(monotonic: engine.clock.monotonicMilliseconds(), wall: engine.clock.wallMilliseconds())
+    }
+
+    /// The miner answered `request`. The answer reaches the heal whether or not the relay has a session
+    /// (``ScopeHeal/stampMined(_:_:session:now:)``); one for a relay since removed answers nothing.
+    mutating func stampMined(_ request: SpoolMiningRequest, _ answer: SpoolStampAnswer, engine: MeshEngine) {
         refreshTable(engine: engine)
         guard var state = relays[request.relay] else {
             return
         }
         guard state.session != nil else {
             // With no session the heal subscribes nothing, so it asks nothing of the miner here.
-            let now = SpoolNow(monotonic: engine.clock.monotonicMilliseconds(), wall: engine.clock.wallMilliseconds())
             var none: SpoolSession?
-            if state.heal.stampMined(request, counter: counter, session: &none, now: now) {
+            if state.heal.stampMined(request, answer, session: &none, now: now(engine)) {
                 state.link.counts.stampsAnsweredOffline += 1
             }
             relays[request.relay] = state
@@ -148,7 +185,7 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
         }
         run(request.relay, engine: engine, cause: .socket(SpoolSocketEnd(.closed))) { heal, session, now in
             var open: SpoolSession? = session
-            heal.stampMined(request, counter: counter, session: &open, now: now)
+            heal.stampMined(request, answer, session: &open, now: now)
             if let open {
                 session = open
             }
@@ -244,6 +281,7 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
         }
         let now = SpoolNow(monotonic: engine.clock.monotonicMilliseconds(), wall: engine.clock.wallMilliseconds())
         swap(&seals, &state.heal.seals)
+        state.heal.nextSerial = nextSerial
         state.heal.outboundFull = state.link.queuedBytes >= SpoolLink.maxQueuedBytes
         input?(&state.heal, &session, now)
         var quiet = false
@@ -265,6 +303,7 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
             serve(&state, &session, relay: relay, engine: engine, now: now)
         }
         swap(&seals, &state.heal.seals)
+        nextSerial = state.heal.nextSerial
         state.session = session
         if session.phase == .closed {
             let ended: SpoolSessionEnd = if let fault = session.fault { .fault(fault) } else { cause }

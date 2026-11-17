@@ -24,10 +24,15 @@ public struct SpoolStatus: Sendable, Equatable {
 }
 
 extension SpoolPlane {
-    /// The plane as `status` shows it, beside `inbound`, the engine door's counts.
-    func status(inbound: SpoolInbound.Counts) -> SpoolStatus {
+    /// The plane as `status` shows it, beside `inbound`, the engine door's counts, at `now` on the monotonic clock: the
+    /// miner's counts and the counters it spent in the window, engine-wide (P4b2).
+    func status(inbound: SpoolInbound.Counts, now: Int64) -> SpoolStatus {
         var counts = SpoolLogBook.counts(inbound)
         counts["unreadableTables"] = unreadableTables
+        for (word, count) in SpoolLogBook.counts(miner.counts) {
+            counts[word] = count
+        }
+        counts["minerSpent"] = Int(miner.budget.spent(now: now))
         let lines = relays.sorted { $0.key < $1.key }.map { handle, relay -> SpoolStatus.Relay in
             var line = SpoolLogBook.counts(relay.link.counts)
             for (word, count) in SpoolLogBook.counts(relay.heal.counts) {
@@ -52,6 +57,7 @@ extension SpoolPlane {
         var door = SpoolLogBook.counts(inbound)
         door["unreadableTables"] = unreadableTables
         lines += logBook.line("spool", kind: "door", door, now: now)
+        lines += logBook.line("spool", kind: "miner", SpoolLogBook.counts(miner.counts), now: now)
         for (handle, relay) in relays.sorted(by: { $0.key < $1.key }) {
             let name = "spool \(handle)"
             lines += logBook.line(name, kind: "link", SpoolLogBook.counts(relay.link.counts), now: now)
@@ -124,6 +130,15 @@ internal struct SpoolLogBook: Sendable {
         ]
     }
 
+    static func counts(_ counts: SpoolMiner.Counts) -> [String: Int] {
+        [
+            "minerRuns": counts.runs, "minerFound": counts.found, "minerExhausted": counts.exhausted,
+            "minerStopped": counts.stopped, "minerResumed": counts.resumed, "minerOverBudget": counts.overBudget,
+            "minerOverRelayShare": counts.overRelayShare, "minerOverPeerShare": counts.overPeerShare,
+            "minerFromCache": counts.fromCache, "minerUnheldScopes": counts.unheldScopes,
+        ]
+    }
+
     static func counts(_ counts: SpoolLink.Counts) -> [String: Int] {
         [
             "dials": counts.dials, "dialFailures": counts.dialFailures, "dialTimeouts": counts.dialTimeouts,
@@ -139,6 +154,7 @@ internal struct SpoolLogBook: Sendable {
             "listings": counts.listings, "overlongListings": counts.overlongListings, "pushed": counts.pushed,
             "quarantined": counts.quarantined, "accounted": counts.accounted, "unpushable": counts.unpushable,
             "healDuplicates": counts.duplicates, "replays": counts.replays, "stampsCapped": counts.stampsCapped,
+            "stampsRetiring": counts.stampsRetiring,
             "unreadableRounds": counts.unreadableRounds, "pullBudgetDeferred": counts.budgetDeferred, "faults": counts.faults,
             "parks": counts.parks, "pushBudgetDeferred": counts.pushBudgetDeferred, "outboundHeld": counts.outboundHeld,
             "roundsCompared": counts.roundsCompared,

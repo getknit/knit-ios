@@ -186,7 +186,7 @@ import Testing
             }
         }
         #expect(named.isEmpty, "nothing for the blocked peer's scope")
-        #expect(await rig[1].spoolMiningQueue.isEmpty)
+        #expect(await rig[1].spool.miner.requests.isEmpty)
     }
 
     /// Tests 9 and 13: refused dials with a relay address that carries a token and user info's lookalike, relay text full of

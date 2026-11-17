@@ -20,16 +20,24 @@ final class SpoolMeshRig {
     let meshes: [Mesh]
 
     /// The rig, both meshes started and their relay added, settled.
-    static func make(spool: FakeSpool? = nil, bobStores: MeshStores = .inMemory()) async throws -> SpoolMeshRig {
-        try await make(SpoolEngineLabTests.greeted(bobStores: bobStores), nodes: [0, 1], spool: spool)
+    static func make(
+        spool: FakeSpool? = nil, bobStores: MeshStores = .inMemory(), runners: [any SpoolStampRunner] = []
+    ) async throws -> SpoolMeshRig {
+        try await make(SpoolEngineLabTests.greeted(bobStores: bobStores), nodes: [0, 1], spool: spool, runners: runners)
     }
 
     /// Meshes for `lab`'s nodes `nodes`, over `spool` (a fresh one when `nil`), started, their relay added, settled. Mesh `n`
-    /// of the rig is lab node `nodes[n]`.
-    static func make(_ lab: SpoolLab, nodes: [Int], spool: FakeSpool?) async throws -> SpoolMeshRig {
+    /// of the rig is lab node `nodes[n]`, and hands its stamp searches to `runners[n]` when there is one, and to the real
+    /// queue otherwise.
+    static func make(
+        _ lab: SpoolLab, nodes: [Int], spool: FakeSpool?, runners: [any SpoolStampRunner] = []
+    ) async throws -> SpoolMeshRig {
         let rig = SpoolMeshRig(lab, nodes: nodes, spool: spool)
         let url = try #require(SpoolLab.url)
-        for mesh in rig.meshes {
+        for (index, mesh) in rig.meshes.enumerated() {
+            if index < runners.count {
+                await mesh.useSpoolRunner(runners[index])
+            }
             await mesh.start()
             #expect(await mesh.addSpoolRelay(Self.relay, url: url))
         }

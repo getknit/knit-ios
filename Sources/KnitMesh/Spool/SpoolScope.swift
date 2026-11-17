@@ -18,21 +18,25 @@ internal struct SpoolScope: Sendable, Equatable, CustomStringConvertible, Custom
     let peer: NodeId
     /// Whether this is the scope of a root the session replaced, pulled and never refilled (C-3.1-2, C-3.1-3).
     let retiring: Bool
+    /// When a retiring scope's drain ends (``RatchetSessions/DMScopes/retiringUntil``, wall milliseconds), `nil` for a
+    /// live one. Compared in `==`, so a drain that moves re-adopts the table (P4b2).
+    let retiringUntil: Int64?
 
     /// The scope, or `nil` for keys whose id is not 32 bytes, which ``ScopeKeys`` never holds.
-    static func of(_ keys: ScopeKeys, peer: NodeId, retiring: Bool) -> Self? {
-        SpoolID(keys.id).map { Self(keys: keys, id: $0, peer: peer, retiring: retiring) }
+    static func of(_ keys: ScopeKeys, peer: NodeId, retiring: Bool, retiringUntil: Int64?) -> Self? {
+        SpoolID(keys.id).map { Self(keys: keys, id: $0, peer: peer, retiring: retiring, retiringUntil: retiringUntil) }
     }
 
-    private init(keys: ScopeKeys, id: SpoolID, peer: NodeId, retiring: Bool) {
+    private init(keys: ScopeKeys, id: SpoolID, peer: NodeId, retiring: Bool, retiringUntil: Int64?) {
         self.keys = keys
         self.id = id
         self.peer = peer
         self.retiring = retiring
+        self.retiringUntil = retiringUntil
     }
 
     static func == (lhs: Self, rhs: Self) -> Bool {
-        lhs.id == rhs.id && lhs.peer == rhs.peer && lhs.retiring == rhs.retiring
+        lhs.id == rhs.id && lhs.peer == rhs.peer && lhs.retiring == rhs.retiring && lhs.retiringUntil == rhs.retiringUntil
     }
 
     var description: String { retiring ? "\(id) (retiring)" : "\(id)" }
@@ -66,15 +70,32 @@ internal struct SpoolNow: Sendable, Equatable {
 }
 
 /// A stamp the heal loop needs mined (§8): which relay asked for it, for which scope, for which UTC day and at how many
-/// bits. The caller mines it off the engine and answers ``ScopeHeal/stampMined(_:counter:session:now:)``, and cancels it
-/// when ``ScopeHeal/Output/cancelMining(_:)`` names it (P2's review: a cancelled worker cancels its mining).
+/// bits, under a serial the plane draws from one counter per engine (P4b2). The serial is the request's identity: an
+/// identical request asked again is a new one, and an answer clears the heal's search only when its serial matches.
+///
+/// ``SpoolMiner`` takes it, answers ``ScopeHeal/stampMined(_:_:session:now:)`` exactly once, or drops it when the heal's
+/// own ``ScopeHeal/Output/cancelMining(_:)`` names it. A search outlives the connection that asked for it (P3b): only a
+/// cancel, the plane's pause or a removed relay stops one.
 internal struct SpoolMiningRequest: Hashable, Sendable, CustomStringConvertible {
+    let serial: Int64
     let relay: SpoolRelayHandle
     let scope: SpoolID
     let day: Int64
     let bits: Int
 
-    var description: String { "\(relay) \(scope) day \(day), \(bits) bits" }
+    var description: String { "stamp \(serial): \(relay) \(scope) day \(day), \(bits) bits" }
+}
+
+/// How a stamp search ended, as the heal hears it (P4b2). There is no cancelled answer: a search the miner stops is resumed
+/// or dropped inside ``SpoolMiner``, and a request ends either in one of these or in its own cancel.
+internal enum SpoolStampAnswer: Sendable, Equatable {
+    /// A stamp, with the leading zero bits its digest actually has, at least the request's.
+    case found(counter: Int64, bits: Int)
+    /// No counter below ``SpoolPow/maxTries`` meets the request's bits: the (scope, day, bits) is settled for the day.
+    case exhausted
+    /// The engine's budget or a share of it cannot hold the search; the scope parks this long (at least
+    /// ``SpoolSession/minParkMilliseconds``, at most a day).
+    case overBudget(parkMilliseconds: Int64)
 }
 
 /// A set of blob ids that remembers its insertion order and holds at most ``bound``, the oldest going first (`remember`

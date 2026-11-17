@@ -13,6 +13,11 @@ extension FakeSpool {
         broadcastDigest(scope)
     }
 
+    /// Forgets `scope` whole, as a spool that lost its store does: the next `sub` for it asks a stamp again.
+    func forget(_ scope: SpoolID) {
+        scopes[scope] = nil
+    }
+
     func serve(_ blob: SpoolBlob, _ connection: Connection) {
         servedBytes += blob.data.count
         servedTo[connection, default: 0] += blob.data.count
@@ -33,7 +38,7 @@ extension FakeSpool {
         guard powBits > 0, scopes[scope] == nil else {
             return false
         }
-        guard let stamp else {
+        guard let stamp, !refusesEveryStampedSub else {
             return true
         }
         return !SpoolPow.verify(scopeId: scope.bytes, day: stamp.day, n: stamp.counter, bits: powBits)

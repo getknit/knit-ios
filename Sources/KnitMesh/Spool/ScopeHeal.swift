@@ -40,8 +40,8 @@ internal struct ScopeHeal: Sendable, CustomStringConvertible, CustomDebugStringC
     /// §12.2's tombstone bound per declared frame, and its floor (`MIN_TOMBSTONE_BOUND`).
     static let tombstonesPerFrame = 2
     static let minTombstoneBound = 1024
-    /// The most stamps mined per scope per UTC day, counting only those mined; past it the scope parks until the day
-    /// rolls.
+    /// The most stamps obtained per scope per UTC day, mined or from the engine's cache (P4b2), counting only answers that
+    /// found one; past it the scope parks until the day rolls.
     static let maxStampsPerDay = 2
     /// What a `sub` batch is divided by after the spool refuses one as `malformed` (P3a's review).
     static let subBatchShrink = 2
@@ -71,14 +71,17 @@ internal struct ScopeHeal: Sendable, CustomStringConvertible, CustomDebugStringC
     var outboundFull = false
     /// The scopes this session has had a `digest` for.
     var digested: Set<SpoolID> = []
-    /// The stamp searches asked for and not yet answered. Invariant (P4b1): every entry has exactly one search for it queued
-    /// or running, and every search ends in exactly one answer, ``stampMined(_:counter:session:now:)``, or in the
+    /// The stamp searches asked for and not yet answered. Invariant (P4b1): every entry is attached to exactly one search
+    /// queued or running in ``SpoolMiner``, and ends in exactly one answer, ``stampMined(_:_:session:now:)``, or in the
     /// ``Output/cancelMining(_:)`` that removed the entry. Nothing else adds or removes one, and a connection's end touches
     /// none, so a scope never waits on a search nobody runs and never runs two.
     ///
-    /// A request is matched by its value (relay, scope, day, bits) until P4b2: an identical request asked again after a
-    /// cancel can take the earlier search's answer. P4b2's plane-assigned serial replaces this.
+    /// A request is matched by its serial (P4b2): an answer clears the entry only when the serials match, so an identical
+    /// request asked again after a cancel never takes the earlier one's answer.
     var mining: [SpoolID: SpoolMiningRequest] = [:]
+    /// The next request's serial: the plane lends its one counter per engine before each input (``SpoolPlane``), so
+    /// serials never repeat across relays, nor across a relay removed and added again.
+    var nextSerial: Int64 = 1
     /// The scopes whose `sub` on this connection carried a stamp.
     var stampedSubs: Set<SpoolID> = []
     /// The most scopes one `sub` names, halved after an unscoped `malformed` refusal.

@@ -21,7 +21,8 @@ import Testing
     }
 
     /// A script that greets, subscribes every scope, anchors them, lists, pulls, pushes, asks a stamp, answers it with and
-    /// without a session, closes and reopens, at clocks across the whole `Int64` range.
+    /// without a session, closes and reopens, at clocks across the whole `Int64` range, and plays the miner's runner through
+    /// a find, a run out, a stop and a pause.
     static var scripted: [UInt8] {
         let hello = SpoolHello(version: 1, limits: FakeSpool.defaultLimits, powBits: 8).encoded
         var script = record(hello) + [2, 4]
@@ -43,7 +44,19 @@ import Testing
         script += [3, 1, 2, 7] + [4, 40] + blob + [3, 0, 3, 5]
         script += [9, 0, 9, 1, 7, 0, 7, 1, 5, 6] + record(hello) + [2, 4]
         script += tick(.max) + tick(.min) + tick(-1) + [8, 0, 7, 1]
+        // P4b2's miner: a search stopped by a pause, resumed, then run out; another found; another stopped by a cancel.
+        script += tick(20_000) + record(SpoolErr(code: SpoolErrorCode.pow, request: 1, scope: scope(1)).encoded)
+        script += [11, 7, 2, 1, 11, 7, 1]
+        script += record(SpoolErr(code: SpoolErrorCode.pow, request: 1, scope: scope(0)).encoded) + [7, 0]
         return script
+    }
+
+    /// The runner stops a search at a check, and the miner runs it again from there until it finds the stamp.
+    @Test func aStoppedSearchResumesAndFinds() {
+        let hello = SpoolHello(version: 1, limits: FakeSpool.defaultLimits, powBits: 8).encoded
+        let refused = SpoolErr(code: SpoolErrorCode.pow, request: 1, scope: Self.scope(3)).encoded
+        let script = Self.record(hello) + [2, 4] + Self.record(refused) + [7, 2, 0, 7, 0]
+        #expect(SpoolSessionFuzz.run(script) == 5)
     }
 
     @Test func aScriptedSessionKeepsEveryInvariant() {

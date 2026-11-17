@@ -235,7 +235,9 @@ import Testing
         #expect(alice.heal.counts.faults == 0, "junk that hashes true is quarantined, never the relay's fault")
     }
 
-    @Test func aSearchThatFoundNoStampParksBrieflyAndCostsNoneOfTheDaysAllowance() throws {
+    /// An over-budget answer parks the scope for the answer's park and costs none of the day's allowance; the scope asks
+    /// again when the park ends (P4b2).
+    @Test func anOverBudgetAnswerParksForItsParkAndCostsNoneOfTheDaysAllowance() throws {
         var lab = HealLab([Fixture.alice], spool: FakeSpool(powBits: 8, now: Fixture.wall), manualMiner: Fixture.alice)
         let alice = lab.members[0]
         lab.run(2)
@@ -244,12 +246,29 @@ import Testing
             let request = try #require(alice.pendingMining.first, "attempt \(attempt)")
             alice.failMining(request)
             let parkedUntil = try #require(alice.heal.state(scope)?.parkedUntil)
-            #expect(parkedUntil <= lab.now.monotonic + SpoolSession.minParkMilliseconds, "a short park, never until midnight")
+            #expect(parkedUntil <= lab.now.monotonic + SpoolSession.minParkMilliseconds, "the answer's park, never until midnight")
             lab.advance(by: SpoolSession.minParkMilliseconds)
             lab.run(1)
         }
-        #expect(alice.mineRequests.count == 3, "asked again after each short park")
+        #expect(alice.mineRequests.count == 3, "asked again after each park")
         #expect(alice.heal.counts.stampsCapped == 0)
         #expect(alice.heal.state(scope)?.minedToday == 0)
+    }
+
+    /// An exhausted answer settles the (scope, day, bits) for the day: the scope parks until the next UTC day after the
+    /// request's, counted, and costs none of the allowance (P4b2).
+    @Test func anExhaustedAnswerParksUntilTheNextDay() throws {
+        var lab = HealLab([Fixture.alice], spool: FakeSpool(powBits: 8, now: Fixture.wall), manualMiner: Fixture.alice)
+        let alice = lab.members[0]
+        lab.run(2)
+        let request = try #require(alice.pendingMining.first)
+        let parks = alice.heal.counts.parks
+        alice.failMining(request, with: .exhausted)
+        let parkedUntil = try #require(alice.heal.state(scope)?.parkedUntil)
+        let nextDay = (request.day + 1) * SpoolPow.dayMilliseconds
+        #expect(parkedUntil == lab.now.monotonic + max(nextDay - lab.now.wall, SpoolSession.minParkMilliseconds))
+        #expect(alice.heal.counts.parks == parks + 1 && alice.heal.state(scope)?.minedToday == 0)
+        lab.run(4)
+        #expect(alice.mineRequests.count == 1, "nothing asked before the day rolls")
     }
 }

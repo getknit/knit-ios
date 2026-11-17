@@ -61,8 +61,12 @@ internal struct ScopeTable: Sendable, Equatable {
             return left != right ? left > right : lhs.peerId < rhs.peerId
         }
         let kept = ranked.prefix(Self.maxPeers)
-        let live = kept.compactMap { SpoolScope.of($0.live, peer: $0.peerId, retiring: false) }
-        let retiring = kept.compactMap { entry in entry.retiring.flatMap { SpoolScope.of($0, peer: entry.peerId, retiring: true) } }
+        let live = kept.compactMap { SpoolScope.of($0.live, peer: $0.peerId, retiring: false, retiringUntil: nil) }
+        let retiring = kept.compactMap { entry in
+            entry.retiring.flatMap { keys in
+                SpoolScope.of(keys, peer: entry.peerId, retiring: true, retiringUntil: entry.retiringUntil)
+            }
+        }
         let next = Self(scopes: Self.unique(live + retiring), relays: Array(Set(relays)).sorted())
         return next == self ? .unchanged : .table(next)
     }

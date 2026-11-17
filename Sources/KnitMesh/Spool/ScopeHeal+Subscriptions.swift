@@ -85,25 +85,42 @@ extension ScopeHeal {
     }
 
     /// What a request for `scope` carries (`stampFor`, `:3300-3316`): a stamp only after the spool asked for one (C-8-4),
-    /// the one held while it is still in its window, or a new one asked of the caller.
+    /// the one held while ``usableStamp(_:session:now:)`` takes it, or a new one asked of the caller.
     func stampNeed(_ scope: SpoolID, session: SpoolSession, now: SpoolNow) -> StampNeed {
         guard session.powBits > 0, let state = states[scope], state.stampDemanded else {
             return .unasked
         }
-        if let stamp = state.stamp, SpoolPow.reusable(stampDay: stamp.day, nowMs: now.wall) {
+        if let stamp = usableStamp(scope, session: session, now: now) {
             return .stamp(stamp)
         }
         return .waiting
     }
 
-    /// The spool asked a stamp of `scope`: one is mined for today at the session's bits, unless one is already.
+    /// The stamp held for `scope` while it is still in its window and meets the session's `powBits` (P4b2, this port's
+    /// own rule: Kotlin's stamp cache keys by scope alone). A stamp mined for a spool that asked fewer bits is not sent to one
+    /// that asks more.
+    func usableStamp(_ scope: SpoolID, session: SpoolSession, now: SpoolNow) -> PowStamp? {
+        guard let state = states[scope], let stamp = state.stamp, state.stampBits >= session.powBits,
+            SpoolPow.reusable(stampDay: stamp.day, nowMs: now.wall)
+        else {
+            return nil
+        }
+        return stamp
+    }
+
+    /// The spool asked a stamp of `scope`: one is mined for today at the session's bits, unless one is already, one held
+    /// meets them, the day's allowance is spent, or the scope is retiring and its drain ends within the table's reconcile.
     /// Every caller passes a scope of the table.
     mutating func demandStamp(_ scope: SpoolID, session: SpoolSession, now: SpoolNow) {
         states[scope]?.stampDemanded = true
-        guard session.powBits > 0, mining[scope] == nil else {
+        guard session.powBits > 0, mining[scope] == nil, usableStamp(scope, session: session, now: now) == nil else {
             return
         }
-        if let stamp = states[scope]?.stamp, SpoolPow.reusable(stampDay: stamp.day, nowMs: now.wall) {
+        // A retiring scope about to leave the table is not worth a search: it parks until it leaves (P4b2). Both times are
+        // this phone's own wall clock; a wrapped difference is far off and parks nothing.
+        if let until = scopesById[scope]?.retiringUntil, until &- now.wall < SpoolPlane.reconcileMilliseconds {
+            counts.stampsRetiring += 1
+            park(scope, for: max(until &- now.wall, SpoolSession.minParkMilliseconds), now: now)
             return
         }
         let day = SpoolPow.utcDay(nowMs: now.wall)
@@ -116,7 +133,8 @@ extension ScopeHeal {
             park(scope, for: Self.untilNextDay(day, now: now), now: now)
             return
         }
-        let request = SpoolMiningRequest(relay: relay, scope: scope, day: day, bits: session.powBits)
+        let request = SpoolMiningRequest(serial: nextSerial, relay: relay, scope: scope, day: day, bits: session.powBits)
+        nextSerial += 1
         mining[scope] = request
         outbox.append(.mine(request))
     }
@@ -131,25 +149,30 @@ extension ScopeHeal {
         return under ? SpoolPow.dayMilliseconds : min(max(left, SpoolSession.minParkMilliseconds), SpoolPow.dayMilliseconds)
     }
 
-    /// A stamp the caller mined, or `nil` when the search ran out (`SpoolPow.mine`'s budget). A stamp lets the scope be
-    /// subscribed and pushed again at once; none parks it for the floor, as a refused stamp would be.
+    /// The miner's answer to `request` (P4b2). Found: the stamp is kept with the bits it actually meets and counts toward
+    /// ``maxStampsPerDay`` whether a search or the engine's cache produced it, and the scope is subscribed and pushed again
+    /// at once. Exhausted: no stamp exists below ``SpoolPow/maxTries`` for that (scope, day, bits), so the scope parks until
+    /// the next UTC day after the request's. Over budget: it parks for the answer's park.
     ///
     /// The answer reaches the heal whether or not a session is open (P4b1): `mining` is cleared, the stamp kept and counted
     /// and the scope marked wanted, and only the `sub` waits for a session. So a search outlives the connection that asked
     /// for it, and the next connection's `sub` carries the stamp with no second search.
-    /// Answers whether the heal took the answer: one for a request it no longer waits on changes nothing.
+    /// Answers whether the heal took the answer: one whose serial the heal no longer waits on changes nothing.
     @discardableResult
-    mutating func stampMined(_ request: SpoolMiningRequest, counter: Int64?, session: inout SpoolSession?, now: SpoolNow) -> Bool {
+    mutating func stampMined(
+        _ request: SpoolMiningRequest, _ answer: SpoolStampAnswer, session: inout SpoolSession?, now: SpoolNow
+    ) -> Bool {
         guard mining[request.scope] == request else {
             return false
         }
         // `adopt` cancels the mining of a scope that leaves the table, so a request still in `mining` is a table scope's.
         mining[request.scope] = nil
-        if let counter {
-            // Only a stamp mined counts toward the day's allowance; a search that ran out or was cancelled does not.
+        switch answer {
+        case .found(let counter, let bits):
             // `demandStamp` set the request's day as `minedDay` when it asked, and asks nothing more while it is mined.
             states[request.scope]?.minedToday += 1
             states[request.scope]?.stamp = PowStamp(counter: counter, day: request.day)
+            states[request.scope]?.stampBits = bits
             dirty.insert(request.scope)
             subsWanted = true
             nextSubAt = .min
@@ -157,8 +180,10 @@ extension ScopeHeal {
                 syncSubscriptions(&open, now: now)
                 session = open
             }
-        } else {
-            park(request.scope, for: SpoolSession.minParkMilliseconds, now: now)
+        case .exhausted:
+            park(request.scope, for: Self.untilNextDay(request.day, now: now), now: now)
+        case .overBudget(let milliseconds):
+            park(request.scope, for: milliseconds, now: now)
         }
         return true
     }

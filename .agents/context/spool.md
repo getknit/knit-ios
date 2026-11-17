@@ -70,8 +70,9 @@ commons, attachments, TURN, tickets, casts and signals stay out.
   when this delivery newly carried it and it is not late, under one budget per engine (this port's own, P4a).
 - **Proof of work** (§8): `SHA-256("knit/spool/v1/pow" ‖ scopeId ‖ u64be(day) ‖ u64be(n))` with at least `powBits`
   leading zero bits, `day` the UTC day number, accepted for yesterday to tomorrow. Mined only after `err pow` on a
-  request that carried no stamp, then sent at once. Refused above 24 bits; at most 2^26 tries; a stamp is reused
-  until an hour before its window closes; a refused stamp parks the scope.
+  request that carried no stamp, then sent at once. Refused above 24 bits; at most 2^26 tries a search; a stamp is
+  reused until an hour before its window closes, and in this port only while the bits it meets reach the spool's
+  `powBits` (P4b2); a refused stamp parks the scope.
 - **Invites** (`RELAY_INVITE.md`): `https://getknit.app/r#<base64url>` or `knit://r/<base64url>`; the body is CBOR
   `{v:1, u, c?, n?, i?, k?}`, at most 512 bytes, `u` at most 256 characters. This port reads `u` alone: `c` and `n`
   are a commons room, `i` and `k` Knit Anywhere's issuer and key. Applied only after a consent sheet.
@@ -111,6 +112,7 @@ commons, attachments, TURN, tickets, casts and signals stay out.
 | `SpoolBackoffPolicy.kt`, the wait in `ScopeSync.Worker.runLoop` | `Sources/KnitMesh/Spool/SpoolBackoff.swift` | blobs, security |
 | `ScopeFrames.kt` (DM half), `ScopeRegistry.kt` (DM half), `ScopeSync.kt` | `Sources/KnitMesh/Spool/` (P3b, P4) | blobs, security |
 | `MeshManager.kt:1185` (`handleInbound(…, "spool:<url>")`) | `MeshEngine.receiveFromSpool` (`Spool/MeshEngine+Spool.swift`), a `.spool` source on `RatchetInbound.Route`; `InboundFrame` stays link-only | blobs, crypto, security |
+| `ScopeSync.kt` `stampFor` (`:3300`), `POW_BUDGET` | `Sources/KnitMesh/Spool/SpoolMiner.swift` (with `SpoolMinerCache`, `SpoolMinerBudget`, `SpoolStampRunner`), this port's own engine-wide miner (P4b2) | blobs, security |
 | `OkHttpSpoolDialer.kt` | `Sources/KnitSpoolNet/` (`URLSessionWebSocketTask`, FoundationNetworking on Linux) | security |
 | `InternetRelayScreen.kt`, `RelayInviteApplier.kt`, `SettingsStore` keys | `Sources/KnitAppCore/` and `Sources/Knit/`, `AppPreferences` | security |
 | `FakeSpool.kt`, `LabInternet.kt` | `Tests/KnitMeshTests/FakeSpool.swift` (the text subset), `LabInternet` in P4 | — |
@@ -139,7 +141,7 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 | P3b | the DM frame rules (`ScopeFrames`, `mayRefill`), the heal loop (`ScopeHeal`), the gated scope table (`ScopeTable`), the seal cache, the pull budget (`SpoolIntake`), convergence tests | done 2026-11-17 |
 | P4a | the engine's spool door, settlement, the bridge and its budget, reset evidence, the table's inputs and re-reads, `SpoolPlane`, two-engine tests over `FakeSpool` | done 2026-11-17 |
 | P4b1 | the dialled address (`AcceptedSpoolURL`), the socket contract (`SpoolSocket`), the session's life in the plane (`SpoolLink`, tokens), inbound and outbound bounds, the upload budget and memo, `Retry-After`, backoff, relays, pause and resume, the spool's own seen set, counts, logs, `status`'s `spool` key, `FuzzSpoolSession` | done 2026-11-17 |
-| P4b2 | the stamp miner's tasks | next |
+| P4b2 | the stamp miner (`SpoolMiner`): serials, one search per value, the runner off the actor, the engine cache, the budget and its shares, pause, counts | done 2026-11-17 |
 | P5 | `KnitSpoolNet`, `check.sh spool` against the daemon | |
 | P6 | the app: settings, consent, invites, the release gate | |
 | P7 | device trials | |
@@ -198,8 +200,8 @@ any set. What P4 wires:
   `nextDeadline(sessionReady:)`, and when `wantsRound(sessionReady:now:)` reads `CustodyStore.liveFrames` once, inside a
   store unit, and calls `roundStarted(.frames(…) | .unreadable, …)`. `custodyChanged()` after every custody write.
 - **Its outputs** (`drain()`): `.candidate(ScopeCandidate)`, settled with `settle(_:_:session:now:)` **before the heal's
-  next input**, and `.mine` / `.cancelMining` for stamps (`SpoolPow.mine` off the actor, answered with
-  `stampMined(_:counter:session:now:)`; P4 cancels every request in `mining` when it drops the relay).
+  next input**, and `.mine` / `.cancelMining` for stamps, which the engine's miner answers with
+  `stampMined(_:_:session:now:)` (P4b2; the plane cancels every request in `mining` when it drops the relay).
 - **Times.** `SpoolNow` carries the monotonic clock (floors, parks, `rate` waits, the 60 s tick, the hour's budget) and
   the wall clock (`sentAt` rules, custody's reads, a stamp's UTC day).
 - **What it keeps.** The accounted, invalid and unpushable sets (512 each, oldest dropped), a park after a `sub` refused
@@ -208,19 +210,18 @@ any set. What P4 wires:
   `ScopeHeal`, its round and step, `ScopeCandidate` and `ScopeFrame` print counts and id prefixes alone, and mirror nothing.
 - **This port's own rules** (ADR 2026-11.adrq, amended 2026-11-17, a draft): the unpushable set and when an id leaves
   it; accounting at the listing; the 5 s heal floor; the hourly pull budget, priced at our own `maxBlob`, and the
-  `unopenable` fault; a refused stamp on a push parks the scope; at most two stamps mined per scope per UTC day, a search
-  that found none not counted; a live event already accounted or quarantined is dropped before it is claimed; the `sub`
-  batch halving.
+  `unopenable` fault; a refused stamp on a push parks the scope; at most two stamps obtained (mined or from the engine's
+  cache, P4b2) per scope per UTC day, an answer with no stamp not counted; a live event already accounted or quarantined
+  is dropped before it is claimed; the `sub` batch halving.
 - **`FakeSpool`** gained `subBatchLimit`, `shed`, and the test modes `freshIdsPerListing`, `freshJunkPerListing`,
   `oversizeServes`, `garblesServes` and `refusesEveryPushPow`, with `servedBytes`. The tests' `HealMember` and `HealLab` drive members over
   it with a real `MemoryCustodyStore` each; `HealBench` drives one heal record by record.
 
 ### What P4 owes from P3b (2026-11-17)
 
-- A stamp search the actor cancels because the connection dropped is never answered with `stampMined(nil)`: it is dropped,
-  so `mining` stays set and the next connection starts no new search, and only a search that ran out of tries answers
-  `nil`. A test drops the session mid-search and reconnects: no new `.mine` before the park ends, and at most
-  `maxStampsPerDay` mined.
+- A stamp search outlives the connection that asked for it: a dropped connection stops nothing, so `mining` stays set and
+  the next connection starts no new search. Since P4b2 a stopped search is never answered at all (the miner resumes or
+  drops it), and only a whole search that found none answers exhausted, which parks the scope until the next UTC day.
 - **Verify through the engine, never a second key picker.** Each candidate's `verified(by:)` takes the engine's own
   `verifierBundle(for:)` (ours for our own frame, the payload's own key for a profile, the pinned key otherwise), or the
   `ScopeFrame` passes through the engine's `verify` path; a candidate with no key settles `.unopenable`.
@@ -325,8 +326,9 @@ any set. What P4 wires:
   hour within one session: a scope's first `digest` in each session, and any `digest` of no blob, forget its entries.
 - **`Mesh+Spool`** (under `Spool/`): `addSpoolRelay(_:url:)` (at most eight; refused on a mesh with no socket factory),
   `removeSpoolRelay`, `pauseSpool`, `resumeSpool`, `spoolStatus`. One task a dial reads the socket; one task a send writes.
-  `Mesh.stop` pauses the plane and `start` resumes it. `.mine` requests wait in `spoolMiningQueue`; `spoolStampMined` is
-  the runner's entry, and `SpoolPlane.stampMined` reaches the heal with no session.
+  `Mesh.stop` pauses the plane and `start` resumes it. `.mine` requests waited in `spoolMiningQueue` until P4b2 replaced it
+  with the plane's `SpoolMiner`; `spoolStampMined` is the runner's entry, and `SpoolPlane.stampMined` reaches the heal with
+  no session.
 - **The router** keeps a seen set of the spool's own (`spoolSeen`); both doors check both sets.
 - **Logs and `status`.** `SpoolLogBook` writes at most a line per kind per relay per minute, at warning level, of counts
   and the spec's refusal codes. `status` has a `spool` key (`ControlLines+Spool`) of handles and counts.
@@ -335,8 +337,9 @@ any set. What P4 wires:
 
 ### What P4b2, P5, P6 and P7 owe from P4b1 (2026-11-17)
 
-- **P4b2.** A runner that takes `Mesh.spoolMiningQueue`, mines off the actor with `SpoolPow.mine`, answers
-  `spoolStampMined` exactly once per search, and cancels on the plane's `.cancel`; never answers a cancelled search.
+- **P4b2** (met: "The miner as P4b2 left it"). A runner that takes `Mesh.spoolMiningQueue`, mines off the actor with
+  `SpoolPow.mine`, answers `spoolStampMined` exactly once per search, and cancels on the plane's `.cancel`; never answers
+  a cancelled search.
   Stamp identity moves from the request's value to a plane-assigned serial: a cancelled request's answer clears nothing,
   an identical request asked again is a new one, the stamp keeps its bits, and a stamp is reused only while
   `stamp.bits >= powBits`.
@@ -353,8 +356,8 @@ any set. What P4 wires:
     plus one tick, `dialTimeouts` counts it, and the next dial follows the curve.
 - **P6.** The scene phase calls `pauseSpool`/`resumeSpool`; the master switch off or consent withdrawn removes every relay;
   a private relay's address, token included, goes to the Keychain through `socketURLText` and comes back through the
-  factory; the daily stamp spend is persisted across launches; a relay-URL command on the debug bridge, if a trial needs
-  one, is USB-only.
+  factory; the miner's budget and found stamps are persisted across launches (P4b2's owed list); a relay-URL command on
+  the debug bridge, if a trial needs one, is USB-only.
 - **P7.**
   - An `idevicesyslog` capture on a release build, and on a debug build with a private relay (a `k=` token and URL user
     info), grepped for `wss://`, `k=`, 64-hex runs, node ids and frame-id lines at warning level: none found.
@@ -369,6 +372,45 @@ any set. What P4 wires:
 - **Before P7**, the reverse two-engine test: three radio failures seal A's reset; the retiring scope then serves X's old seal before B's re-seal
     arrives by radio. Pass: the re-seal is delivered within the second re-seal's ~11 minutes on the manual clock, and
     both sides confirm the same `rootHash` after.
+
+### The miner as P4b2 left it (2026-11-17)
+
+The rules are ADR 2026-11.adrq's P4b2 amendment; this is where each lives.
+
+- **The value.** `SpoolMiner` (`Spool/SpoolMiner.swift`) is a value in `SpoolPlane`, beside the table: the requests by
+  serial (`SpoolMiningRequest.serial`, drawn from `SpoolPlane.nextSerial` and lent to each heal for the input it runs), the
+  values they wait on, the one run (`SpoolMinerJob`), `SpoolMinerCache` and `SpoolMinerBudget`. A value several relays ask
+  for is charged to the least-spent of them whose share holds (`SpoolMiner.charged`). `SpoolPlane.serviceMiner`,
+  which `Mesh.serviceSpool` calls after every input, takes the heals' asks, hands what the miner answers at once (the cache,
+  the budget) back to the heals after their turn, and loops until no ask is left; then the runner's actions (`.start`,
+  `.stop`, `.proceed`). `searchEnded` is the runner's result; `pause` and `resume` stop and restart the run.
+- **The heal's side.** `ScopeHeal.stampMined(_:_:session:now:)` takes a `SpoolStampAnswer` (found with its bits, exhausted,
+  over budget with its park), matched by serial. `usableStamp` is the one place a held stamp is judged (window and bits);
+  `stampNeed` and `demandStamp` both call it. `ScopeState.stampBits` keeps the bits. `SpoolScope.retiringUntil` (from
+  `DMScopes.retiringUntil`) lets `demandStamp` park a retiring scope about to leave (`Counts.stampsRetiring`).
+- **The runner.** `SpoolStampRunner` (`Spool/SpoolStampRunner.swift`) is injected; `DispatchStampRunner` is the one a mesh
+  makes on its first search: one serial `DispatchQueue(label:qos: .utility)`, `import Dispatch`. `SpoolStopFlag` is a KnitSync
+  `Lock` the actor sets and clears and the search reads at each check. `Mesh` holds the runner (`spoolRunner`), the search in
+  flight (`spoolSearch`), and posts results with a task that holds it weakly; `deinit` sets the flag and joins nothing;
+  `shutdownSpoolMiner()` sets it and awaits the queue. `useSpoolRunner` is the tests' seam.
+- **Status and logs.** `status`'s `spool` counts gain `minerRuns`, `minerFound`, `minerExhausted`, `minerStopped`,
+  `minerResumed`, `minerOverBudget`, `minerOverRelayShare`, `minerOverPeerShare`, `minerFromCache`, `minerUnheldScopes` and
+  `minerSpent`; each relay
+  gains `stampsRetiring`. The log book writes a `spool miner` line per interval.
+- **Tests.** `SpoolMinerTests` and `SpoolMinerBudgetTests` drive the value through `MinerBench`; `SpoolMinerPlaneTests` the
+  plane through `SpoolLab` (`holdsRuns`, `endRun`); `ScopeHealStampTests` the heal's bits and retiring rules;
+  `SpoolMinerMeshTests` two meshes with `FakeStampRunner` and the real runner; `FuzzSpoolSession` plays the runner with
+  `SpoolMiner` behind the heal (`SpoolSessionFuzz`).
+
+### What P5, P6 and P7 owe from P4b2 (2026-11-17)
+
+- **P5.** `check.sh spool` at `SPOOL_POW_BITS=24` with many scopes. Oracle: the `status` counts show at most one search per
+  (scope, day, bits) and `minerSpent` at most 2^29 in 24 h.
+- **P6.** Persist the budget's hourly buckets and the cache's found entries (scope, day, counter, bits) in the database,
+  never `UserDefaults`; the plane does not ship in a store build before then. This replaces P4b1's "the daily stamp spend is
+  persisted across launches".
+- **P7.** An energy log over an hour against a lab spool at 24 bits, Knit in the background half the time. Pass: no hashing
+  while paused, and no termination for CPU use.
 
 ### What later phases owe from P3a's reviews (2026-11-16)
 
@@ -411,7 +453,8 @@ limits in `SpoolLimits.clamped()`. The rest of Kotlin's bounds sit in the connec
 - No log line puts a scope id beside a peer id.
 - `dmScopes(now:)` is read again after every commit that moves a root and when a retiring window closes; `nil` keeps
   the scopes held. Every per-scope state is keyed by `ScopeKeys.id`.
-- A cancelled worker cancels its mining task (`SpoolPow.mine` looks every 65,536 counters).
+- A search stops only when no request is left for it or the plane pauses (P3b, P4b2), and `SpoolPow.mine` looks at its
+  stop every 65,536 counters.
 
 P6 owes two more:
 

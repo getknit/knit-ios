@@ -21,7 +21,7 @@ enum ScopeFixture {
     /// `member`'s view of the pair's scope.
     static func scope(for member: TestPeer, retiring: Bool = false, seed: Int = 40) -> SpoolScope {
         let peer = member == alice ? bob : alice
-        guard let scope = SpoolScope.of(keys(seed), peer: peer.nodeId, retiring: retiring) else {
+        guard let scope = SpoolScope.of(keys(seed), peer: peer.nodeId, retiring: retiring, retiringUntil: nil) else {
             preconditionFailure("a derived scope id is 32 bytes")
         }
         return scope
@@ -227,22 +227,33 @@ final class HealMember {
         }
     }
 
-    /// Answers `request` as a search that found nothing, or one cancelled.
-    func failMining(_ request: SpoolMiningRequest) {
+    /// Answers `request` with no stamp, as the engine's miner may (P4b2): over budget with the shortest park unless the test
+    /// names another answer, or exhausted. A stopped search never reaches the heal.
+    func failMining(
+        _ request: SpoolMiningRequest, with answer: SpoolStampAnswer = .overBudget(parkMilliseconds: SpoolSession.minParkMilliseconds)
+    ) {
         pendingMining.removeAll { $0 == request }
         var open: SpoolSession? = session
-        heal.stampMined(request, counter: nil, session: &open, now: now)
+        heal.stampMined(request, answer, session: &open, now: now)
         session = open ?? session
         pump()
     }
 
-    /// Mines `request` and answers the heal.
+    /// Mines `request` and answers the heal with the stamp and the bits it actually meets.
     func mine(_ request: SpoolMiningRequest) {
-        let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits).counter
         var open: SpoolSession? = session
-        heal.stampMined(request, counter: counter, session: &open, now: now)
+        heal.stampMined(request, Self.found(request), session: &open, now: now)
         session = open ?? session
         pump()
+    }
+
+    /// The answer a whole search from 0 gives `request`.
+    static func found(_ request: SpoolMiningRequest) -> SpoolStampAnswer {
+        guard let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits).counter else {
+            return .exhausted
+        }
+        let bits = SpoolPow.leadingZeroBits(SpoolPow.digest(scopeId: request.scope.bytes, day: request.day, n: counter))
+        return .found(counter: counter, bits: bits)
     }
 
     /// The engine's part (P4): the signature against the claimed sender's pinned key, then custody, then the settlement
