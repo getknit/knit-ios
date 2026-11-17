@@ -691,6 +691,25 @@ explicit direction.** Update this file in the change that ships an item.
 
 ## Next, after the MVP
 
+- **Internet relays for text DMs, begun 2026-11-16** at the maintainer's direction (ADR 2026-11.adrq). The iPhone joins
+  Android's spool relays for DMs, text only, in debug builds until the maintainer approves it for the store. It needs no
+  Android change. The phases and their state live in `.agents/context/spool.md`:
+  - P0, the decision, the references and `spool-v1.json`: done 2026-11-16;
+  - P1, the wire (`KnitWire/Spool`), then P2, the scope crypto and `RatchetSessions+Scopes`;
+  - P3, the pure plane (`KnitMesh/Spool`) and a fake spool, then P4, the engine's wiring and the bridge;
+  - P5, `KnitSpoolNet` and `check.sh spool` against the reference daemon, then P6, the app;
+  - P7, the device trials: an iPhone and a Pixel with Bluetooth apart, over `public-1`.
+
+  Deferred, each with an amendment of its own:
+  - group scopes: the group root's mint, adoption, re-mint and gossip, the founding roster and the group frame-set rule;
+  - applying a received ctl 7, which matters once knit-next turns its `SPOOL_DIRECTORY` on and homes move off
+    `public-1`;
+  - background refresh, without which a relay DM waits until Knit is next open;
+  - the "via Internet" mark on a delivered message (knit-next ADR 2026-10.e42d);
+  - pair scopes, for a contact known only from a card;
+  - the release flip: the privacy manifest, the store's answers and the changelog;
+  - whether getknit.app's association file lists `/r`, which a relay invite's https form needs.
+
 - **DM and group forward secrecy:** on since P8, 2026-10-19 ("Forward secrecy", above).
 - **Contacts:** contact links at a distance (`docs/CONTACT_CARD.md` in knit-next), and Android's Add contact,
   which pins a key from a scanned code. QR verification in person is in on a peer's profile (ADR 2026-10.65xx):
@@ -853,6 +872,7 @@ explicit direction.** Update this file in the change that ships an item.
   twin of knit-next #103, and interop-audit finding AND-2. At the front the iPhone gives the phone a 12 s head start
   past the dwell, then dials it itself (ADR 2026-10.6eyf). Android admits a dialer it has not sighted, so no Android
   change was needed, and the Track A item is closed. In the background a lonely iPhone dials it anyway (ADR 2026-10.mueg).
-- **Never on iOS:** Wi-Fi Aware as a mesh plane, the BLE side channel, spool relays and commons, LoRa, and Wi-Fi
-  Direct. A Wi-Fi Aware lane for files between paired phones is the one shape left open, and a spike comes first
-  (ADR 2026-10.2c6c). These are ADR-recorded scope decisions, not a backlog.
+- **Never on iOS:** Wi-Fi Aware as a mesh plane, the BLE side channel, LoRa, and Wi-Fi Direct. A Wi-Fi Aware lane
+  for files between paired phones is the one shape left open, and a spike comes first (ADR 2026-10.2c6c). These are
+  ADR-recorded scope decisions, not a backlog. Spool relays left this list on 2026-11-16 for text DMs (ADR
+  2026-11.adrq, "Internet relays", above); the commons and Knit Anywhere are not in that decision.

@@ -18,10 +18,10 @@ for the target map and the seams.
 - **Before and after building or testing:** obey `.agents/rules/build-and-test.md`. The commands are in
   `.agents/context/commands.md`.
 - **When editing Swift:** obey `.agents/rules/coding.md`.
-- **When touching `KnitWire`, `KnitCrypto`, `KnitMesh`, `KnitStore`, `KnitStoreSQL`, `KnitBLE`, `KnitBlueZ`
-  or `knit-peer`:** obey `.agents/rules/interop.md`, then READ the matching reference in `.agents/context/`:
-  `wire-format.md`, `ble-transport.md`, `crypto.md`, `custody.md` or `linux-peer.md`. For the Kotlin behind
-  them, READ `.agents/context/knit-next.md`.
+- **When touching `KnitWire`, `KnitCrypto`, `KnitMesh`, `KnitStore`, `KnitStoreSQL`, `KnitBLE`, `KnitBlueZ`,
+  `KnitSpoolNet` or `knit-peer`:** obey `.agents/rules/interop.md`, then READ the matching reference in
+  `.agents/context/`: `wire-format.md`, `ble-transport.md`, `crypto.md`, `custody.md`, `spool.md` (Internet relays)
+  or `linux-peer.md`. For the Kotlin behind them, READ `.agents/context/knit-next.md`.
 - **When changing code in the Bluetooth, blobs or crypto plane:** obey `.agents/rules/owners.md`. SPAWN the
   plane's reviewer on the plan, DELEGATE the implementation to its owner, then SPAWN the reviewer on the change, apply
   the findings and relay the trial it names. A Stop hook enforces the review.

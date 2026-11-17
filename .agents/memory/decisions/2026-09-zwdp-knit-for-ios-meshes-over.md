@@ -27,4 +27,6 @@ throughput, with no fast fan-out plane. The iPhone never advertises `CAP_FAST_CO
 or `CAP_DIRECT_TRANSFER`. The other planes are listed as never-on-iOS in `.agents/memory/roadmap.md`; the
 capability rule in `.agents/rules/interop.md` is the check that keeps them out. (Amended 2026-11-10: a debug build
 fetches a link's preview card over the Internet when its sender turns the setting on, the app's first request over IP;
-it carries nothing of the mesh, which still meshes over Bluetooth alone. ADR 2026-11.hcvg.)
+it carries nothing of the mesh, which still meshes over Bluetooth alone. ADR 2026-11.hcvg.) (Amended 2026-11-16: a
+debug build carries text DMs through Android's spool relays, the mesh's first plane besides Bluetooth. Phones still
+link over Bluetooth alone; a spool is a relay for a conversation, not a radio. ADR 2026-11.adrq.)

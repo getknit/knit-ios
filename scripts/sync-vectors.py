@@ -17,6 +17,11 @@ names with the key, the display blank and the cleaned text each must give, and `
 2026-11.y4pc) the name screen's verdict on names over the shipped word lists, with each list's digest. A checkout from
 before any of these changes has none of that file, so each is copied and checked only where it exists.
 
+`spool-v1.json` is not copied but read out of two documents, since knit-next pins the spool's vectors in prose: the
+fenced blocks of `docs/SPOOL_PROTOCOL.md` §13 and of `docs/RELAY_INVITE.md` §5. It keeps what a text-only client
+checks (the inputs, the DM and pair derivations, the seal, the digest, proof of work, the core records, every
+HELLO variant and the invite links) and leaves out the commons, attachments, TURN, tickets, casts and signals.
+
 `--only` copies or checks the files it names and nothing else, and leaves the alias words alone. It is for a
 file that lands on a knit-next branch before the pin moves: the other copies keep the provenance they have.
 
@@ -47,8 +52,14 @@ RATCHET = "ratchet-v1.json"
 CUSTODY = "custody-v1.json"
 NAME_KEY = "name-key-v1.json"
 NAME_SCREEN = "name-screen-v1.json"
+SPOOL = "spool-v1.json"
 # Copied where the knit-next checkout has them; a checkout from before the change that added one has none.
-OPTIONAL = (RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN)
+OPTIONAL = (RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN, SPOOL)
+SPOOL_SPEC = Path("docs/SPOOL_PROTOCOL.md")
+RELAY_INVITE_SPEC = Path("docs/RELAY_INVITE.md")
+# The §13 blocks a text-only client checks, by the label that opens the paragraph before each.
+SPOOL_SECTIONS = ("Inputs", "Derivations", "Pair scope", "Seal", "Digest", "PoW", "Records")
+SPOOL_HEX = re.compile(r"[0-9a-f]+")
 ALIAS_OUTPUT = ROOT / "Sources" / "KnitCrypto" / "AliasWords.swift"
 ALIAS_SOURCE = Path("app/src/main/java/app/getknit/knit/identity/AliasWords.kt")
 ALIAS_LISTS = (("ALIAS_ADVERBS", "adverbs"), ("ALIAS_ADJECTIVES", "adjectives"), ("ALIAS_NOUNS", "nouns"))
@@ -79,9 +90,126 @@ def copied(knit_next: Path, name: str) -> dict:
 
 def copied_if_present(knit_next: Path, name: str) -> dict | None:
     """An optional file from knit-next's `vectors/`, or `None` when this checkout predates it."""
+    if name == SPOOL:
+        return spool_vectors(knit_next)
     if not (knit_next / "vectors" / name).is_file():
         return None
     return copied(knit_next, name)
+
+
+def fenced_blocks(text: str) -> list[tuple[str, list[str]]]:
+    """Each fenced block, with the first line of the paragraph before it, which names it in knit-next's docs."""
+    lines = text.split("\n")
+    blocks: list[tuple[str, list[str]]] = []
+    label, previous_blank, index = "", True, 0
+    while index < len(lines):
+        line = lines[index]
+        if line.startswith("```"):
+            end = index + 1
+            while not lines[end].startswith("```"):
+                end += 1
+            blocks.append((label, lines[index + 1:end]))
+            index, previous_blank = end + 1, False
+            continue
+        if line.strip():
+            if previous_blank:
+                label = line
+            previous_blank = False
+        else:
+            previous_blank = True
+        index += 1
+    return blocks
+
+
+def spool_entries(body: list[str]) -> dict[str, str]:
+    """`name = value` rows: a quoted string, or hex that may run on over indented lines. Other rows are prose."""
+    entries: dict[str, str] = {}
+    current = None
+    for raw in body:
+        line = raw.split("//")[0].rstrip()
+        stripped = line.strip()
+        if not stripped:
+            continue
+        if raw[:1].isspace() and current and SPOOL_HEX.fullmatch(stripped):
+            entries[current] += stripped
+            continue
+        current = None
+        quoted = re.findall(r'(\w+)\s*=\s*"([^"]*)"', line)
+        if quoted:
+            entries.update(quoted)
+        elif "=" in line:
+            parts = [part.strip() for part in line.split("=")]
+            if SPOOL_HEX.fullmatch(parts[-1]) and len(parts[-1]) % 2 == 0:
+                entries[parts[0]] = parts[-1]
+                current = parts[0]
+    return entries
+
+
+def invite_entries(body: list[str]) -> dict[str, dict]:
+    """RELAY_INVITE.md §5's rows: what the link holds, then the link itself on the row's last line."""
+    rows: dict[str, list[str]] = {}
+    current = None
+    for raw in body:
+        match = re.match(r"(\w+) = (.*)$", raw)
+        if match:
+            current = match.group(1)
+            rows[current] = [match.group(2)]
+        elif current:
+            rows[current].append(raw.strip())
+    invites = {}
+    for name, lines in rows.items():
+        held = " ".join(lines[:-1])
+        found = re.search(r'\bu "([^"]+)"', held)
+        title = re.search(r'\bn "([^"]+)"', held)
+        if not found:
+            sys.exit(f"sync-vectors: {RELAY_INVITE_SPEC} row {name} names no u")
+        invites[name] = {
+            "link": lines[-1],
+            "u": found.group(1),
+            "c": "no c" not in held,
+            "n": title.group(1) if title else None,
+            "i": bool(re.search(r'\bi "', held)),
+            "k": bool(re.search(r'\bk "', held)),
+        }
+    return invites
+
+
+def section(text: str, start: str, end: str, path: Path) -> str:
+    if start not in text or end not in text[text.index(start):]:
+        sys.exit(f"sync-vectors: {path} has no '{start}' section; has knit-next changed shape?")
+    first = text.index(start)
+    return text[first:text.index(end, first)]
+
+
+def spool_vectors(knit_next: Path) -> dict | None:
+    """The spool's vectors, read out of the spec's prose, or `None` when this checkout has no spool spec."""
+    if not (knit_next / SPOOL_SPEC).is_file() or not (knit_next / RELAY_INVITE_SPEC).is_file():
+        return None
+    spec = (knit_next / SPOOL_SPEC).read_text(encoding="utf-8")
+    scope: dict[str, dict[str, str]] = {}
+    hellos: dict[str, str] = {}
+    for label, body in fenced_blocks(section(spec, "## 13. Test vectors", "## Appendix A.", SPOOL_SPEC)):
+        entries = spool_entries(body)
+        name = re.match(r"([A-Za-z][A-Za-z -]*?)\s*[(:]", label)
+        name = name.group(1).strip() if name else label.strip()
+        if name in SPOOL_SECTIONS:
+            scope.setdefault(name, {}).update(entries)
+        else:
+            hellos.update({key: value for key, value in entries.items() if key.startswith("hello")})
+    missing = [name for name in SPOOL_SECTIONS if not scope.get(name)]
+    if missing:
+        sys.exit(f"sync-vectors: {SPOOL_SPEC} §13 has no {', '.join(missing)} block; has knit-next changed shape?")
+    invite = (knit_next / RELAY_INVITE_SPEC).read_text(encoding="utf-8")
+    blocks = fenced_blocks(section(invite, "## 5. Golden vectors", "## 6.", RELAY_INVITE_SPEC))
+    if len(blocks) != 1:
+        sys.exit(f"sync-vectors: {RELAY_INVITE_SPEC} §5 has {len(blocks)} blocks, not 1")
+    return {
+        "source": [provenance(knit_next, SPOOL_SPEC), provenance(knit_next, RELAY_INVITE_SPEC)],
+        "fixture": "fixture(n, seed)[i] = (7 * i + seed) mod 256",
+        "scope": scope,
+        "helloVariants": hellos,
+        "relayInvite": invite_entries(blocks[0][1]),
+    }
 
 
 def alias_words(knit_next: Path) -> str:
@@ -143,7 +271,7 @@ def main() -> int:
     parser.add_argument(
         "--only",
         action="append",
-        choices=(WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN),
+        choices=(WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN, SPOOL),
         help="copy or check only this vector file (repeatable); the alias words are left alone",
     )
     args = parser.parse_args()
@@ -156,14 +284,14 @@ def main() -> int:
         print(f"sync-vectors: copied {EMITTED} to {target}")
         return 0
 
-    names = args.only or [WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN]
+    names = args.only or [WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN, SPOOL]
     files: dict[str, dict] = {}
     absent: list[str] = []
     for name in names:
         content = copied_if_present(args.knit_next, name) if name in OPTIONAL else copied(args.knit_next, name)
         if content is None:
             if args.only:
-                sys.exit(f"sync-vectors: {args.knit_next / 'vectors' / name} is missing")
+                sys.exit(f"sync-vectors: {name}'s source is missing from {args.knit_next}")
             absent.append(name)
         else:
             files[name] = content
@@ -191,7 +319,11 @@ def main() -> int:
     if words is not None:
         ALIAS_OUTPUT.write_text(words, encoding="utf-8")
         written.append(ALIAS_OUTPUT.name)
-    uncommitted = [name for name, content in files.items() if content["source"]["uncommitted"]]
+    uncommitted = [
+        name
+        for name, content in files.items()
+        if any(source["uncommitted"] for source in (content["source"] if isinstance(content["source"], list) else [content["source"]]))
+    ]
     note = f" (uncommitted there: {', '.join(uncommitted)})" if uncommitted else ""
     print(f"sync-vectors: wrote {', '.join(written)} from knit-next {commit}{note}{skipped}")
     return 0

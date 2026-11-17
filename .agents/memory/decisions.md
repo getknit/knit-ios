@@ -121,3 +121,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-11.hcvg](decisions/2026-11-hcvg-a-link-s-card-is.md) | A link's card is fetched by its sender, in debug builds until approved | messages, ui, network, interop, blobs |
 | [2026-11.prsp](decisions/2026-11-prsp-the-iphone-airs-a-rotating.md) | The iPhone airs a rotating tag and sends its own presence keys | ble, mesh, privacy, wire, crypto |
 | [2026-11.gjtd](decisions/2026-11-gjtd-a-name-is-screened-by.md) | A name is screened by the word lists when it is set and when it is drawn | moderation, interop, text |
+| [2026-11.adrq](decisions/2026-11-adrq-text-dms-ride-spool-relays.md) | Text DMs ride spool relays, in debug builds until approved | scope, transport, spool, interop |

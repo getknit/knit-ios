@@ -51,7 +51,8 @@ Items 2–6 and 11 also pass between the iPhone and the Linux peer.
 - **Moderation and block/report,** which an App Store build needs.
 - **Background discovery while linked.** A locked iPhone with no link seeks peers (ADR 2026-10.mueg); one with
   links finds no new ones until Knit is next open.
-- **The other planes:** Wi-Fi Aware, the BLE side channel, spool relays, LoRa and Wi-Fi Direct.
+- **The other planes:** Wi-Fi Aware, the BLE side channel, spool relays, LoRa and Wi-Fi Direct. Spool relays for
+  text DMs came after the MVP, in a debug build (ADR 2026-11.adrq).
 
 ## Phases
 

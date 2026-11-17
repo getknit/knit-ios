@@ -14,6 +14,9 @@ Kotlin wins.
   `origin/main` was still `d3b821062`. If `main` is rebased before the push, the pin moves to the pushed commit. Every
   commit since `5fdaf5da8` was read for it, and "Since then" below says what each means here.
   `sync-vectors.py --check` needs a checkout at the pin, since a later one may carry vectors this port has not taken.
+- **The spool is no longer Android's alone** (ADR 2026-11.adrq, 2026-11-16): this port carries text DMs through spool
+  relays in debug builds. The notes below that say "there is no spool here" or list the spool among Android's planes
+  predate that. `.agents/context/spool.md` holds what was read for it and where, past the pin included.
   - **Up to `05dc2be1`** (A1's merge): A2's two commits (`0c0756f6`, `1f3befcd`: tests, `vectors/`, docs and
     Gradle's test inputs) and two ratchet fixes (`4b054362`, `fcb60d04`: v2/v3 only, which this port carries but
     never opens). Of what the files below say, only the BLE responder moved.
