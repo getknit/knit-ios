@@ -25,8 +25,9 @@ whole diff, so findings unrelated to the last round kept arriving.
 
 ## 2. The plane reviewers go first, the test reviewers after
 
-- Stage 1 is the plane reviewers (`bluetooth-reviewer`, `blobs-reviewer`, `crypto-reviewer`). Stage 2 is the test
-  reviewers. This port has none yet: the mesh-lab reviewer waits for the lab (`.agents/memory/roadmap.md`).
+- Stage 1 is the plane reviewers (`bluetooth-reviewer`, `blobs-reviewer`, `crypto-reviewer`) and
+  `security-reviewer`, which has no plane but judges the same code. Stage 2 is the test reviewers. This port has
+  none yet: the mesh-lab reviewer waits for the lab (`.agents/memory/roadmap.md`).
   `review-gate.conf` records each reviewer's stage.
 - Stage 2 runs once no stage-1 review is pending. While a stage-1 reviewer is pending (owed, or asked for and not yet
   stamped), the gate lists only stage 1. That way a test reviewer never reviews tests written for a design the plane

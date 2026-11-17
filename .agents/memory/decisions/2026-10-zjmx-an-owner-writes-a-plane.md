@@ -78,3 +78,27 @@ findings unrelated to the last round kept arriving. This port takes the same rul
 Left out: knit-next's reuse of a chaos sweep across passes, which has nothing to reuse here until the lab lands, and
 its gate for contributors' pull requests (knit-next `4dea7521`), which needs a Claude workflow this repository does
 not run. `PersonaTests` checks the stage column, and that each reviewer reads the rounds and names its own delta file.
+
+**Amendment (2026-11-16): a security reviewer, ported from knit-next.** knit-next added a `security-reviewer`
+(knit-next `f85acb1a2`, 2026-11-01) after its malicious-fork review of 2026-10-26 showed a class no plane reviewer
+looks for: code that passes every test written for honest peers and lets a modified client, a hostile radio,
+another app or whoever holds the phone take something. This port filed that review's findings as #18 to #34. By this
+date five are closed and three more have fixes on `main`, each found by the audit, not by a review of the change. The
+persona takes knit-next's twenty-one shapes and its six groups, and cites this port's own fixes as their evidence:
+
+- **No owner.** A trust boundary is not a plane. The plane's owner or the main session writes the change, and the
+  security reviewer runs beside the plane's reviewer when a file sits in both gates.
+- **Stage 1.** It judges code, not tests, so it runs with the plane reviewers and ahead of any test reviewer.
+- **Its gate** is the trust boundaries: all of `KnitWire`, the router, `MeshEngine+Inbound`, the link door and what
+  goes on air, at-rest storage, logs, notifications, crash reports, the content filter, link cards, the photo and
+  voice decoders, the share inbox, Add contact, the debug bridge's listener, `App/`'s plist, entitlements and
+  project, and CI. Gating `MeshEngine+Inbound` makes it the first reviewer the hook asks for on that hub file.
+- **iOS shapes.** Beside knit-next's catalogue it reads for a trap a peer can cause (Swift ends the process where
+  Kotlin throws), Swift's canonical string equality, a SQL store whose empty answer on error opens a gate, the
+  release build's node id in the GATT payload, the unified log's public lines, and ImageIO decoding a stranger's
+  bytes in Knit's own process.
+- **Disclosure.** A fix for a hole not yet public gets no changelog bullet, and the reviewer flags any other public
+  text in the diff that spells out the attack, since the repository is mirrored to GitHub.
+
+Groups B to F of the catalogue are nearly bare, because no audit has covered the device, the servers or the build.
+The persona says so, so a bare group reads as unaudited rather than safe.

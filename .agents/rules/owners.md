@@ -27,9 +27,23 @@ frames and replays them from custody past the router. `MeshEngine+GroupRatchetOu
 frame in the send unit and floods them after it commits, and `MeshEngine+GroupRatchetSeedSends` re-sends seeds from the
 flushes.
 
-A change in a hub file that the hook gates for no one (`Mesh.swift`, `MeshEngine.swift`, the `MeshEngine+Inbound`
+A change in a hub file that the hook gates for no plane (`Mesh.swift`, `MeshEngine.swift`, the `MeshEngine+Inbound`
 family) still owes the reviewer whose plane the changed lines belong to. The "Adopt" column names those paths,
 because the hook cannot see them.
+
+## The security reviewer
+
+`security-reviewer` judges security and privacy defects across every plane: what a modified client, a hostile radio,
+a hostile server, another app, whoever holds the phone, a passive listener or the build can do with the change. It
+has no owner, because a trust boundary is not a plane: the plane's owner, or the main session, writes the change, and
+the security reviewer runs beside the plane's reviewer in the same message when a file sits in both gates. Its gate
+is the trust boundaries: all of `KnitWire`, the router, `MeshEngine+Inbound`, the link door and what goes on air, the
+link proof and seal, at-rest storage and the Keychain, logs, notifications and crash reports, the content filter,
+mentions and names, link cards, the photo and voice decoders, the share inbox, Add contact, the debug bridge's
+listener, `App/`'s plist, entitlements and project, and CI. Adopt it too for a change elsewhere that acts on what a
+peer, a server, another app or an outsider wrote, or that sends, airs, stores, logs or shows something about the user:
+`Launch.open(url:)`, the profile, block and blob paths of `MeshEngine`, a new dependency. Ported from knit-next's
+persona of the same name (knit-next `f85acb1a2`), with this port's own fix history as its evidence.
 
 ## Delegating to an owner
 

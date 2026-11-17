@@ -25,6 +25,10 @@ for the target map and the seams.
 - **When changing code in the Bluetooth, blobs or crypto plane:** obey `.agents/rules/owners.md`. SPAWN the
   plane's reviewer on the plan, DELEGATE the implementation to its owner, then SPAWN the reviewer on the change, apply
   the findings and relay the trial it names. A Stop hook enforces the review.
+- **When changing code that acts on what a peer, a server, another app or an outsider wrote, or that sends, airs,
+  stores, logs or shows something about the user** (`KnitWire`, the router, the link door, logs, decoders, link
+  cards, `App/`, CI): SPAWN `security-reviewer` per `.agents/rules/owners.md`, beside the plane's reviewer when there
+  is one. A Stop hook enforces it for the gated paths.
 - **When spawning a reviewer or relaying its findings:** obey `.agents/rules/review-rounds.md`. Findings are Blocking
   or Non-blocking, only a blocking one opens another round, a re-review reads the delta the Stop hook writes, and two
   rounds in a row with a new blocking finding send the design back to the maintainer.
