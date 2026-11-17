@@ -1,5 +1,6 @@
 import KnitCrypto
 import KnitStore
+import KnitSync
 import KnitTestSupport
 import KnitWire
 
@@ -56,10 +57,27 @@ enum ScopeFixture {
             recipientId: to.nodeId.string,
             payload: ChatContent(enc: enc).encoded
         )
-        do {
-            return try from.signed(envelope)
-        } catch {
-            preconditionFailure("a fixture key signs")
+        return signedOnce(envelope, by: from)
+    }
+
+    /// Every fixture frame signed so far, by its signed bytes, which name its sender.
+    private static let signedFrames = Lock<[[UInt8]: TestFrame]>([:])
+
+    /// `envelope` signed by `sender`, the first time it is asked for and the same bytes every time after. CryptoKit
+    /// randomizes Ed25519 signatures, so two signings of one frame differ on Apple platforms, and a frame's sealed blob,
+    /// its blob id and the spool's digest follow its signature: a suite that signed one fixture twice would hold two
+    /// frames under one id there and one on Linux.
+    private static func signedOnce(_ envelope: RelayEnvelope, by sender: TestPeer) -> TestFrame {
+        let bytes = envelope.encoded
+        return signedFrames.withLock { frames in
+            if let frame = frames[bytes] {
+                return frame
+            }
+            guard let frame = try? sender.signed(envelope) else {
+                preconditionFailure("a fixture key signs")
+            }
+            frames[bytes] = frame
+            return frame
         }
     }
 
