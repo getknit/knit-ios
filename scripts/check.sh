@@ -3,8 +3,8 @@
 #
 #     scripts/check.sh fast        # format, lint, build, unit tests, script tests (the pre-push hook)
 #     scripts/check.sh all         # every gate that runs on Linux
-#     scripts/check.sh <gate> ...  # format lint build test scripts coverage tsan asan analyze periphery adr lintorama xcode uitest device devicetest
-#                                  # release archive upload shots trailer clips
+#     scripts/check.sh <gate> ...  # format lint build test scripts coverage tsan asan analyze periphery adr lintorama spool xcode uitest device
+#                                  # devicetest release archive upload shots trailer clips
 #
 # Each build variant (coverage, TSan, ASan, analyze) gets its own --scratch-path, so switching between them never
 # rebuilds the plain debug tree. `.agents/context/commands.md` explains when to run which.
@@ -192,6 +192,22 @@ gate_periphery() {
 	periphery scan --quiet --strict --retain-public --retain-equatable-properties "${stores[@]}" "${excludes[@]}"
 }
 
+# The spool plane against the reference daemon (ADR 2026-11.adrq, P5), never part of fast or all: two meshes over a test
+# `ws://` socket, at the daemon's proof of work. It runs only when KNIT_SPOOL_URL names a daemon on this machine's loopback,
+# which `scripts/spool-daemons.sh start` prints with the optional private, second and 24-bit daemons.
+gate_spool() {
+	step "spool daemon suite"
+	if [ -z "${KNIT_SPOOL_URL:-}" ]; then
+		echo "skipped: KNIT_SPOOL_URL is unset, so no daemon was dialled (eval \"\$(scripts/spool-daemons.sh start)\" sets it)" >&2
+		return 0
+	fi
+	local name
+	for name in KNIT_SPOOL_URL_2 KNIT_SPOOL_PRIVATE_URL KNIT_SPOOL_HEAVY_URL; do
+		[ -n "${!name:-}" ] || echo "$name is unset: its case is skipped"
+	done
+	swift test "${jobs[@]}" --disable-xctest --only-use-versions-from-resolved-file --filter 'SpoolDaemon'
+}
+
 gate_adr() {
 	step "ADR router is in sync"
 	python3 scripts/adr.py index --check
@@ -332,11 +348,13 @@ check_release_app() {
 	# (AppEnvironment.voiceNotes and .linkPreviews), since a store build has neither until each is approved (ADR 2026-10.ue3y,
 	# ADR 2026-11.hcvg), and the blinded advert writer's defaults key and the line its debug factory logs as it opens the
 	# gate (AppEnvironment.blindAdvert), since a store build has no switch (ADR 2026-11.prsp), and the line KnitBLE logs
-	# as the bridge arms its skipped unpublish (BLERadio.skipNextUnpublish, knit/knit-ios#53). Any one here means a debug
-	# path ships.
+	# as the bridge arms its skipped unpublish (BLERadio.skipNextUnpublish, knit/knit-ios#53), and the line the spool's
+	# socket factory logs as it is made (URLSessionSpoolSocketFactory, ADR 2026-11.adrq), since a store build has no spool
+	# plane until it is approved. Any one here means a debug path ships.
 	for marker in app.getknit.knit.bridge "running the demo on seeded stores in memory" debug.launch.ratchet \
 		"voice notes are on in this debug build" "link previews are on in this debug build" debug.launch.blind \
-		"the blinded advert writer is on in this debug build" "ble will skip the next unpublish"; do
+		"the blinded advert writer is on in this debug build" "ble will skip the next unpublish" \
+		"spool sockets are on in this debug build"; do
 		if grep -q -a -F "$marker" "$app/Knit"; then
 			echo "$app/Knit holds debug-only code: it contains \"$marker\"" >&2
 			return 1
@@ -936,10 +954,10 @@ run() {
 case "${1:-fast}" in
 fast) run format lint build test scripts ;;
 all) run format lint adr build test scripts coverage tsan asan analyze lintorama ;;
-format | lint | build | test | scripts | coverage | tsan | asan | analyze | periphery | adr | lintorama | xcode | uitest | device | \
-	devicetest | release | archive | upload | shots | trailer | clips) run "$@" ;;
+format | lint | build | test | scripts | coverage | tsan | asan | analyze | periphery | adr | lintorama | spool | xcode | uitest | \
+	device | devicetest | release | archive | upload | shots | trailer | clips) run "$@" ;;
 *)
-	echo "usage: $0 [fast|all|format|lint|build|test|scripts|coverage|tsan|asan|analyze|periphery|adr|lintorama|xcode|uitest|device|devicetest|release|archive|upload|shots|trailer|clips]" >&2
+	echo "usage: $0 [fast|all|format|lint|build|test|scripts|coverage|tsan|asan|analyze|periphery|adr|lintorama|spool|xcode|uitest|device|devicetest|release|archive|upload|shots|trailer|clips]" >&2
 	exit 2
 	;;
 esac

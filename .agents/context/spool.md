@@ -113,7 +113,7 @@ commons, attachments, TURN, tickets, casts and signals stay out.
 | `ScopeFrames.kt` (DM half), `ScopeRegistry.kt` (DM half), `ScopeSync.kt` | `Sources/KnitMesh/Spool/` (P3b, P4) | blobs, security |
 | `MeshManager.kt:1185` (`handleInbound(…, "spool:<url>")`) | `MeshEngine.receiveFromSpool` (`Spool/MeshEngine+Spool.swift`), a `.spool` source on `RatchetInbound.Route`; `InboundFrame` stays link-only | blobs, crypto, security |
 | `ScopeSync.kt` `stampFor` (`:3300`), `POW_BUDGET` | `Sources/KnitMesh/Spool/SpoolMiner.swift` (with `SpoolMinerCache`, `SpoolMinerBudget`, `SpoolStampRunner`), this port's own engine-wide miner (P4b2) | blobs, security |
-| `OkHttpSpoolDialer.kt` | `Sources/KnitSpoolNet/` (`URLSessionWebSocketTask`, FoundationNetworking on Linux) | security |
+| `OkHttpSpoolDialer.kt` | `Sources/KnitSpoolNet/` (`URLSessionWebSocketTask` on Apple platforms; Linux builds it and opens nothing) | security |
 | `InternetRelayScreen.kt`, `RelayInviteApplier.kt`, `SettingsStore` keys | `Sources/KnitAppCore/` and `Sources/Knit/`, `AppPreferences` | security |
 | `FakeSpool.kt`, `LabInternet.kt` | `Tests/KnitMeshTests/FakeSpool.swift` (the text subset), `LabInternet` in P4 | — |
 
@@ -142,7 +142,7 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 | P4a | the engine's spool door, settlement, the bridge and its budget, reset evidence, the table's inputs and re-reads, `SpoolPlane`, two-engine tests over `FakeSpool` | done 2026-11-17 |
 | P4b1 | the dialled address (`AcceptedSpoolURL`), the socket contract (`SpoolSocket`), the session's life in the plane (`SpoolLink`, tokens), inbound and outbound bounds, the upload budget and memo, `Retry-After`, backoff, relays, pause and resume, the spool's own seen set, counts, logs, `status`'s `spool` key, `FuzzSpoolSession` | done 2026-11-17 |
 | P4b2 | the stamp miner (`SpoolMiner`): serials, one search per value, the runner off the actor, the engine cache, the budget and its shares, pause, counts | done 2026-11-17 |
-| P5 | `KnitSpoolNet`, `check.sh spool` against the daemon | |
+| P5 | `KnitSpoolNet` (the address check, the URLSession adapter), the stub server and the test socket, `check.sh spool` against the daemon | done 2026-11-17 |
 | P6 | the app: settings, consent, invites, the release gate | |
 | P7 | device trials | |
 
@@ -343,7 +343,7 @@ any set. What P4 wires:
   Stamp identity moves from the request's value to a plane-assigned serial: a cancelled request's answer clears nothing,
   an identical request asked again is a new one, the stamp keeps its bits, and a stamp is reused only while
   `stamp.bits >= powBits`.
-- **P5.** A `URLSessionWebSocketTask` adapter for `SpoolSocket`:
+- **P5** (met: "The socket as P5 left it"). A `URLSessionWebSocketTask` adapter for `SpoolSocket`:
   - `maximumMessageSize` at 128 KiB before buffering, a text message reported by its size, a close's reason dropped,
     `Retry-After` cut to `SpoolRetryAfter.keptBytes`, the URL read only through `socketURLText`, an empty mirror;
   - no redirects; an ephemeral `URLSessionConfiguration` with no cookies and no cache;
@@ -360,7 +360,8 @@ any set. What P4 wires:
   the debug bridge, if a trial needs one, is USB-only.
 - **P7.**
   - An `idevicesyslog` capture on a release build, and on a debug build with a private relay (a `k=` token and URL user
-    info), grepped for `wss://`, `k=`, 64-hex runs, node ids and frame-id lines at warning level: none found.
+    info), grepped for `wss://`, `k=`, 64-hex runs, node ids and frame-id lines at warning level: none found. The debug
+    capture includes a dial that fails, and no build sets `CFNETWORK_DIAGNOSTICS` (P5).
   - The backgrounding trial: iPhone and Pixel 9 apart over `public-1`, Knit in the background at least 10 minutes while
     the Pixel sends 5 DMs, then foregrounded: every DM lands, ✓✓ within 2 minutes, `failures` 0 and `dropFaults` 0 in
     `status` after the resume, the first redial within about 1 s.
@@ -406,13 +407,83 @@ The rules are ADR 2026-11.adrq's P4b2 amendment; this is where each lives.
 
 ### What P5, P6 and P7 owe from P4b2 (2026-11-17)
 
-- **P5.** `check.sh spool` at `SPOOL_POW_BITS=24` with many scopes. Oracle: the `status` counts show at most one search per
-  (scope, day, bits) and `minerSpent` at most 2^29 in 24 h.
+- **P5** (met: `SpoolDaemonHeavyTests`, six scopes at 24 bits, 108 s on one core on 2026-11-17). `check.sh spool` at
+  `SPOOL_POW_BITS=24` with many scopes. Oracle: the `status` counts show at most one search per (scope, day, bits) and
+  `minerSpent` at most 2^29 in 24 h.
 - **P6.** Persist the budget's hourly buckets and the cache's found entries (scope, day, counter, bits) in the database,
   never `UserDefaults`; the plane does not ship in a store build before then. This replaces P4b1's "the daily stamp spend is
   persisted across launches".
 - **P7.** An energy log over an hour against a lab spool at 24 bits, Knit in the background half the time. Pass: no hashing
   while paused, and no termination for CPU use.
+
+### The socket as P5 left it (2026-11-17)
+
+The rules are ADR 2026-11.adrq's P5 amendment; this is where each lives and what the stub settled.
+
+- **The target.** `KnitSpoolNet` (`Sources/KnitSpoolNet/`) depends on `KnitSync`, `KnitMesh` and `KnitWire`, has no
+  product, and every file opens with `#if DEBUG`. `SpoolDialCheck` is the address check, on every platform.
+  `URLSessionSpoolSocketFactory` logs its marker as it is made and runs the check at each dial; a refusal fails as
+  `unreachable` and logs `spool dial refused by the address check`, a constant line. `SpoolSessionDialer` holds
+  the one session and its configuration, `SpoolTaskWatch` is the session's delegate and the mapping to fault words,
+  `SpoolTaskState` decides each dial once and ends each socket once, and `URLSessionSpoolSocket` is the socket. The last
+  four compile where `canImport(Darwin)`; elsewhere `open` fails as `unreachable`.
+- **What the stub settled** on the Mac (Xcode 27.0, macOS 27; `URLSessionDialTests`, `URLSessionSocketTests`):
+  - `task.response` carries a refused upgrade's status and `Retry-After`: a 503's status and each variant's first 16 bytes
+    reach the plane, and a 302 fails as `http 302`;
+  - the delegate's refusal holds: a redirect's target, a second listener, is asked nothing;
+  - nothing is read ahead: a stub writing 64 MiB of 64 KiB messages to a socket nobody reads stalled after 1,507,023
+    bytes, and sends to a stub that never reads stalled after 655,360 bytes;
+  - the task offers `Sec-WebSocket-Extensions: permessage-deflate` on every upgrade. A relay that takes it may compress,
+    and `maximumMessageSize` holds on the inflated size: 8 MiB of zeros compressed under the cap ends the socket, and
+    128 KiB inflated arrives whole;
+  - a server that reads the upgrade and never answers held a task past the configuration's 20 s request timeout for
+    minutes, so the dial carries its own 20 s deadline (50 ms of leeway; the system's default was a second). A socket
+    quiet for 25 s stays open;
+  - a close's code reaches the plane, 4001 and 4003 included, and its reason does not;
+  - the requests carry `Accept-Language: *`, `User-Agent: Knit`, and the task's own `Accept`, `Accept-Encoding` and
+    `Cache-Control`, with no `Cookie` after a `Set-Cookie`, and no `Origin`, `Authorization` or `Sec-WebSocket-Protocol`.
+- **The stub server** (`Tests/KnitSpoolNetTests/StubServer.swift`, with `+Wire`, `StubEvents` and `Loopback`) is BSD
+  sockets on `127.0.0.1` at a kernel-picked port, with no `SO_REUSEPORT`. It plays one answer per connection and records
+  each request head, what it wrote, whether its writes stalled, and when it saw the client's end. `StubServerTests`
+  checks the stub itself on every platform. `SpoolNetPlaneTests` runs the plane's half with a `Mesh` on a step clock:
+  the open deadline, the handshake with no `hello`, a `Retry-After` floor, 4001 and 4003, and a marker in the query that
+  reaches no failure, end, `status` or log line.
+- **The test socket** (`SpoolTestSockets`, `SpoolTestSocket`, `SpoolTestTCP`) lives in `KnitMeshTests` beside the daemon
+  suite, which reuses the spool lab's greeted sessions, and never in a `.target`. It dials `127.0.0.1` and `localhost`
+  alone, checks `Sec-WebSocket-Accept`, masks every frame, caps a message before reading past 128 KiB, answers pings and
+  keeps a close's code. `SpoolDaemonLine` is one raw connection for what no member of the plane plays.
+- **The daemon suite** (`SpoolDaemonTests`, 2026-11-17, against `a682524`): text and ✓✓ both ways at the daemon's 8 bits,
+  with one search per value and both folds agreeing; a DM the daemon carries bridged onto a radio link to a third node; a
+  peer's reset pushed into the old scope, as Android pushes it, adopted, with the old scope retiring and the answer under
+  the new one; the Kotlin vectors' blob opened here and a Swift seal served back byte for byte; a private relay closing
+  4001 without its token and saying `hello` with it; two daemons sharing one search, each relay within its share; and
+  the opt-in 24-bit case. `SpoolDaemonAddressTests` holds the loopback rule on every run. On the Mac,
+  `URLSessionDaemonTests` runs the shipping adapter against the daemon when `KNIT_SPOOL_URL` names one on the Mac's
+  loopback: `hello` both ways, a stamped `sub`, a push pulled back byte for byte, and a socket quiet past the daemon's
+  30 s ping (2026-11-17, skuld's daemon reached through `ssh -R` to the Mac's loopback).
+- **The boundary.** `SpoolNetIsolationTests` checks that the app's dependency closure has no `KnitSpoolNet`, no product
+  exports it, every file is `#if DEBUG`, the release gate greps for the factory's marker, and nothing under `Sources/`
+  names the test socket or the stub. `seam_url_loading` reads `URLSession…`, `URLRequest` and `webSocketTask`, and
+  excludes link previews, `KnitSpoolNet` and its tests. The composition root's one use, link previews' transport, is
+  disabled on its line.
+
+### What P6 and P7 owe from P5 (2026-11-17)
+
+- **P6.**
+  - The composition root makes one `URLSessionSpoolSocketFactory` per mesh under `#if DEBUG`, with a
+    `seam_url_loading` disable on that line as link previews' has. `SpoolNetIsolationTests.theAppLinksNoSpoolSocketYet`
+    then gives way to a check that only a debug build reaches the factory, and the marker stays in `check_release_app`.
+  - A private relay's address leaves the Keychain only as an `AcceptedSpoolURL`, which the dial checks again.
+  - `RelayInvite.parse(_:allowCleartext:)` takes `allowCleartext` from the build's compile-time flag, never from anything
+    the invite carries.
+- **P7.**
+  - The first TLS relay and the first token through the shipping adapter: `public-1`, and a lab spool behind TLS with
+    `SPOOL_TOKEN`. The stub and the daemon are cleartext loopback, so neither has exercised the system's trust, a
+    `CONNECT` proxy or a relay that negotiates `permessage-deflate`.
+  - The capture in P4b1's P7 list runs with a dial that fails, and no build sets `CFNETWORK_DIAGNOSTICS`.
+  - The PAC trial: the iPhone on a lab Wi-Fi set to Configure Proxy: Automatic, with a PAC script that logs the `url` it
+    is handed, dials `wss://<lab relay>/spool/v1?k=<marker>`. Pass: the marker is in no line of the PAC log. If it is,
+    an address carrying `k=` dials with `connectionProxyDictionary = [:]`, and the P5 amendment records it.
 
 ### What later phases owe from P3a's reviews (2026-11-16)
 
@@ -441,7 +512,8 @@ limits in `SpoolLimits.clamped()`. The rest of Kotlin's bounds sit in the connec
 - `powBits` held to at most 24, and every spool `Int64` (`retryMs`, `ttlMs`, `maxTtlMs`, `count`) added or shifted
   only through clamping or `addingReportingOverflow`, since a trap ends Knit;
 - a limit used as a count or a range bound only once `clamped()` has held it at 0 or above;
-- the dialer calls `SpoolURL.isAcceptable` again on the canonical URL;
+- the dialer calls `SpoolURL.isAcceptable` again on the canonical URL (met in P5: `SpoolDialCheck` runs the whole factory
+  again);
 - a hostile-input test for each: an oversize record, short and long ids, `retryMs = Int64.max`, `powBits` of -1 and 64,
   and a listing of 128K empty ids.
 
@@ -466,21 +538,42 @@ P6 owes two more:
 Each phase that adds a target or a directory updates `architecture.md`, and the reviewers' paths in
 `.claude/hooks/review-gate.conf` and `.agents/rules/owners.md`: `Sources/KnitMesh/Spool` for the blobs and security
 reviewers, `Sources/KnitSpoolNet` for security. `PersonaTests` fails on a listed path that does not exist yet, so a
-path joins the conf in the phase that creates it.
+path joins the conf in the phase that creates it: `Sources/KnitSpoolNet` joined in P5, and
+`PersonaTests.theSpoolPathsAreGatedForTheirReviewers` holds both.
 
 ## A daemon to test against
 
-`check.sh spool` runs the integration suite only when `KNIT_SPOOL_URL` is set. On skuld, a shared machine, run the
-reference daemon in a container and stop it after:
+`check.sh spool` runs the daemon suite only when `KNIT_SPOOL_URL` names a daemon on this machine's loopback, and the suite
+refuses any other address. On skuld, a shared machine, the daemons run in containers and stop after:
 
 ```sh
-docker run --rm --name knit-spool -p 127.0.0.1:9470:9470 -e SPOOL_POW_BITS=8 ghcr.io/getknit/knit-spool:0.8.0
-KNIT_SPOOL_URL=ws://127.0.0.1:9470/spool/v1 scripts/check.sh spool
+git -C ~/source/knit-spool worktree add --detach <scratch>/knit-spool-a682524 a682524
+cd <scratch>/knit-spool-a682524 && nice -n 10 docker build --build-arg SPOOL_COMMIT="$(git rev-parse HEAD)" -t knit-spool:a682524 .
+eval "$(scripts/spool-daemons.sh start)"      # in knit-ios; add --heavy for the 24-bit daemon
+scripts/check.sh spool
+scripts/spool-daemons.sh stop
 ```
 
-`SPOOL_TOKEN=<token>` makes it private (`?k=<token>`); without `SPOOL_POW_BITS` proof of work is off. A debug build
-dials `ws://`; a release build refuses it at entry and at dial (C-7.1-2). The iPhone trials use `public-1` or a lab
-spool behind TLS, so the app needs no App Transport Security exception.
+- **The pin.** knit-spool `a682524`, the pin in "Sources and pins", built from a clean worktree with its own Dockerfile and
+  tagged by commit. On 2026-11-17 the image was `sha256:e21ae5b6d1956b02950667652942e5cd40fc4a6c8b3246e981ec72cfeac826d9`,
+  from `eclipse-temurin:21-jdk@sha256:db5cc6341a1d7bc40cdb51e1f0d9824f3bb2cc8107d29da421dc4df7d11f05f1` and
+  `eclipse-temurin:21-jre@sha256:ca73b4d3961703d6d7830a4361f49ef0478f8f28b39defc07bb72f4cc7f834f6`. The image ID is what
+  pins them: `scripts/spool-daemons.sh` keeps the tag and the ID side by side, refuses to start unless the local tag's ID
+  is the pinned one, runs that ID with `--pull never`, and so never runs a rebuild whose base images moved. A new pin
+  rebuilds the image and moves the tag and the ID in the script and here together.
+- **Each container** (`scripts/spool-daemons.sh`) publishes 9470 on `127.0.0.1` at a port Docker picks, read back with
+  `docker port` and checked with `/healthz`; drops every capability; runs read-only with no new privileges, its store on a
+  tmpfs and `/tmp` on an executable tmpfs, where sqlite-jdbc loads its native library; and is removed when it stops. Each
+  runs at `SPOOL_POW_BITS=8`, the heavy one at 24, with `SPOOL_RATE_NEW_SCOPES=600` for the suite's pace.
+- **The variables `start` prints:** `KNIT_SPOOL_URL` and `KNIT_SPOOL_URL_2`, two public daemons; `KNIT_SPOOL_PRIVATE_URL`
+  and `KNIT_SPOOL_TOKEN`, a private one whose `SPOOL_TOKEN` is minted at random per run and reaches the container through
+  the environment; and with `--heavy`, `KNIT_SPOOL_HEAVY=1` and `KNIT_SPOOL_HEAVY_URL`. A case whose variable is unset is
+  skipped and says so.
+- **Outside Docker**, set `SPOOL_BIND=127.0.0.1`.
+
+A debug build dials `ws://`; a release build refuses it at entry and at dial (C-7.1-2). The iPhone trials use `public-1`
+or a lab spool behind TLS, so the app needs no App Transport Security exception, and neither does any test host: the Mac
+dials its stub on its own loopback, and a daemon there only through Colima on loopback or `ssh -L` to skuld's.
 
 ## Trials
 

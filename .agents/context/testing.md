@@ -60,7 +60,10 @@ ladder, not the first.
    `L2CAPLink` over bound stream pairs (`Stream.getBoundStreams`) in place of a CoreBluetooth channel, with a far
    end on a stream thread of its own. It covers write order, the 8 KiB cuts, the digest slot, back-pressure and
    both ways a link ends. CoreBluetooth's own delegates need a radio, so the Mac's run and the iPhone's cover
-   them. `KnitUITests` walks every MVP screen in the Simulator on `-seedDemo` (`scripts/check.sh uitest`,
+   them. `KnitSpoolNetTests` runs the spool's URLSession adapter there against a stub WebSocket server on loopback,
+   which records what it was asked, what it wrote and when the client's end came (ADR 2026-11.adrq, P5); Linux runs only
+   the address check and the stub's own tests, and drives the plane against the reference daemon through a test socket
+   with `scripts/check.sh spool`. `KnitUITests` walks every MVP screen in the Simulator on `-seedDemo` (`scripts/check.sh uitest`,
    `test:ios:simulator`), each through `performAccessibilityAudit`, once at the default text size and once at the
    largest, where it keeps a screenshot of every screen. The Simulator has no scanner, so the scan walk reaches the
    scanner's refused and failed states through `-demoCamera` (ADR 2026-10.65xx). The Simulator has no microphone to speak

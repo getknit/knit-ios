@@ -123,11 +123,16 @@ custom_rules:
     message: Only the app's debug bridge and link previews import Network; Knit meshes over Bluetooth alone (ADR 2026-09.zwdp).
     severity: error
   seam_url_loading:
-    name: URL loading stays in link previews
-    regex: '\b(URLSession|URLRequest)\b'
+    name: URL loading stays in link previews and the spool's socket
+    regex: '\b(URLSession\w*|URLRequest|webSocketTask)\b'
     match_kinds: [identifier, typeidentifier]
-    excluded: 'Sources/Knit/LinkPreviews/'
-    message: Only the app's link previews load a URL, the sender's fetch (ADR 2026-11.hcvg); Knit meshes over Bluetooth (ADR 2026-09.zwdp).
+    # Link previews fetch the sender's link (ADR 2026-11.hcvg); KnitSpoolNet opens a relay's WebSocket, and its tests drive it
+    # against a stub server (ADR 2026-11.adrq).
+    excluded:
+      - 'Sources/Knit/LinkPreviews/'
+      - 'Sources/KnitSpoolNet/'
+      - 'Tests/KnitSpoolNetTests/'
+    message: Only link previews and KnitSpoolNet load a URL (ADR 2026-11.hcvg, 2026-11.adrq); Knit meshes over Bluetooth (ADR 2026-09.zwdp).
     severity: error
   seam_codes:
     name: The QR frameworks stay in the app's Codes

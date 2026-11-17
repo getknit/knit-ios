@@ -17,6 +17,7 @@ tree, so switching between them never rebuilds the plain debug tree.
 | `scripts/check.sh analyze` | `swiftlint analyze` over the platform-free targets | before a merge request |
 | `scripts/check.sh periphery` | Periphery over the Swift Build index store; on the Mac, run `xcode periphery` for the app's index too | after deleting or renaming API; on Linux the Stop hook runs it when Swift changed |
 | `scripts/check.sh adr` / `lintorama` | the ADR router check; markdown, YAML, shell and editorconfig | after touching docs |
+| `scripts/check.sh spool` | the spool plane against the reference daemon (`SpoolDaemon*` suites), only when `KNIT_SPOOL_URL` names a daemon on this machine's loopback; never in `fast` or `all` | after touching the spool plane or `KnitSpoolNet`, with the daemons `scripts/spool-daemons.sh` starts |
 | `scripts/check.sh xcode` | on the Mac: XcodeGen, then `xcodebuild` for the iPhone and the Simulator, unsigned, and the delegate check | after touching `Knit`, `KnitBLE` or `App/`, through `scripts/mac.sh run` |
 | `scripts/check.sh uitest` | on the Mac: `KnitUITests` in the Simulator, every MVP screen through the accessibility audit at the default and the largest text size, into `.build-xcode/uitest.xcresult`; `KNIT_UI_TESTS` narrows the run | after touching a view, `Palette` or `App/`, through `scripts/mac.sh run` |
 | `scripts/check.sh device` | on the Mac: the signed iPhone build, in the desktop session; renews the profile, with the App Store Connect API key when `KNIT_ASC_KEY_ID` and `KNIT_ASC_ISSUER_ID` name one, and prints its expiry | before installing on the iPhone |
@@ -45,6 +46,10 @@ tree, so switching between them never rebuilds the plain debug tree.
   scripts/symbolicate.py <path>`, or `pbpaste | scripts/symbolicate.py -` there.
 - **Coverage floors:** `python3 scripts/coverage-gate.py --scratch-path .build-cov --ratchet` raises the
   floors in `scripts/coverage-floors.json` to today's figures. It never lowers one.
+- **Spool daemons:** `eval "$(scripts/spool-daemons.sh start)"` runs knit-spool's reference daemon in containers on
+  `127.0.0.1`: two public ones and a private one at 8 bits of proof of work, and with `--heavy` one at 24 bits for
+  `KNIT_SPOOL_HEAVY=1`. It prints the variables `check.sh spool` reads; `scripts/spool-daemons.sh stop` removes them. The
+  image and its recipe are in `.agents/context/spool.md`, "A daemon to test against".
 - **Fuzzing:** `scripts/fuzz.sh [seconds]` builds `Fuzz/` with `-sanitize=fuzzer,address` and runs every
   harness against its corpus. CI's budget is 60 s; run 600 before a phase closes.
 - **DCO sign-offs:** `scripts/dco-check.sh <base> <head>` checks a commit range, the same check the CI job

@@ -86,6 +86,19 @@ exact interval, then update this file in the same change.
   and it builds under Swift Build on Linux and in Xcode with nothing installed. Only `KnitWebP` imports it (ADR
   2026-10.m4ah). whatsnew tracks neither repository, so read upstream's `NEWS` before moving it.
 - **Not needed:** `libbluetooth-dev`. `CBluetoothShim` writes out the few socket definitions itself.
+- **FoundationNetworking has no WebSocket here (2026-11-17).** `URLSessionWebSocketTask` on Linux rides the system libcurl,
+  and a task to the reference daemon fails at once with `NSURLErrorDomain -1002`: the libcurl Ubuntu ships, 8.5.0, is
+  built without `ws` or `wss`. So `KnitSpoolNet` opens sockets on Apple platforms alone, and the Linux suites drive the
+  daemon through a test socket (ADR 2026-11.adrq, P5). Check a machine or an image before trusting a Linux WebSocket:
+
+  ```sh
+  ldd "$(swift -print-target-info | python3 -c 'import json,sys; print(json.load(sys.stdin)["paths"]["runtimeResourcePath"])')/linux/libFoundationNetworking.so" | grep curl
+  curl -V | grep -ow wss || echo "no wss"
+  ```
+
+  On skuld, FoundationNetworking loads `/lib/x86_64-linux-gnu/libcurl.so.4`, and `curl -V` (8.5.0-2ubuntu10.16) lists no
+  `ws` or `wss`. The pinned `swift:6.4-noble` image loads the same library, `libcurl4t64` 8.5.0-2ubuntu10.13, and has no
+  `curl` binary; `strings` over its `libcurl.so.4.8.0` finds `https`, `ftps` and `mqtt` and no `ws` or `wss`.
 
 ## CI
 

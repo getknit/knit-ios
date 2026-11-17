@@ -319,3 +319,51 @@ protocol byte for byte and needs no Android change.
   most 2^29 counters spent in 24 h). P7 keeps an energy log over an hour against a lab spool at 24 bits with Knit in the
   background half the time (pass: no hashing while paused, no termination for CPU use).
 - None of it changes what a spool or a peer receives beyond fewer stamped `sub`s: no record, field or capability moves.
+
+**Amended 2026-11-17 (P5, the socket; a draft until the maintainer accepts it):**
+
+- **Where the socket runs.** `URLSessionSpoolSocketFactory` in `KnitSpoolNet` opens a relay's WebSocket through
+  `URLSessionWebSocketTask`, one ephemeral `URLSession` per factory, on Apple platforms alone. Linux builds the module and
+  opens nothing: every dial fails as `unreachable`, since FoundationNetworking's WebSocket rides the system libcurl, and the
+  libcurl 8.5.0 on the build machine and in the pinned CI image has no `ws` or `wss`. Linux tests the plane against the
+  reference daemon through a test-only `ws://` socket over plain TCP (`check.sh spool`); the adapter's own rules run on the
+  Mac against a stub WebSocket server, in `test:macos` on every run.
+- **The dial reads the address once more.** Before any socket opens, the factory runs `AcceptedSpoolURL` again on
+  `socketURLText` with the build's compile-time cleartext flag and needs the same address back. Foundation's `URLComponents`
+  must then read the scheme `wss` (or `ws` where the build dials cleartext), no user info and no fragment, and a host and
+  port that, written as `host[:port]`, are the bytes `SpoolURL.host` reads from the same text. The port must be 1…65535,
+  and the URL Foundation builds must print as the text. `AcceptedSpoolURL` refuses a `%` in the authority, so no reading
+  decodes a host into another one. An address the check refuses fails as `unreachable`, and the factory logs one constant
+  line, `spool dial refused by the address check`, with no address, host or handle in it.
+- **The session stores nothing.** It stores, sends and accepts no cookie, and has no cache, no credential storage and no
+  wait for connectivity. It refuses every redirect and judges TLS by the system's default trust. It keeps the system's
+  proxy settings, as OkHttp's default selector keeps Android's: a `wss` relay goes through a proxy as a `CONNECT` tunnel,
+  so the proxy learns the host and port alone. Low Data Mode and cellular are allowed, since the plane carries the
+  person's own messages, in the foreground, under its hourly budgets. The upgrade asks with `Accept-Language: *` and
+  `User-Agent: Knit`, and with no cookie, origin, credential or subprotocol. The task itself offers `permessage-deflate`
+  on every upgrade.
+- **Reads.** `maximumMessageSize` is 128 KiB. It holds on a message split into frames and on a compressed message's
+  inflated size, and a larger message ends the socket as `protocol`. A text message is reported by its UTF-8 size and
+  the socket stays. Nothing is read ahead of the plane's pull: a relay writing to a socket nobody reads stalls at the
+  kernel's buffers (1.4 MiB in the stub's case). A send waits for the task to take its bytes, so nothing queues in the
+  adapter.
+- **The handshake bounds itself.** The dial fails as `unreachable` 20 s after it starts on the adapter's own clock, beside
+  the plane's 20 s open deadline, since a server that reads the upgrade and never answers it held a task past the
+  configuration's request timeout on the Mac. A socket quiet for longer stays open. A cancelled dial or receive ends at
+  once, and its connection with it.
+- **A failed upgrade** reports its HTTP status, which `task.response` carries, and the first 16 bytes of `Retry-After`. A
+  redirect fails as `http` with its status and is never followed. An upgrade that names a subprotocol, or an extension the
+  task did not offer, fails as `protocol`.
+- **Ends and failures.** A relay's close reaches the plane as its code held to 1000…4999 (4001 and 4003 among them), never
+  its reason. A failure is a fault word read from the error's code alone, so no failure, end, `status` line or log line
+  carries a Foundation error, its user info or the dialled address.
+- **No token over `ws://`.** `AcceptedSpoolURL` and `SpoolURL` still refuse a `k=` on `ws://` in every build. The private
+  relay's case dials the test socket raw, outside the factory, and the token's path through the shipping adapter waits
+  for a TLS relay in P7.
+- **The release boundary.** `KnitSpoolNet` has no product, no target the app links names it before P6, and every one of
+  its files is a debug build's alone. The factory logs `spool sockets are on in this debug build` as it is made, and
+  `check.sh release` fails a store build that holds the line.
+- **The daemon.** `check.sh spool` runs against knit-spool `a682524`, built from a clean worktree with its own Dockerfile,
+  in containers on `127.0.0.1` alone (`.agents/context/spool.md`). `scripts/spool-daemons.sh` runs the pinned image ID,
+  never pulls, and refuses a local tag whose ID is another.
+- None of it changes what a spool or a peer receives: no record, field or capability moves.

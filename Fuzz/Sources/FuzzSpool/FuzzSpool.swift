@@ -82,6 +82,9 @@ private func checkDialledAddress(_ text: String) {
         let dialled = accepted.socketURLText
         precondition(SpoolURL.isAcceptable(SpoolURL.canonical(dialled), allowCleartext: cleartext), "a dialled address its build refuses")
         precondition(SpoolURL.isPlain(dialled) && dialled.utf8.count <= AcceptedSpoolURL.maxBytes, "a dialled address not plain")
+        let afterScheme = dialled.utf8.drop { $0 != UInt8(ascii: "/") }.dropFirst("//".utf8.count)
+        let authority = afterScheme.prefix { $0 != UInt8(ascii: "/") && $0 != UInt8(ascii: "?") && $0 != UInt8(ascii: "#") }
+        precondition(!authority.contains(UInt8(ascii: "%")), "a dialled authority holding a percent")
         precondition(
             !"\(accepted)".utf8.contains { $0 == UInt8(ascii: "?") || $0 == UInt8(ascii: "@") || $0 == UInt8(ascii: "#") },
             "an address printed past its host")

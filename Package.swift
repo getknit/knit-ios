@@ -84,6 +84,11 @@ let package = Package(
         // `pure`: every call into the C library is unsafe.
         .target(name: "KnitWebP", dependencies: [webp], swiftSettings: strict),
 
+        // A relay's WebSocket (ADR 2026-11.adrq, P5): URLSessionWebSocketTask behind the spool plane's socket contract, a debug
+        // build's alone and on Apple platforms alone, with the dial's address check, which builds and tests everywhere. No
+        // product, and no target the app links names it before P6: `SpoolNetIsolationTests` checks.
+        .target(name: "KnitSpoolNet", dependencies: ["KnitSync", "KnitMesh", "KnitWire"], swiftSettings: pure),
+
         // Apple: the CoreBluetooth radio and the SwiftUI app. Both compile to empty modules elsewhere.
         .target(name: "KnitBLE", dependencies: ["KnitMesh", "KnitWire"], swiftSettings: strict),
         .target(
@@ -153,10 +158,18 @@ let package = Package(
             dependencies: ["KnitSync", "KnitStoreSQL", "KnitStore", "KnitWire", "KnitTestSupport", grdb],
             swiftSettings: strict
         ),
-        // The ratchet's session layer runs over the SQL stores as well as the memory ones.
+        // The ratchet's session layer runs over the SQL stores as well as the memory ones. Crypto for the test-only `ws://`
+        // socket's handshake (`Sec-WebSocket-Accept` is SHA-1), which drives the reference daemon in `check.sh spool`.
         .testTarget(
             name: "KnitMeshTests",
-            dependencies: ["KnitSync", "KnitMesh", "KnitCrypto", "KnitStore", "KnitStoreSQL", "KnitWire", "KnitTestSupport"],
+            dependencies: ["KnitSync", "KnitMesh", "KnitCrypto", "KnitStore", "KnitStoreSQL", "KnitWire", "KnitTestSupport", crypto],
+            swiftSettings: strict
+        ),
+        // The address check everywhere, and on the Mac the URLSession adapter against a stub WebSocket server on loopback; Crypto
+        // for the stub's `Sec-WebSocket-Accept`.
+        .testTarget(
+            name: "KnitSpoolNetTests",
+            dependencies: ["KnitSync", "KnitSpoolNet", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire", crypto],
             swiftSettings: strict
         ),
         .testTarget(

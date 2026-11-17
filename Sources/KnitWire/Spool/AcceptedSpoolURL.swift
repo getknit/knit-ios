@@ -3,9 +3,10 @@
 ///
 /// ``init(_:allowCleartext:)`` takes the text through ``SpoolURL/canonical(_:)``, then requires, in order: a scheme this
 /// build dials (``SpoolURL/isAcceptable(_:allowCleartext:)``), a plain address (``SpoolURL/isPlain(_:)``: printable ASCII,
-/// no `@` and no `\` in the authority), no fragment, and at most ``maxBytes`` bytes. `ws://` is taken only when the caller
-/// allows cleartext *and* the build is a debug one, only to a loopback or private address literal (or `localhost`), and
-/// never with a `k=` token; a release build refuses `ws://` whatever the caller asks.
+/// no `@` and no `\` in the authority), no `%` in the authority, no fragment, and at most ``maxBytes`` bytes. A host is
+/// read once, as its bytes: with no percent-encoding in it, the host this type prints is the host every parser dials.
+/// `ws://` is taken only when the caller allows cleartext *and* the build is a debug one, only to a loopback or private
+/// address literal (or `localhost`), and never with a `k=` token; a release build refuses `ws://` whatever the caller asks.
 ///
 /// The text leaves through ``socketURLText`` alone, which the socket factory reads (and a later phase's Keychain layer).
 /// Everywhere else a relay is its handle. ``description`` and ``debugDescription`` give the host (``SpoolURL/host(_:)``),
@@ -16,6 +17,7 @@ public struct AcceptedSpoolURL: Hashable, Sendable, CustomStringConvertible, Cus
     public static let maxBytes = 256
 
     private static let cleartextScheme = Array("ws://".utf8)
+    private static let secureScheme = Array("wss://".utf8)
     private static let tokenName = Array("k".utf8)
     private static let asciiCaseBit: UInt8 = 0x20
     private static let byteRadix = 256
@@ -45,7 +47,7 @@ public struct AcceptedSpoolURL: Hashable, Sendable, CustomStringConvertible, Cus
         let canonical = SpoolURL.canonical(raw)
         let bytes = Array(canonical.utf8)
         guard bytes.count <= Self.maxBytes, SpoolURL.isAcceptable(canonical, allowCleartext: cleartext), SpoolURL.isPlain(canonical),
-            !bytes.contains(UInt8(ascii: "#"))
+            !bytes.contains(UInt8(ascii: "#")), !Self.authority(bytes).contains(UInt8(ascii: "%"))
         else {
             return nil
         }
@@ -82,6 +84,13 @@ public struct AcceptedSpoolURL: Hashable, Sendable, CustomStringConvertible, Cus
 
     private static func asciiLowercase(_ byte: UInt8) -> UInt8 {
         (UInt8(ascii: "A")...UInt8(ascii: "Z")).contains(byte) ? byte | asciiCaseBit : byte
+    }
+
+    /// The authority of a canonical URL whose scheme this build dials, `ws://` or `wss://` in lowercase: the bytes after the
+    /// scheme up to the path, the query or the fragment.
+    private static func authority(_ bytes: [UInt8]) -> ArraySlice<UInt8> {
+        let start = bytes.starts(with: cleartextScheme) ? cleartextScheme.count : secureScheme.count
+        return bytes[start...].prefix { $0 != UInt8(ascii: "/") && $0 != UInt8(ascii: "?") && $0 != UInt8(ascii: "#") }
     }
 
     /// The host of a URL already known plain, without its port, brackets kept for an IPv6 literal.

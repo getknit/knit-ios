@@ -7,6 +7,7 @@
   "KnitCrypto": 98,
   "KnitMesh": 100,
   "KnitPeer": 99,
+  "KnitSpoolNet": 100,
   "KnitStore": 100,
   "KnitStoreSQL": 99,
   "KnitSync": 100,

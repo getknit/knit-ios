@@ -33,6 +33,22 @@ import Testing
         #expect(AcceptedSpoolURL(longest, allowCleartext: false) != nil, "exactly the limit is taken")
     }
 
+    /// A host is read once: an authority holding a `%` is refused in either scheme, since a parser that decodes it would
+    /// dial another host than the one printed. A `%` after the authority is the path's or the query's.
+    @Test func aPercentInTheAuthorityIsRefusedAndOneAfterItIsNot() {
+        let refused = [
+            "wss://relay%2Eexample.org/spool/v1", "wss://relay.example.org%3A443/spool/v1", "wss://relay.example.org:%34%34%33/spool/v1",
+            "wss://%72elay.example.org/spool/v1", "wss://[::1%25en0]/spool/v1", "wss://relay.example.org%/spool/v1",
+            "ws://127.0.0.1%2E/spool/v1", "ws://[fe80::1%25en0]:9470/spool/v1", "ws://127.0.0.1:94%370/spool/v1",
+        ]
+        for raw in refused {
+            #expect(AcceptedSpoolURL(raw, allowCleartext: true) == nil, "\(raw) refused")
+        }
+        #expect(AcceptedSpoolURL("wss://relay.example.org/spool%2Fv1?x=%41", allowCleartext: false) != nil, "a path's and a value's")
+        #expect(AcceptedSpoolURL("ws://127.0.0.1:9470/spool/v1?x=%41", allowCleartext: true) != nil, "a cleartext value's")
+        #expect(AcceptedSpoolURL("wss://relay.example.org?%6B=1", allowCleartext: false) != nil, "a query right after the host")
+    }
+
     @Test func cleartextIsRefusedWhenNotAllowed() {
         #expect(AcceptedSpoolURL("ws://127.0.0.1:9470/spool/v1", allowCleartext: false) == nil)
         #expect(AcceptedSpoolURL("WS://10.0.0.5/spool/v1", allowCleartext: false) == nil)

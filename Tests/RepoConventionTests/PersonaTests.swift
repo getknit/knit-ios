@@ -55,6 +55,17 @@ import Testing
         }
     }
 
+    /// The spool plane's paths sit under the reviewers `.agents/context/spool.md` names for them: the plane's core under
+    /// the blobs and security reviewers, the relay's socket under security (ADR 2026-11.adrq).
+    @Test func theSpoolPathsAreGatedForTheirReviewers() throws {
+        let lines = try gateLines()
+        let gated = { (name: String) in lines.first { $0.name == name }?.paths ?? [] }
+        #expect(gated("blobs-reviewer").contains("Sources/KnitMesh/Spool"))
+        #expect(gated("security-reviewer").contains("Sources/KnitMesh/Spool"))
+        #expect(gated("security-reviewer").contains("Sources/KnitSpoolNet"))
+        #expect(try RepoFiles.text(Self.owners).contains("`KnitSpoolNet`"), "\(Self.owners) names the socket's reviewer")
+    }
+
     @Test func reviewersCannotEdit() throws {
         for name in try personaNames() where name.hasSuffix("-reviewer") {
             let tools = try frontmatter(of: name)["tools"] ?? ""

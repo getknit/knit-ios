@@ -14,6 +14,8 @@
                 let clock = SystemClock()
                 let service = LinkPreviewService(
                     gate: gate,
+                    // The composition root names the transport; the loading itself stays in LinkPreviews/.
+                    // swiftlint:disable:next seam_url_loading
                     fetcher: PreviewWalk(transport: URLSessionTransport(), resolver: DarwinHostResolver()),
                     shrink: { await CardPictureMaker.shrink($0) },
                     charsets: { CoreCharsets.decode($0, $1) },
