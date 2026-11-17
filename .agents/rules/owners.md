@@ -14,7 +14,7 @@ spawns them by name.
 | Plane | Owner, reviewer | The hook gates | Adopt the reviewer too for | Read first |
 | --- | --- | --- | --- | --- |
 | Bluetooth | `bluetooth-owner`, `bluetooth-reviewer` | the link manager, `KnitBLE`, `KnitBlueZ` and knit-peer | the restoration and scene-phase paths of `Sources/Knit/App/AppEnvironment.swift`, `Sources/Knit/App/Launch.swift` and `Sources/Knit/KnitApp.swift`, and `App/Info.plist`'s `UIBackgroundModes` | `.agents/context/ble-transport.md` |
-| Blobs and custody | `blobs-owner`, `blobs-reviewer` | the router, custody, receipts, recovery and blob exchange, their stores, the periodic passes, `FileIntake`, `FeedMeter` and `LinkManager+Files`, and the store unit (`StoreTransactor`, `KnitDatabase+Units`), which both reviewers judge | the custody, block and delete paths of `MeshEngine+Inbound`, `MeshEngine+Outbound`, `MeshEngine+Deletes` and `MeshEngine+Blocks` | `.agents/context/custody.md` |
+| Blobs and custody | `blobs-owner`, `blobs-reviewer` | the router, custody, receipts, recovery and blob exchange, their stores, the periodic passes, `FileIntake`, `FeedMeter` and `LinkManager+Files`, the store unit (`StoreTransactor`, `KnitDatabase+Units`), which both reviewers judge, and the spool plane's core (`KnitMesh/Spool`, custody's anti-entropy over a relay), which the security reviewer judges too | the custody, block and delete paths of `MeshEngine+Inbound`, `MeshEngine+Outbound`, `MeshEngine+Deletes` and `MeshEngine+Blocks` | `.agents/context/custody.md` |
 | Crypto | `crypto-owner`, `crypto-reviewer` | `KnitCrypto`, the envelopes, the sealed plaintexts and the capability bits, groups and their roster, pinned keys, the Keychain store, the store unit, and the ratchet's own files as each phase adds them (ADR 2026-10.5sk9) | the verify and open paths of `MeshEngine+Inbound`, the seal paths of `MeshEngine+Outbound`, and, once the ratchet seals them, the receipt, reaction and profile paths of `MeshEngine+Outbound`, `MeshEngine+Reactions` and `MeshEngine+Profiles` | `.agents/context/crypto.md` |
 
 The exact paths are each reviewer's line in `.claude/hooks/review-gate.conf`. `FeedMeter`, `LinkManager+Files`,
@@ -39,7 +39,8 @@ has no owner, because a trust boundary is not a plane: the plane's owner, or the
 the security reviewer runs beside the plane's reviewer in the same message when a file sits in both gates. Its gate
 is the trust boundaries: all of `KnitWire`, the router, `MeshEngine+Inbound`, the link door and what goes on air, the
 link proof and seal, the spool's scope seal and proof of work (`KnitCrypto/Scope`, which opens what a spool serves),
-at-rest storage and the Keychain, logs, notifications and crash reports, the content filter,
+the plane that reads what a spool sends (`KnitMesh/Spool`), at-rest storage and the Keychain, logs, notifications and
+crash reports, the content filter,
 mentions and names, link cards, the photo and voice decoders, the share inbox, Add contact, the debug bridge's
 listener, `App/`'s plist, entitlements and project, and CI. Adopt it too for a change elsewhere that acts on what a
 peer, a server, another app or an outsider wrote, or that sends, airs, stores, logs or shows something about the user:

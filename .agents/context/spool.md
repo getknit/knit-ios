@@ -106,11 +106,13 @@ commons, attachments, TURN, tickets, casts and signals stay out.
 | `SpoolRecords.kt`, `SpoolUrl.kt`, `RelayInvite.kt` | `Sources/KnitWire/Spool/` | security |
 | `ScopeCrypto.kt` (DM half), `SpoolPow.kt`, `RatchetCrypto.kt:204` | `Sources/KnitCrypto/Scope/`, `RatchetCrypto.exportRoot` | crypto, security |
 | `RatchetSessions.kt:977-1042` (`exportedRoots`) | `Sources/KnitMesh/Ratchet/RatchetSessions+Scopes.swift` | crypto |
-| `SpoolConnection.kt`, `SpoolBackoffPolicy.kt`, `ScopeFrames.kt` (DM half), `ScopeRegistry.kt` (DM half), `ScopeSync.kt` | `Sources/KnitMesh/Spool/` | blobs, security |
+| `SpoolConnection.kt` | `Sources/KnitMesh/Spool/SpoolSession.swift` (with `+Inbound`, `+Anchors` and `SpoolSessionEvent.swift`) | blobs, security |
+| `SpoolBackoffPolicy.kt`, the wait in `ScopeSync.Worker.runLoop` | `Sources/KnitMesh/Spool/SpoolBackoff.swift` | blobs, security |
+| `ScopeFrames.kt` (DM half), `ScopeRegistry.kt` (DM half), `ScopeSync.kt` | `Sources/KnitMesh/Spool/` (P3b, P4) | blobs, security |
 | `MeshManager.kt:1185` (`handleInbound(…, "spool:<url>")`) | a `.spool` source on `InboundFrame`, `Mesh.receiveFromSpool` | blobs, crypto, security |
 | `OkHttpSpoolDialer.kt` | `Sources/KnitSpoolNet/` (`URLSessionWebSocketTask`, FoundationNetworking on Linux) | security |
 | `InternetRelayScreen.kt`, `RelayInviteApplier.kt`, `SettingsStore` keys | `Sources/KnitAppCore/` and `Sources/Knit/`, `AppPreferences` | security |
-| `FakeSpool.kt`, `LabInternet.kt` | `Tests/KnitMeshTests/` (the text subset) | — |
+| `FakeSpool.kt`, `LabInternet.kt` | `Tests/KnitMeshTests/FakeSpool.swift` (the text subset), `LabInternet` in P4 | — |
 
 The Kotlin suites to port, each with a doc naming the cases left to groups or Knit Anywhere: `ScopeVectorTest`,
 `ScopeCryptoTest`, `SpoolPowTest`, `SpoolRecordsTest`, `RelayInviteTest`, `SpoolUrlTest`, `SpoolBackoffPolicyTest`,
@@ -132,11 +134,66 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 | P0 | ADR 2026-11.adrq, this file, `spool-v1.json`, the routing | done 2026-11-16 |
 | P1 | the codecs, `SpoolURL`, invites, fuzz targets (`SpoolRecord`, `SpoolURL`, `RelayInvite`, `FuzzSpool`) | done 2026-11-16 |
 | P2 | the export (`RatchetCrypto.exportRoot`), scope crypto and proof of work (`KnitCrypto/Scope`: `ScopeKeys`, `ScopeCrypto`, `SpoolPow`), `RatchetSessions.dmScopes(now:)` in `RatchetSessions+Scopes`; `FuzzSpool` opens blobs | done 2026-11-16 |
-| P3 | the pure plane and a fake spool | next |
+| P3a | the connection (`SpoolSession`), `SpoolBackoff`, the fake spool's record layer, hostile-input tests | done 2026-11-16 |
+| P3b | the DM frame rules (`ScopeFrames`, `mayRefill`), the heal loop (`ScopeHeal`), the gated scope table, convergence tests | next |
 | P4 | the engine's wiring, the `.spool` source, the bridge, two-engine tests | |
 | P5 | `KnitSpoolNet`, `check.sh spool` against the daemon | |
 | P6 | the app: settings, consent, invites, the release gate | |
 | P7 | device trials | |
+
+### The connection as P3a left it (2026-11-16)
+
+`SpoolSession` is one connection's record layer as a value. The caller feeds it `receive(bytes)`, `tick(now:)` at
+`nextDeadline`, and `socketClosed()`, asks for `subscribe`, `list`, `pull` and `push` (each answers its `q`, or `nil`
+when nothing was sent), and takes `drain()`: records to send, a close code, and `SpoolSessionEvent`s. It holds no URL, no
+clock, no log and nothing that outlives the connection. What P3b and P4 build on:
+
+- **What it drops.** Every record before the spool's `hello`; a `digest`, `event`, `blob` or uncorrelated scoped `err`
+  for a scope not subscribed on this connection; a listing that answers anything but a `list` about its scope; an `err` whose `scope` names another scope than the request its
+  `q` names; and an `err` whose `q` this connection issued for a request or `sub` that is over, so a late `err rate`
+  moves no subscription. `ok.missing` is held to the ids the pull named and was not served. A hello
+  kotlinx cannot read closes 4002 at once, as `onHello` does.
+- **A `sub` cannot strand its scopes** (`SpoolSession+Subscriptions`). An `err` with a waiting `sub`'s `q` and no scope
+  (the daemon's `internal`, or `malformed` past its own `maxScopes`) forgets each scope of the batch with no anchor yet
+  and reports it `.scopeRefused` under that code; 30 s without an answer does the same and reports
+  `.subscriptionLapsed`. Either way the next round subscribes it again. A `sub` strikes nothing.
+- **Pulled blobs stream.** Each named blob is a `.pulled(request:)` event as it lands, once per named id, and the
+  pull's `ok` ends it with `missing` and `oversize`. A pull that times out has delivered what came.
+  The heal loop quarantines `oversize` in its invalid set (§9.3), as Kotlin does `PullOutcome.oversize`, with the ids
+  it then fails to open.
+- **Every spool number is read through a clamp.** `SpoolRefusal` carries a `rate` wait held to 0…5 s and a park held to
+  5 min…1 h, never the raw `retryMs`; `SpoolText` cuts every spool string to 32 UTF-16 units without controls, format
+  characters or line separators; `SpoolID` is a 32-byte id whose description is 8 hex characters.
+- **The books die with the connection or the subscription:** the anchors (`anchor`, `foldPushed`, `reanchor` over the
+  digest the listing ran against), the claims, the pulls and `sub`s in flight. Claims follow `ScopeSync.accepted`
+  (`:3186-3209`): `claim` never evicts, so garbage claimed and released costs nothing, and `settle` after a delivery
+  trims a scope's set to 512, oldest first; `release` gives one back. P3b uses these, not a processed set of its own.
+  The accounted, invalid and unpushable sets, parks and stamps are `ScopeHeal`'s.
+- **What P3b reads from a refusal.** `SpoolRefusal.parkMilliseconds` is set for every code; park only on `quota` and
+  `pow`, as `handleScopeError` does, never on `rate`, `internal` or any other. A `rate` refusal of a request waits
+  `rateWaitMilliseconds`.
+- **Outputs print nothing whole.** `SpoolID`, `SpoolArrival` and `SpoolSessionOutput` describe themselves by id
+  prefixes and sizes, and their mirrors have no children, so interpolation, `String(reflecting:)` and `dump` never carry
+  a whole id or a blob's bytes.
+- **Faults** are `SpoolFault`'s words: `unresponsive`, `no_hello`, `too_large` (a `sub` past `maxRecord`) and `version`.
+  A session we end is no reached session; `SpoolBackoff.delay` takes the failures, the `Retry-After` floor and a
+  `RandomNumberGenerator`.
+
+### What later phases owe from P3a's reviews (2026-11-16)
+
+- **P3b.** Its `pullAnswered` input becomes the streamed `.pulled` arrivals plus the closing
+  `.answered(pulled(missing:oversize:))`. A `push` that answers `nil` while the session is ready and the scope
+  subscribed did not fit the spool's `maxRecord`: that blob is unpushable on this relay.
+- **P4.** The actor drains after every input. It counts `.dropped` by kind for `status`, and logs at most one line per
+  kind per interval, never one per record.
+- **P3b, claims and batches.** Every `claim` that answers `true` ends in `release` or `settle` on every outcome
+  (delivered, a duplicate custody holds, quarantined, late, unopenable), with a test: a 10,000-`event` flood of blobs
+  whose hash matches but which fail to open, and duplicates of held frames, keep a scope's claims at 512 plus those in
+  flight after every record. After an unscoped `malformed` refusal of a `sub` batch, the next round sends smaller
+  batches (halved, down to one scope a `sub`), with a test that every scope anchors within a bounded number of rounds.
+- **Before P5 connects a real socket:** a stateful `FuzzSpoolSession` harness that feeds a session records, ticks at
+  arbitrary `Int64` clocks and its own `subscribe`, `pull` and `push` calls, reaching it through a small public or
+  `@_spi` seam.
 
 ### What P3 and P5 owe from P1's security review (2026-11-16)
 

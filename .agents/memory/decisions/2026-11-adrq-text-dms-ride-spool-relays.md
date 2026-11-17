@@ -103,3 +103,43 @@ protocol byte for byte and needs no Android change.
   work and every record; two-engine `EngineLab` tests over a fake spool; `check.sh spool` against the reference daemon
   (`knit-spool`); the release gate; and `PersonaTests` for the reviewers' paths. `.agents/context/spool.md` holds the
   constants, the file map and the trials.
+
+**Amended 2026-11-16 (P3's design passes, before any of P3 was written):**
+
+- **The plane spends only on people the person accepted.** A DM scope is subscribed, pulled, pushed into and mined for
+  only while its peer is accepted (an accepted or authored conversation, or a verified contact, as the stores persist
+  them) and not blocked. A store that cannot answer keeps the table as it stands. This port subscribes only accepted
+  peers. The pair still meets: the peer's pushes wait at the spool,
+  inside its 48 h retention, until the person accepts. The gate decides per scope, never per frame, so a scope's fold
+  stays the spool's. Blocking a peer drops its scopes.
+- **At most 128 peers have live scopes,** live scopes ranked before retiring ones, then by this phone's own record of
+  recent activity, never a peer's `sentAt`. A spool's `maxScopes` can only lower the cap. Android has none.
+- **A late frame is delivered here and never bridged.** A pulled frame past `sentAt + 48 h`, or more than five minutes
+  ahead of this phone's clock, is accounted and never relayed onto the radios: a spool can serve a frame long after the
+  router's memory of it is gone.
+- **A held frame that is never pushed leaves the local fold.** A retiring scope's frames, our own flagged reset, and a
+  frame the spool tombstoned or refused are kept per scope (at most 512) and left out of the fold until a listing names
+  the id again, so a converged scope stops listing. Kotlin keeps them in the fold (knit/knit-next#188).
+- **Our own flagged reset is never pushed,** into a live scope or a retiring one: `mayRefill` with no reset exception.
+- **A cold launch re-pulls once.** The accounted set lives in memory, as C-9.6-4 allows, so a cold launch re-pulls what
+  custody no longer holds, at most a scope's 400 per relay, and delivers it again. Neighbours' custody refuses the late
+  ones, so the cost is airtime.
+- **P3 lands in two parts:** P3a, the connection, backoff and the fake spool's record layer; P3b, the frame rules, the
+  heal loop, the scope table and the convergence tests.
+
+**Amended 2026-11-16 (P3a, the connection; a draft until the maintainer accepts it):**
+
+- **A connection reads only what answers it.** `SpoolSession` drops every record before the spool's `hello`, and a
+  `digest`, `event`, `blob` or uncorrelated scoped `err` for a scope not subscribed on that connection, before anything
+  reads it. An `err` whose `scope`
+  names another scope than the request its `q` names answers nothing and refuses nothing, and neither does an `err`
+  whose `q` this connection issued but whose request is over: a late answer moves no subscription. `ok.missing` is held
+  to the ids the pull named and was not served. None of it changes what either side sends: a conforming spool never
+  trips them.
+- **A `sub` cannot strand its scopes.** A `sub` answered by an `err` with its `q` and no scope (the daemon's `internal`,
+  or `malformed` past its own `maxScopes`), or not answered within 30 s, forgets each scope it named that has no anchor
+  yet, so the heal loop subscribes it again on its next round.
+- **A pull streams.** Each named blob reaches the heal loop as it lands, so a pull holds at most one blob and its ids,
+  never 256 × 64 KiB; one that times out has delivered what came. A named blob
+  past the declared `maxBlob` comes back as an id the heal loop quarantines in its invalid set (§9.3), as Kotlin's
+  `PullOutcome.oversize` does.

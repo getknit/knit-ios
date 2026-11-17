@@ -5,7 +5,8 @@ description: >-
   whenever a file in the plane's gate is created or modified (Sources/KnitMesh/Router/, Custody/, Receipts/,
   Recovery/, MeshEngine+Blobs, +BlobParking, +BlobQueries, +Identities, OutgoingPhoto, Sources/KnitStore/Custody/ and
   Blobs/, SQLCustodyStore, SQLBlobStore, FilePartialBlobStore, SQLMessageStore+Attachments, KnitWire's FileIntake,
-  FeedMeter, LinkManager+Files, and the store unit: Sources/KnitStore/Units/, KnitDatabase and KnitDatabase+Units),
+  FeedMeter, LinkManager+Files, the store unit: Sources/KnitStore/Units/, KnitDatabase and KnitDatabase+Units, and
+  Sources/KnitMesh/Spool/, custody's anti-entropy over a spool relay),
   before the change is reported done or committed; the Stop hook .claude/hooks/review-gate.sh enforces it. Also use it for a change to the custody, block or delete paths of MeshEngine+Inbound, +Outbound,
   +Deletes or +Blocks, which the hook cannot see. Reads the diff for the shapes that have passed single-engine tests
   and cost the mesh (a serve nobody asked for, a memo standing in for the link, a cache standing in for the
@@ -64,7 +65,8 @@ git status --porcelain -- Sources/KnitMesh/Router Sources/KnitMesh/Custody Sourc
   Sources/KnitMesh/Link/LinkManager+Files.swift Sources/KnitStore/Units Sources/KnitStoreSQL/KnitDatabase.swift \
   Sources/KnitStoreSQL/KnitDatabase+Units.swift $E/MeshEngine+Delivery.swift Sources/KnitStoreSQL/StoredText.swift \
   $E/MeshStores.swift $E/MeshEngine+Passes.swift Sources/KnitMesh/Ratchet/MeshEngine+GroupRatchetInbound.swift \
-  Sources/KnitMesh/Ratchet/MeshEngine+GroupRatchetOutbound.swift Sources/KnitMesh/Ratchet/MeshEngine+GroupRatchetSeedSends.swift
+  Sources/KnitMesh/Ratchet/MeshEngine+GroupRatchetOutbound.swift Sources/KnitMesh/Ratchet/MeshEngine+GroupRatchetSeedSends.swift \
+  Sources/KnitMesh/Spool
 git diff HEAD -- <those paths>
 ```
 
@@ -283,6 +285,10 @@ a commit that touched your paths, and hands that next pass the delta since this 
 These are sourced. Cite them by their ADR or section, and treat anything not here or in an ADR as a claim to
 verify.
 
+- **The spool** (`.agents/context/spool.md`, ADR 2026-11.adrq). A spool relay is custody's anti-entropy over the
+  Internet: per DM scope, a bounded set of sealed frames that members push when the spool lacks them and pull when
+  they do, converging by digest. One connection's record layer is `SpoolSession`, which keeps only what dies with the
+  connection (anchors, claims, pulls and `sub`s in flight); the sets that outlive it are the heal loop's.
 - **Custody** (`custody.md`, "Custody"). Entry is `verified && isCustodial && (relay || type == "profile")`.
   Frames expire at `sentAt` plus 24 h, or 6 h for room chat; one dead on arrival or dated more than 5 minutes
   ahead is refused. Quotas over live rows: 200 per sender, 200 per group, 200 for the room, each keeping its newest
