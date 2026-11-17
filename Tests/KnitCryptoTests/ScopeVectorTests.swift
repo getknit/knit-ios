@@ -57,11 +57,34 @@ import Testing
     /// zero bits as it has and not one more.
     @Test func thePinnedStampIsTheSmallestAndVerifies() {
         let scopeId = SpoolVectors.bytes("PoW", "scopeId")
-        #expect(SpoolPow.mine(scopeId: scopeId, day: Self.powDay, bits: Self.powBits) == Self.powN)
+        #expect(SpoolPow.mine(scopeId: scopeId, day: Self.powDay, bits: Self.powBits) == .found(Self.powN, tried: Self.powN + 1))
         let digest = SpoolPow.digest(scopeId: scopeId, day: Self.powDay, n: Self.powN)
         #expect(digest == SpoolVectors.bytes("PoW", "SHA-256(input)"))
         #expect(SpoolPow.verify(scopeId: scopeId, day: Self.powDay, n: Self.powN, bits: Self.powBits))
         let exact = SpoolPow.leadingZeroBits(digest)
         #expect(!SpoolPow.verify(scopeId: scopeId, day: Self.powDay, n: Self.powN, bits: exact + 1))
+    }
+
+    /// A range that ends at the stamp runs out having hashed all of it; one counter more finds it.
+    @Test func aRangeEndingAtTheStampIsExhaustedAndOneMoreFindsIt() {
+        let scopeId = SpoolVectors.bytes("PoW", "scopeId")
+        let short = SpoolPow.mine(scopeId: scopeId, day: Self.powDay, bits: Self.powBits, from: 0, end: Self.powN) { false }
+        #expect(short == .exhausted(tried: Self.powN))
+        let enough = SpoolPow.mine(scopeId: scopeId, day: Self.powDay, bits: Self.powBits, from: 0, end: Self.powN + 1) { false }
+        #expect(enough == .found(Self.powN, tried: Self.powN + 1))
+    }
+
+    /// A search resumed from any counter up to the stamp finds the same stamp, having hashed only what it resumed over;
+    /// one resumed past the stamp finds a later one.
+    @Test func aResumedSearchFindsWhatOneSearchFromZeroFinds() throws {
+        let scopeId = SpoolVectors.bytes("PoW", "scopeId")
+        for from in 0...Self.powN {
+            let resumed = SpoolPow.mine(scopeId: scopeId, day: Self.powDay, bits: Self.powBits, from: from)
+            #expect(resumed == .found(Self.powN, tried: Self.powN - from + 1), "from \(from)")
+        }
+        let past = SpoolPow.mine(scopeId: scopeId, day: Self.powDay, bits: Self.powBits, from: Self.powN + 1)
+        let later = try #require(past.counter)
+        #expect(later > Self.powN && past.tried == later - Self.powN)
+        #expect(SpoolPow.verify(scopeId: scopeId, day: Self.powDay, n: later, bits: Self.powBits))
     }
 }

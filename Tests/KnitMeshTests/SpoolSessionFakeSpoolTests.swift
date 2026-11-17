@@ -131,7 +131,7 @@ import Testing
         #expect(!line.session.isSubscribed(scope))
 
         let day = SpoolPow.utcDay(nowMs: spool.now)
-        let counter = try #require(SpoolPow.mine(scopeId: scope.bytes, day: day, bits: 8))
+        let counter = try #require(SpoolPow.mine(scopeId: scope.bytes, day: day, bits: 8).counter)
         subscribe(&line, pow: PowStamp(counter: counter, day: day))
         #expect(line.takeEvents() == [.digest(scope)])
 

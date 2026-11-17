@@ -36,7 +36,7 @@ import Testing
         let request = try #require(asked.first, "the spool asked a stamp")
         await rig[1].pauseSpool()
         await rig.settle()
-        let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits)
+        let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits).counter
         await rig[1].spoolStampMined(request, counter: counter)
         #expect(await rig[1].spoolMiningQueue.isEmpty)
         #expect(await rig[1].spoolStatus.relays.first?.counts["stampsAnsweredOffline"] == 1)

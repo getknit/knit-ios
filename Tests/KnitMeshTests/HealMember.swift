@@ -238,7 +238,7 @@ final class HealMember {
 
     /// Mines `request` and answers the heal.
     func mine(_ request: SpoolMiningRequest) {
-        let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits)
+        let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits).counter
         var open: SpoolSession? = session
         heal.stampMined(request, counter: counter, session: &open, now: now)
         session = open ?? session

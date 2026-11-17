@@ -406,8 +406,11 @@ ADR 2026-11.adrq carries text DMs through knit-next's spools; `.agents/context/s
   AEAD under `"knit/scope/v1" ‖ scopeId`, and splits 64 bytes of signature from `signed`. Every failure is `nil`.
 - **The digest** is FNV-1a-64 over the raw blob ids, XORed; KnitWire's `StoreDigest` folds an id's UTF-8 text and is
   not reused.
-- **Proof of work** mines from 0, at most 2^26 counters (Kotlin's `POW_BUDGET`), and refuses `powBits` outside 0…24.
-  Kotlin's `PowMiner` lane cache is not ported.
+- **Proof of work** searches counters ascending from the caller's `from` (Kotlin's `startN`, 0 at first) up to 2^26
+  (Kotlin's `POW_BUDGET`, counted from 0 here), and refuses `powBits` outside 0…24. `SpoolPow.mine` answers a `Search`:
+  found, exhausted or cancelled, each with `tried`, the counters that call hashed. Its caller's `shouldStop` is asked
+  every 65,536 counters from the start, so a stopped search resumes at `from + tried` and answers what one search from 0
+  would. Kotlin's `PowMiner` lane cache is not ported.
 
 ## The ratchet: v2, v3 and the group form
 

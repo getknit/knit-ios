@@ -227,7 +227,7 @@ final class SpoolLab {
                     pendingMining.append(asked)
                     continue
                 }
-                let counter = SpoolPow.mine(scopeId: asked.scope.bytes, day: asked.day, bits: asked.bits)
+                let counter = SpoolPow.mine(scopeId: asked.scope.bytes, day: asked.day, bits: asked.bits).counter
                 planes[index].stampMined(asked, counter: counter, engine: engine)
             case .cancel(let cancelled):
                 cancelledMining.append(cancelled)
@@ -282,7 +282,7 @@ extension SpoolLab {
         let asked = pendingMining.filter { $0.relay == relay && mined[index].contains($0) }
         for request in asked {
             pendingMining.removeAll { $0 == request }
-            let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits)
+            let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits).counter
             planes[index].stampMined(request, counter: counter, engine: radio[index].engine)
         }
         pump()
