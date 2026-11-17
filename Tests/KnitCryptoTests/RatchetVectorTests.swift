@@ -10,8 +10,8 @@ import Testing
 /// match here is a match with Android. Signatures are verified, never compared: CryptoKit randomizes Ed25519, and this
 /// suite also runs on the Mac.
 ///
-/// The file's `export` answers are not checked: the spool's exports are not in this port (ADR 2026-10.5sk9), and the
-/// file marks them non-normative.
+/// Of the file's `export` answers, the root's is checked, which the spool's DM scopes derive from (ADR 2026-11.adrq); the
+/// two epoch exports are not, since the epoch's export is left out of this port (ADR 2026-10.5sk9).
 @Suite struct RatchetVectorTests {
     private let file = RatchetVectors.file
     private var kats: RatchetVectors.Kats { file.kats }
@@ -164,6 +164,11 @@ import Testing
         let bytes = hexBytes(tag.bytes)
         #expect(bytes.count == 8)
         #expect(Int64(bitPattern: bytes.reduce(UInt64(0)) { $0 << 8 | UInt64($1) }) == tag.int64)
+    }
+
+    /// The spool's `pairwiseRoot` of the X3DH root (ADR 2026-11.adrq), which every DM scope derives from.
+    @Test func theExportRootIsTheX3DHRootsPairwiseRoot() {
+        #expect(RatchetCrypto.exportRoot(hexBytes(kats.x3dh.root)) == hexBytes(kats.export.exportRoot))
     }
 
     @Test func theGroupEpochDerivesFromItsSeedAndSteps() throws {

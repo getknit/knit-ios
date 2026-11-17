@@ -12,8 +12,8 @@ public import KnitWire
 /// `knit/dm/v3/`, apart from HPKE's, so the identity's X25519 key serves v1 and X3DH and the two never derive one key.
 ///
 /// ``RatchetEngine`` seals and opens frames with these, and nothing calls it yet: the ratchet is ported dark behind
-/// `MeshConfiguration.ratchet` (ADR 2026-10.5sk9). The spool's exports (`exportRoot`, `exportEpochSeal`, `:176-186`) are
-/// left out with the spool.
+/// `MeshConfiguration.ratchet` (ADR 2026-10.5sk9). Of the spool's exports, ``exportRoot(_:)`` is in, for the DM scopes
+/// of ADR 2026-11.adrq; `exportEpochSeal` (`/export/epoch`) stays out, reserved for a seal version 2 nobody sends.
 public enum RatchetCrypto {
     /// A raw X25519 key's length, and a root, chain or message key's (`KEY_BYTES`, `:22`).
     public static let keyByteCount = 32
@@ -35,6 +35,7 @@ public enum RatchetCrypto {
     private static let labelMessageKey = Array("knit/dm/v2/mk".utf8)
     private static let labelChainKey = Array("knit/dm/v2/ck".utf8)
     private static let labelSignedPrekey = Array("knit/dm/v2/spk".utf8)
+    private static let labelExportRoot = Array("knit/dm/v2/export/root".utf8)
     private static let labelRootTag = Array("knit/dm/v2/root-tag".utf8)
     private static let labelNonceV3 = Array("knit/dm/v3/nonce".utf8)
     private static let labelHeaderV3 = Array("knit/dm/v3/hdr".utf8)
@@ -215,6 +216,14 @@ public enum RatchetCrypto {
     /// from its frame stays verifiable.
     public static func spkSigningBytes(id: Int, pub: [UInt8]) -> [UInt8] {
         labelSignedPrekey + u32be(id) + pub
+    }
+
+    /// A session's export for the spool, its `pairwiseRoot` (`exportRoot`, knit-next `RatchetCrypto.kt:204` at
+    /// `0832b8462`): `HKDF(root, zero salt, "knit/dm/v2/export/root", 32)`. Both sides of a session derive the same value,
+    /// and the DM scope's id and keys derive from it (`ScopeCrypto.dmScope`, ADR 2026-11.adrq), so a scope never holds the
+    /// root, and one way, so no scope gives the root back. A secret: it stays inside `KnitMesh/Ratchet`.
+    public static func exportRoot(_ sessionRoot: [UInt8]) -> [UInt8] {
+        hkdf(sessionRoot, salt: zeroSalt, info: labelExportRoot, count: keyByteCount)
     }
 
     /// The tag a session root's receive state carries (`rootTag`, `:188-198`; knit-next ADR 2026-10.gcrd): eight HKDF

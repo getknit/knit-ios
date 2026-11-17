@@ -29,8 +29,9 @@ public import KnitWire
 /// waits for a commit. `sealResetDm`'s decline reads the persisted `lastResetSentAt`, which survives a restart; the stamp
 /// held here is only ``noteUndecryptable(from:frameId:sentAt:now:epochGoneBase:)``'s fallback for a peer with no session.
 ///
-/// Left out: the spool's `exportedRoots` and `rootChanges`, since there is no spool here (ADR 2026-10.5sk9), but for the
-/// filter `exportedRoots` applies, which ``confirmedPeers()`` keeps for the sealed profile's fan-out.
+/// The spool's `exportedRoots` is ``dmScopes(now:)``, which hands out scope keys rather than roots (ADR 2026-11.adrq), and
+/// ``confirmedPeers()`` keeps its filter for the sealed profile's fan-out. Left out: `rootChanges`, which a caller replaces
+/// by reading ``dmScopes(now:)`` again, and `ownPendingResets`, a restore's.
 public final class RatchetSessions {
     let identity: IdentityKeys
     let store: any RatchetStore

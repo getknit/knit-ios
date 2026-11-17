@@ -189,8 +189,15 @@ import Testing
         #expect(bytes.count == 50)
     }
 
-    // `exportsMatchTheReferenceAndStayDomainSeparated` is not ported: ADR 2026-10.5sk9 leaves the spool's exports
-    // (`exportRoot`, `exportEpochSeal`) out of this port, so there is no code here for it to check.
+    /// `exportsMatchTheReferenceAndStayDomainSeparated`'s root half: the spool's `pairwiseRoot` (ADR 2026-11.adrq). The
+    /// epoch's half is not ported, since `exportEpochSeal` stays out of this port.
+    @Test func theExportRootIsTheReferenceAndStaysApartFromTheChain() {
+        let root = deterministicBytes(3)
+        let exported = RatchetCrypto.exportRoot(root)
+        #expect(exported == referenceHKDF(ikm: root, salt: zeroSalt, info: Array("knit/dm/v2/export/root".utf8), count: 32))
+        #expect(exported != RatchetCrypto.messageKey(root))
+        #expect(exported != RatchetCrypto.nextChainKey(root))
+    }
 
     /// The receive-state tag (knit-next ADR 2026-10.gcrd): eight HKDF bytes, big-endian, under their own label. Local.
     @Test func theRootTagIsTheReferenceHkdfReadBigEndianAndSeparatesRoots() {

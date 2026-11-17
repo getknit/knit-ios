@@ -4,8 +4,8 @@
 /// and scripted DM transcripts with each party's state after every step, which `RatchetTranscriptTests` replays at the
 /// engine. Every byte string is lowercase hex, and every bundle padded standard base64.
 public enum RatchetVectors {
-    /// The file's shape. Its `export` answers are not modelled: the spool's exports are not in this port (ADR
-    /// 2026-10.5sk9), and the file marks them non-normative.
+    /// The file's shape. Of its `export` answers, which the file marks non-normative, only the root's is modelled
+    /// (ADR 2026-11.adrq): the epoch's export is not in this port (ADR 2026-10.5sk9).
     public struct File: Decodable, Sendable {
         /// Alice, Bob and Carol, from fixed keys.
         public let identities: [String: VectorIdentity]
@@ -112,6 +112,15 @@ public enum RatchetVectors {
         public let group: Group
         /// One AES-GCM seal.
         public let aesGcm: AESGCM
+        /// The spool's exports, of which this port checks the root's alone (ADR 2026-11.adrq).
+        public let export: Export
+    }
+
+    /// The spool's exports, marked non-normative in the file: the root's, which DM scopes derive from, and the epoch's,
+    /// reserved for a seal version 2 and left out of this port.
+    public struct Export: Decodable, Sendable {
+        /// `RatchetCrypto.exportRoot` of the X3DH root.
+        public let exportRoot: String
     }
 
     /// A fixed X25519 pair: `priv` is `bytes(32, seed)`.

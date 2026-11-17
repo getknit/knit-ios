@@ -5,7 +5,7 @@ description: >-
   modified, before the change is reported done or committed: anything under Sources/KnitWire/ or
   Sources/KnitMesh/Router/; MeshEngine+Inbound and InboundFrame; RoomAttachments and StrangerRoomPhotos; the link door
   (LinkClaims, LinkManager+LinkProof, +Seal and +Admission) and what goes on air (GattPayloads, AdvertWriter);
-  KnitCrypto's LinkProof, LinkSeal, ContactCard, BlindTag and PresenceKey; KnitDatabase, AppStorage and
+  KnitCrypto's LinkProof, LinkSeal, ContactCard, BlindTag, PresenceKey and Scope; KnitDatabase, AppStorage and
   KeychainSecretStore; UnifiedLog, LocalNotifier, MetricKitCollector and KnitAppCore's CrashReports and
   Notifications; the content filter (KnitAppCore's and Knit's Moderation), Mentions and Labels; link cards
   (KnitAppCore's and Knit's LinkPreviews); PhotoDecoder, DeviceImageCodec, PickedPhoto, ToolboxVoiceDecoder and

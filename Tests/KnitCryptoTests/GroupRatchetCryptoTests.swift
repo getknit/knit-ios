@@ -40,8 +40,8 @@ import Testing
         #expect(message0 != chain1)
     }
 
-    // `exportMatchesTheReferenceAndStaysDomainSeparated` is not ported: ADR 2026-10.5sk9 leaves the spool's exports
-    // (`exportEpochSeal`) out of this port, so there is no code here for it to check.
+    // `exportMatchesTheReferenceAndStaysDomainSeparated` is not ported: ADR 2026-10.5sk9 leaves the spool's epoch export
+    // (`exportEpochSeal`) out of this port, and group scopes are not in ADR 2026-11.adrq, so there is no code here for it.
 
     @Test func freshSeedsAreDistinctAndSized() {
         let one = GroupRatchetCrypto.newSeed()

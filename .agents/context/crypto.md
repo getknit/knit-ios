@@ -320,7 +320,8 @@ Swift must count `utf16`, not `Character`s.
 | `VerifyPayload`, `ContactCard.parseLegacy`'s check | `VerifyPayload.encode`, `.parse`, `Parsed.certifiedNodeId` |
 | `ContactCard` (its `Body` and `Signed`), `ContactCards.mint`, `ContactImporter.import` and `AddContactViewModel.onScanned`'s pins, `MeshManager.importContact` less the intro | `ContactCard` (`parse`, `looksLikeCard`, `encode`), KnitWire's `ContactCardBody` and `ContactCardSigned`, `MeshEngine.addContact` and `ownContactLink` (ADR 2026-10.tpr5) |
 | `RatchetEngine` | `RatchetEngine`: `initiate`, `seal`, `open`, over `SessionState`, `OpenContext`, `OpenOutcome` and `OpenDelta` |
-| `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `retiredBase`, `sealResetDm`, `sweep`, `forget`, `settle`, and `confirmedPeers`, `exportedRoots`' filter; the reset's pure rules in `RatchetResetPolicy` (`isRetiredBase` among them) |
+| `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `retiredBase`, `sealResetDm`, `sweep`, `forget`, `settle`, `confirmedPeers` (`exportedRoots`' filter) and `dmScopes` (`exportedRoots`, as scope keys); the reset's pure rules in `RatchetResetPolicy` (`isRetiredBase` among them) |
+| `ScopeCrypto` (the DM half), `SpoolPow`, `RatchetCrypto.exportRoot` | `ScopeCrypto`: `dmScope`, `seal`, `open`, `blobId`, `digest`, `fnv64`, `digestBytes`, `digestValue`, over `ScopeKeys`; `SpoolPow`: `utcDay`, `reusable`, `digest`, `leadingZeroBits`, `verify`, `mine`; and `RatchetCrypto.exportRoot` ("Spool scopes", below) |
 | `InboundPipeline`'s ratchet arm, `sendSessionReset` | `MeshEngine.handleRatchetDirect` and `sendSessionReset`, over `RatchetInbound`'s pure rules; the replay of a failed open in `RatchetReplay` |
 | `MeshManager.sealEnvelopeFor`'s DM arm, `flushPendingFor`, `resealRecentDmsTo`, `resealSecondPass` | `MeshEngine.sendRatchet`, `flushPendingDirect`, `resealRecentDirectMessages` and `resealSecondPass` (`ResetReseal` records the pass owed), over `RatchetOutbound`'s pure rules; Android's seal counts in `RatchetSealCounts` |
 | `InboundPipeline.sealDmReceipt`, `MeshManager.sealDeliveryTick`, `originateDeliveryTick`, `canSealTickTo`, `inlineAcksFor` | `MeshEngine.sendSealedReceipt`, `sealLiveTick`, `originateTick` and `canSealTick` behind `RatchetTickSeals`, and `sendRatchet`'s riders, over `RatchetOutbound.receiptPlan` and `inlineAckRoom` |
@@ -358,7 +359,8 @@ Swift must count `utf16`, not `Character`s.
     committed and nothing counted toward a reset.
   - A carried nonce that is not 12 bytes is `BAD_HEADER`, which Kotlin's pipeline decides before its engine. It reads
     a chain or skipped key only for the header's own `se` and `n`, where Kotlin trusts its caller.
-  - Its session keeps no `sendEpochExport`, the spool's half.
+  - Its session keeps no `sendEpochExport`, the epoch's export, reserved for a spool seal version 2 nobody sends. The
+    root's export, which DM scopes derive from, is in (`RatchetCrypto.exportRoot`, ADR 2026-11.adrq).
   - `seal` answers `nil` both when a new epoch is due with no base and for a session missing its send chain or,
     unconfirmed, its init, where Kotlin's `checkNotNull` throws. The second is unreachable by construction, so the
     session store's round trip must keep every `SessionState` field. Neither `nil` means "send v1" by itself: a chat
@@ -380,6 +382,28 @@ Swift must count `utf16`, not `Character`s.
   The group form has no shape rule for a carried nonce, as Kotlin's group arm has none: one that is not 12 bytes fails
   as any AEAD refusal does, `AEAD_FAIL` where a chain is held, never `BAD_HEADER`. The JVM's GCM would open a frame
   sealed under an IV of another length, which no Kotlin sender makes, and this port's 12-byte guard refuses it.
+
+### Spool scopes
+
+ADR 2026-11.adrq carries text DMs through knit-next's spools; `.agents/context/spool.md` has the plane. Its crypto is
+`KnitCrypto/Scope` and one facade read, ported from knit-next `0832b8462` (`ScopeCrypto.kt`'s DM half, `SpoolPow.kt`,
+`RatchetCrypto.kt:204`) and pinned by `spool-v1.json`'s §13 rows and `ratchet-v1.json`'s `exportRoot`:
+
+- **A DM scope** derives from the session root through `RatchetCrypto.exportRoot`, then `ScopeCrypto.dmScope` with
+  both node ids sorted as ASCII: a `ScopeKeys` of the scope id, the seal key and the nonce key. `ScopeKeys` has no
+  description, no `Codable` and an empty mirror, so no log line shows a key.
+- **`RatchetSessions.dmScopes(now:)`** is the only reader, in a unit of its own: per confirmed session, the live scope
+  from `root` and, while `prevRootExpiresAt` is past `now`, the retiring one from `prevRoot`. No root or
+  `pairwiseRoot` leaves `KnitMesh/Ratchet`. `nil` means a store could not answer, which a caller reads as no change.
+  Kotlin's exception for our own unanswered reset (knit-next ADR 2026-10.j67x) is deferred until the reset's slot and
+  race rules are ported, so such a reset exports nothing.
+- **The seal** is deterministic (§4.3), so two members push one blob. `open` checks the blob's hash, then its length
+  (at least 94 bytes, before any slice, where Kotlin leaves a short tag to `doFinal`), the version byte `0x01`, the
+  AEAD under `"knit/scope/v1" ‖ scopeId`, and splits 64 bytes of signature from `signed`. Every failure is `nil`.
+- **The digest** is FNV-1a-64 over the raw blob ids, XORed; KnitWire's `StoreDigest` folds an id's UTF-8 text and is
+  not reused.
+- **Proof of work** mines from 0, at most 2^26 counters (Kotlin's `POW_BUDGET`), and refuses `powBits` outside 0…24.
+  Kotlin's `PowMiner` lane cache is not ported.
 
 ## The ratchet: v2, v3 and the group form
 
@@ -480,7 +504,9 @@ v3 header binding        "knit/dm/v3/hdr" ‖ u32be(se) ‖ ek ‖ u32be(pe) ‖
                            ‖ (no init: 0x00 | init: 0x01 ‖ eph ‖ u32be(pkid) ‖ u64be(at))      60 or 104 bytes
 root tag                 HKDF(ikm = root, salt = zero, info = "knit/dm/v2/root-tag", 8), read as a big-endian
                            Int64 and kept locally
-exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool's alone; this port leaves them out
+export root              HKDF(ikm = root, salt = zero, info = "knit/dm/v2/export/root", 32): the spool's
+                           pairwiseRoot, which DM scopes derive from (ADR 2026-11.adrq)
+epoch export             "knit/dm/v2/export/epoch": reserved for a spool seal version 2; this port leaves it out
 ```
 
 - **`dir`** is `'i'` (0x69) when the epoch's sender initiated the session, else `'r'` (0x72)
@@ -565,7 +591,8 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 
   Skipped keys are inserted with IGNORE. A local epoch whose number is minted again replaces the dead era's key
   (knit-next ADR 027). This port's schema v17 keeps them as Android's database v21 does, less the session's
-  `sendEpochExport` (the spool's) and `updatedAt` (never read).
+  `sendEpochExport` (the epoch's export, which this port leaves out) and `updatedAt` (never read). The root's export
+  needs no column: it derives from `root` and `prevRoot` when it is asked for.
 - **Retention,** swept at start and then at most hourly (`RatchetRepository.kt:121-157`, `:213-224`):
   - skipped keys are dropped once 48 h old, and the oldest go first past 2,000 in all;
   - receive rows go after 48 h unused;
@@ -1136,8 +1163,8 @@ exports                  "knit/dm/v2/export/root" and "/export/epoch": the spool
 
 ### What this port leaves out
 
-- **The spool's exports and its root gossip.** `gr` is decoded and kept raw, and never sent. Its cost is bounded
-  (ADR 2026-10.5sk9).
+- **The spool's epoch export and its root gossip.** `gr` is decoded and kept raw, and never sent. Its cost is bounded
+  (ADR 2026-10.5sk9). The root's export is in, for DM scopes (ADR 2026-11.adrq, "Spool scopes" above).
 - **Sending contact-card intros** (`IntroSync`'s send half), deferred by the maintainer (ADR 2026-10.tpr5).
 - **`CTL_TRANSFER`.**
 - **Unsigned tick sends:** a signed tick costs 64 bytes and verifies the normal way.
@@ -1170,7 +1197,7 @@ knit-next's `vectors/ratchet-v1.json`, synced into `Tests/Vectors/` at each pin,
 prekey its init names as `peerBasePub` at `peerBaseEpoch` 0 (#174); no frame byte moved. Each section serves one phase:
 
 - `kats`, the known answers for each derivation above, which `RatchetVectorTests` checks. Its `export` entry is marked
-  non-normative and skipped, since the exports are left out;
+  non-normative: `exportRoot` is checked, for the spool's DM scopes, and the two epoch exports are skipped;
 - `profiles`, signed ratchet profiles and the prekey pins Android's own pipeline made of them, which
   `RatchetProfileVectorTests` delivers to one engine in the file's order;
 - `dm` and `negative`, scripted DM transcripts with a state digest after each step, and the refusals, for the DM

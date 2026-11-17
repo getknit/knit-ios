@@ -119,7 +119,8 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 
 ## Open knit-next issues that bear on it
 
-- knit/knit-next#290 bears on which sessions get a scope; P2's design pass decides `dmScopes`' gate.
+- knit/knit-next#290 bears on which sessions get a scope. P2 took Kotlin's `exports` rule as it is, confirmed sessions
+  alone, with no gate of its own.
 - knit/knit-next#188: a superseded reset of ours stays in the scope's local fold though it is never pushed, so the
   scope lists every round for up to 24 h. P3's heal loop must not copy it.
 - knit/knit-next#339: C-4.4-7's v2-only wording, filed for this port on 2026-11-16.
@@ -130,8 +131,8 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 | --- | --- | --- |
 | P0 | ADR 2026-11.adrq, this file, `spool-v1.json`, the routing | done 2026-11-16 |
 | P1 | the codecs, `SpoolURL`, invites, fuzz targets (`SpoolRecord`, `SpoolURL`, `RelayInvite`, `FuzzSpool`) | done 2026-11-16 |
-| P2 | the export, scope crypto, proof of work, `RatchetSessions+Scopes` | next |
-| P3 | the pure plane and a fake spool | |
+| P2 | the export (`RatchetCrypto.exportRoot`), scope crypto and proof of work (`KnitCrypto/Scope`: `ScopeKeys`, `ScopeCrypto`, `SpoolPow`), `RatchetSessions.dmScopes(now:)` in `RatchetSessions+Scopes`; `FuzzSpool` opens blobs | done 2026-11-16 |
+| P3 | the pure plane and a fake spool | next |
 | P4 | the engine's wiring, the `.spool` source, the bridge, two-engine tests | |
 | P5 | `KnitSpoolNet`, `check.sh spool` against the daemon | |
 | P6 | the app: settings, consent, invites, the release gate | |
@@ -151,6 +152,18 @@ limits in `SpoolLimits.clamped()`. The rest of Kotlin's bounds sit in the connec
 - the dialer calls `SpoolURL.isAcceptable` again on the canonical URL;
 - a hostile-input test for each: an oversize record, short and long ids, `retryMs = Int64.max`, `powBits` of -1 and 64,
   and a listing of 128K empty ids.
+
+### What P3 owes from P2's reviews (2026-11-16)
+
+- The plane subscribes, pulls, pushes and mines only for a scope whose peer the person has accepted (a contact or an
+  accepted request), keyed on what is persisted, never on memory, with a cap on live scopes in total. A gate on this
+  side splits nothing: the peer's pushes wait at the spool until the scope is subscribed. P3's design pass settles it.
+- A blob a spool serves late is judged by its content (a profile's version, a frame's clamped clock), never by when it
+  arrives: a spool can re-serve a frame long after the router's ten-minute memory has let it go.
+- No log line puts a scope id beside a peer id.
+- `dmScopes(now:)` is read again after every commit that moves a root and when a retiring window closes; `nil` keeps
+  the scopes held. Every per-scope state is keyed by `ScopeKeys.id`.
+- A cancelled worker cancels its mining task (`SpoolPow.mine` looks every 65,536 counters).
 
 P6 owes two more:
 

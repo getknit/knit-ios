@@ -1,12 +1,46 @@
+import KnitCrypto
 import KnitWire
 
-/// Arbitrary bytes as a record from a spool, which is untrusted (ADR 2026-11.adrq), and as a pasted or opened text
-/// through the relay invite's parser and the spool URL rules. Nothing traps. A record that decodes encodes to bytes that
-/// decode to it again; an invite that parses carries a URL a release build may dial; the stored form of a URL is stable.
+/// §13's DM scope (`spool-v1.json`'s `Derivations`: `dmScopeId`, `dmSealKey`, `dmNonceKey`), under which §13's sealed
+/// blob, one of the seeds, opens. `ScopeVectorTests` ties the three to their derivation.
+private let scope = ScopeKeys(
+    id: Hex.decode("aeced0ad65f9e416c3a4d6015ff6bd61849df5bcaf89b5a6f19aa9d654e7a8b2") ?? [],
+    sealKey: Hex.decode("fe7c47b82425bb4dbbd224ca192bf81131bdae07299380728b6eb3721d82eac7") ?? [],
+    nonceKey: Hex.decode("1704dfd72d5f529e8491784d17ed69e10fa7cbc2236667c23c77638dfd645dbe") ?? []
+)
+
+/// Arbitrary bytes as a record from a spool, which is untrusted (ADR 2026-11.adrq), as a blob it serves, and as a pasted
+/// or opened text through the relay invite's parser and the spool URL rules. Nothing traps. A record that decodes encodes
+/// to bytes that decode to it again; a blob that opens seals back to the same bytes and id; an invite that parses carries
+/// a URL a release build may dial; the stored form of a URL is stable.
 @_cdecl("LLVMFuzzerTestOneInput")
 public func fuzzSpool(_ data: UnsafePointer<UInt8>, _ count: Int) -> CInt {
     let bytes = Array(unsafe UnsafeBufferPointer(start: data, count: count))
-    if let record = SpoolRecord(decoding: bytes), let encoded = record.encoded {
+    // The blob under its own hash, so the hash check passes and every later check sees the bytes; under the id a pulled
+    // blob's first 32 bytes would claim; and as a `blob` or `event` record's data under the id beside it.
+    let idCount = ScopeCrypto.idByteCount
+    var served = [
+        (blobId: ScopeCrypto.blobId(of: bytes), blob: bytes),
+        (blobId: Array(bytes.prefix(idCount)), blob: Array(bytes.dropFirst(idCount))),
+    ]
+    let record = SpoolRecord(decoding: bytes)
+    switch record {
+    case .blob(let blob):
+        served.append((blob.blobId, blob.data))
+    case .event(let event):
+        served.append((event.blobId, event.data))
+    default:
+        break
+    }
+    for (blobId, blob) in served {
+        guard let scope, let opened = ScopeCrypto.open(scope, blobId: blobId, blob: blob) else {
+            continue
+        }
+        precondition(opened.sig.count == ScopeCrypto.signatureByteCount && !opened.signed.isEmpty, "an opened blob split wrong")
+        let resealed = ScopeCrypto.seal(scope, sig: opened.sig, signed: opened.signed)
+        precondition(resealed?.blob == blob && resealed?.blobId == blobId, "an opened blob sealed back to other bytes")
+    }
+    if let record, let encoded = record.encoded {
         if case .hello(let hello) = record, let limits = hello.limits?.clamped() {
             precondition(
                 limits.maxBlob <= SpoolRecordLayer.maxInboundRecord && (1...SpoolLimits.maxPullCeiling).contains(limits.maxPull),

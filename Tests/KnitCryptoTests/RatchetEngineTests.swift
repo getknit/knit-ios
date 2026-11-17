@@ -36,8 +36,7 @@ import Testing
         #expect(try alice.seal("post-confirm", now: Self.now).header.initial == nil)
     }
 
-    /// Kotlin compares `RatchetCrypto.exportRoot` of both roots. This port leaves the spool's exports out (ADR
-    /// 2026-10.5sk9), and the export root is a function of the root alone, so the roots and their tags are compared.
+    /// Kotlin compares `RatchetCrypto.exportRoot` of both roots, the spool's `pairwiseRoot` (ADR 2026-11.adrq).
     @Test func bothSidesDeriveTheSamePairwiseExportRoot() throws {
         let (alice, bob) = try RatchetSide.pair()
         try alice.initiate(now: Self.now)
@@ -45,6 +44,7 @@ import Testing
 
         let aliceRoot = try #require(alice.session).root
         let bobRoot = try #require(bob.session).root
+        #expect(RatchetCrypto.exportRoot(aliceRoot) == RatchetCrypto.exportRoot(bobRoot))
         #expect(aliceRoot == bobRoot)
         #expect(RatchetCrypto.rootTag(aliceRoot) == RatchetCrypto.rootTag(bobRoot))
     }

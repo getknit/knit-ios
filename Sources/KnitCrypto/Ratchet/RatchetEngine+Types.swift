@@ -5,7 +5,8 @@ extension RatchetEngine {
     /// Kotlin's, so a column, a state digest and a vector read the same. Fields are `var` where Kotlin has `copy`.
     ///
     /// Left out: Kotlin's `sendEpochExport`, the epoch's export half, which only knit-next's spool reads and which
-    /// production never reads back. The spool's exports are not in this port (ADR 2026-10.5sk9).
+    /// production never reads back. Of the spool's exports this port takes the root's alone, derived from ``root`` and
+    /// ``prevRoot`` on demand (`RatchetCrypto.exportRoot`, ADR 2026-11.adrq); the epoch's stays out.
     public struct SessionState: Sendable, Equatable {
         /// The peer.
         public var peerId: NodeId

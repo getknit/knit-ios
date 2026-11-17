@@ -316,8 +316,8 @@ extension RatchetVectors {
         public let localEpochs: [TranscriptLocalEpoch]
     }
 
-    /// A session as a state lists it. Its `sendEpochExportSha256` is not read: the spool's exports are not in this port
-    /// (ADR 2026-10.5sk9), and the engine keeps no export half.
+    /// A session as a state lists it. Its `sendEpochExportSha256` is not read: the spool's epoch export is not in this
+    /// port (ADR 2026-10.5sk9), and the engine keeps no export half.
     public struct TranscriptSession: Decodable, Sendable {
         /// SHA-256 of the root.
         public let rootSha256: String

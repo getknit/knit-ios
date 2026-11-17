@@ -11,8 +11,8 @@ and a verify code (docs/CONTACT_CARD.md §5), and FuzzExiflessJPEG small JPEGs c
 (II) and a big-endian (MM) EXIF, the two real EXIF blocks from knit-ios #12 (Knit for Android's and the one Photos wrote
 over it, as KnitTestSupport's JPEGFixture pins them), an XMP APP1 alone, and a trailer after EOI. FuzzLinkPreview gets
 knit-next's two link-preview card vectors and a few addresses a card's check must judge. FuzzSpool gets every spool record
-and HELLO from `spool-v1.json` and its three invite links, bare, in text and behind each prefix. `scripts/fuzz.sh` calls
-this into a scratch directory; the committed Fuzz/Corpus/ holds only inputs that once found a bug.
+and HELLO from `spool-v1.json`, §13's sealed blob, and its three invite links, bare, in text and behind each prefix.
+`scripts/fuzz.sh` calls this into a scratch directory; the committed Fuzz/Corpus/ holds only inputs that once found a bug.
 """
 
 from __future__ import annotations
@@ -131,6 +131,8 @@ def main() -> int:
     spool = json.loads((ROOT / "Tests" / "Vectors" / "spool-v1.json").read_text(encoding="utf-8"))
     for name, hexed in {**spool["scope"]["Records"], **spool["helloVariants"]}.items():
         (out / "FuzzSpool" / name).write_bytes(bytes.fromhex(hexed))
+    # §13's sealed blob, which opens under the DM keys the harness fixes (ADR 2026-11.adrq, P2).
+    (out / "FuzzSpool" / "seal-blob").write_bytes(bytes.fromhex(spool["scope"]["Seal"]["blob"]))
     spoofs = {
         "invite-user-info": "wss://relay.example@other.example/spool/v1",
         "invite-backslash": "wss://other.example\\relay.example/spool/v1",
