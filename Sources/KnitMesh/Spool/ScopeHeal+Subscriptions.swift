@@ -133,9 +133,15 @@ extension ScopeHeal {
 
     /// A stamp the caller mined, or `nil` when the search ran out (`SpoolPow.mine`'s budget). A stamp lets the scope be
     /// subscribed and pushed again at once; none parks it for the floor, as a refused stamp would be.
-    mutating func stampMined(_ request: SpoolMiningRequest, counter: Int64?, session: inout SpoolSession, now: SpoolNow) {
+    ///
+    /// The answer reaches the heal whether or not a session is open (P4b1): `mining` is cleared, the stamp kept and counted
+    /// and the scope marked wanted, and only the `sub` waits for a session. So a search outlives the connection that asked
+    /// for it, and the next connection's `sub` carries the stamp with no second search.
+    /// Answers whether the heal took the answer: one for a request it no longer waits on changes nothing.
+    @discardableResult
+    mutating func stampMined(_ request: SpoolMiningRequest, counter: Int64?, session: inout SpoolSession?, now: SpoolNow) -> Bool {
         guard mining[request.scope] == request else {
-            return
+            return false
         }
         // `adopt` cancels the mining of a scope that leaves the table, so a request still in `mining` is a table scope's.
         mining[request.scope] = nil
@@ -147,9 +153,13 @@ extension ScopeHeal {
             dirty.insert(request.scope)
             subsWanted = true
             nextSubAt = .min
-            syncSubscriptions(&session, now: now)
+            if var open = session {
+                syncSubscriptions(&open, now: now)
+                session = open
+            }
         } else {
             park(request.scope, for: SpoolSession.minParkMilliseconds, now: now)
         }
+        return true
     }
 }

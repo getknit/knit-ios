@@ -107,6 +107,20 @@ import Testing
         #expect(await rig.control.handle(#"{"cmd":"status"}"#).quits == false)
     }
 
+    /// The spool plane's key (ADR 2026-11.adrq, P4b1): handles and counts, and no relay address, token or scope id.
+    @Test func statusCarriesTheSpoolPlane() async throws {
+        let rig = ControlRig()
+        let status = try await rig.send(#"{"cmd":"status"}"#)
+        let spool = try #require(status["spool"] as? [String: Any])
+        #expect(spool["paused"] is Bool)
+        #expect(spool["scopes"] as? Int == 0)
+        #expect((spool["relays"] as? [Any])?.isEmpty == true, "a mesh made with no socket factory carries no relay")
+        let counts = try #require(spool["counts"] as? [String: Any])
+        #expect(counts["unreadableTables"] as? Int == 0 && counts["delivered"] as? Int == 0)
+        let line = try #require(String(data: try JSONSerialization.data(withJSONObject: spool), encoding: .utf8))
+        #expect(!line.contains("://") && !line.contains("k="), "no address in the key")
+    }
+
     @Test func statusCarriesTheDetails() async throws {
         let rig = ControlRig()
         let status = try await rig.send(#"{"cmd":"status"}"#)

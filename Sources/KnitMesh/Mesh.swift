@@ -34,9 +34,19 @@ public actor Mesh {
     private var advertisedRevision = -1
     /// What says the wall clock was set, and its observer while running (``wallClockChanged()``).
     var clockWatch = ClockWatch()
-    /// The spool plane's synchronous core (ADR 2026-11.adrq, P4a), beside the links: its relays' heal loops and connections,
-    /// the scope table and the shared seal cache. It carries no relay until P4b's sockets add one.
+    /// The spool plane (ADR 2026-11.adrq), beside the links: its relays' heal loops and connections, the scope table and the
+    /// shared seal cache.
     var spool: SpoolPlane
+    /// What opens a relay's socket, or `nil` on a mesh that carries no relay (`Mesh+Spool.swift`).
+    let spoolSockets: (any SpoolSocketFactory)?
+    /// Each relay's socket task.
+    var spoolTasks = SpoolTasks()
+    /// Stamp searches the plane asked for, waiting for a runner.
+    var spoolMiningQueue: Set<SpoolMiningRequest> = []
+    /// Whether the spool runs while the mesh does: ``pauseSpool()`` clears it and ``resumeSpool()`` sets it.
+    var spoolWanted = true
+    /// How many times the timer fired, for the tests that bound it.
+    private(set) var timerFirings = 0
 
     /// Whether the mesh is running: started, and not stopped since.
     public private(set) var isRunning = false
@@ -56,7 +66,8 @@ public actor Mesh {
         configuration: MeshConfiguration = MeshConfiguration(),
         linkConfiguration: LinkManager.Configuration = LinkManager.Configuration(),
         log: any KnitLog = SilentLog(),
-        partials: (any PartialBlobStore)? = nil
+        partials: (any PartialBlobStore)? = nil,
+        spoolSockets: (any SpoolSocketFactory)? = nil
     ) {
         // One store for both, so the engine asks with what the links keep. In memory unless the app hands one on disk.
         let shared = partials ?? MemoryPartialBlobStore { line in log.log(.info, "mesh \(line)") }
@@ -90,12 +101,14 @@ public actor Mesh {
         self.clock = clock
         nodeId = identity.nodeId
         spool = SpoolPlane(me: identity.nodeId)
+        self.spoolSockets = spoolSockets
         (events, continuation) = AsyncStream<MeshEvent>.makeStream()
     }
 
     deinit {
         eventLoop?.cancel()
         timer?.cancel()
+        Self.release(spoolTasks)
         continuation.finish()
     }
 
@@ -119,6 +132,9 @@ public actor Mesh {
             }
         }
         observeClock()
+        if spoolWanted {
+            spool.resume(engine: engine)
+        }
         settle()
     }
 
@@ -132,6 +148,9 @@ public actor Mesh {
         timer = nil
         scheduled = nil
         forgetClock()
+        // Every relay's session ends, and its heal stays for the next start.
+        spool.pause(engine: engine)
+        serviceSpool()
         apply(links.stop())
         partials.purge()
         engine.forgetTyping()
@@ -163,6 +182,7 @@ public actor Mesh {
 
     /// Fires whatever timers are due now; the timer task calls this when the next deadline arrives.
     public func fireDueTimers() {
+        timerFirings += 1
         apply(links.advance())
         engine.advance()
         spool.tick(engine: engine)
@@ -269,41 +289,6 @@ public actor Mesh {
         settle()
     }
 
-    /// Whether the app is in the background, where iOS may suspend it, so the links seek peers while none is up
-    /// (``LinkManager/setInBackground(_:)``). Kept while stopped, for the next start.
-    public func setInBackground(_ background: Bool) {
-        apply(links.setInBackground(background))
-        settle()
-    }
-
-    /// The peers linked now.
-    public var neighbors: [Neighbor] { links.neighbors }
-
-    /// The peers sighted now, linked or not.
-    public var sightings: [PresenceTracker.Snapshot] { links.sightings() }
-
-    /// Why frames were dropped so far.
-    public var dropped: [DropReason: Int] { engine.dropped }
-
-    /// What the presence keys' receive side did so far (ADR 2026-11.sv5t).
-    public var presenceKeyCounts: PresenceKeyCounts { engine.presenceKeyCounts }
-
-    /// Who is typing where now (``MeshEngine/typingNow``).
-    public var typing: [String: [NodeId]] { engine.typingNow }
-
-    /// What the router has done so far.
-    public var routerCounters: Router.Counters { engine.routerCounters }
-
-    /// What the engine and the link manager hold in memory, table by table.
-    public var footprint: MeshFootprint {
-        var tables = engine.footprint
-        tables.channels = links.channelCount
-        tables.crossings = links.crossingCount
-        tables.arrivingFiles = links.arrivingFileKeys.count
-        tables.queuedFiles = links.queuedFileCount
-        return tables
-    }
-
     // MARK: Plumbing
 
     /// After any work: hand on the engine's events, re-advertise a changed digest cue, and aim the timer at the
@@ -322,6 +307,8 @@ public actor Mesh {
         }
         // After the work's outermost commit: a session row that moved reads the scope table again.
         spool.refreshTable(engine: engine)
+        // The plane's dials, sends, closes and stamp searches go out, drained after every input.
+        serviceSpool()
         // Before the timer is aimed: a listing's limiter release and first slot edge are deadlines too (ADR 2026-11.sv5t).
         engine.feedPresenceKeys()
         schedule()
@@ -358,32 +345,6 @@ public actor Mesh {
         if scheduled == deadline {
             scheduled = nil
             fireDueTimers()
-        }
-    }
-}
-
-extension Mesh {
-    /// Hands each link event to the engine, in order.
-    func apply(_ linkEvents: [LinkManager.Event]) {
-        for event in linkEvents {
-            switch event {
-            case .up(let neighbor):
-                engine.linkUp(neighbor)
-            case .down(let nodeId):
-                engine.linkDown(nodeId)
-            case .frame(let frame):
-                engine.receive(frame)
-            case .digest(let ids, let from):
-                engine.receiveDigest(ids, from: from)
-            case .file(let file):
-                engine.receiveFile(file)
-            case .fileProgress(let progress):
-                engine.fileProgress(progress)
-            case .fileSent(let hash, let peer):
-                engine.fileSent(hash, to: peer)
-            case .fileOverLimit(let hash, let peer):
-                engine.fileOverLimit(hash, from: peer)
-            }
         }
     }
 }

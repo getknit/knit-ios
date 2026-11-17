@@ -54,6 +54,8 @@ let package = Package(
         .library(name: "KnitWire", targets: ["KnitWire"]),
         .library(name: "KnitCrypto", targets: ["KnitCrypto"]),
         .library(name: "KnitAppCore", targets: ["KnitAppCore"]),
+        // For `FuzzSpoolSession`, which drives the spool's session through `@_spi(Fuzz)`.
+        .library(name: "KnitMesh", targets: ["KnitMesh"]),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-crypto.git", from: "5.0.0"),

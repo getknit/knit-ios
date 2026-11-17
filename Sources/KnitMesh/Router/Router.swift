@@ -97,6 +97,10 @@ public struct Router: Sendable {
     public private(set) var counters = Counters()
 
     private var seen: SeenSet
+    /// The ids a spool served (ADR 2026-11.adrq, P4b1): a set of its own, of the same size and window, so a spool's backlog
+    /// never evicts an id the radios brought. Both doors check both sets, so a radio copy of a pulled frame is a duplicate,
+    /// and a pulled copy of a radio frame.
+    private var spoolSeen = SeenSet()
     private var budget: IngressBudget<NodeId>
     private var pending: [ExactKey: PendingRelay] = [:]
     private var nextSequence = 0
@@ -114,6 +118,9 @@ public struct Router: Sendable {
 
     /// The frame ids in the router's ``SeenSet``.
     public var seenCount: Int { seen.count }
+
+    /// The frame ids in the spool's own ``SeenSet``.
+    public var spoolSeenCount: Int { spoolSeen.count }
 
     /// Relays waiting out their jitter.
     public var pendingRelayCount: Int { pending.count }
@@ -136,11 +143,12 @@ public struct Router: Sendable {
             return .nonCanonical
         }
         let id = frame.envelope.id
-        if !seen.contains(id, now: now), IngressBudget<NodeId>.meters(frame.envelope), !budget.admit(link: frame.from, now: now) {
+        let pulled = spoolSeen.contains(id, now: now)
+        if !pulled, !seen.contains(id, now: now), IngressBudget<NodeId>.meters(frame.envelope), !budget.admit(link: frame.from, now: now) {
             counters.refused += 1
             return .refused
         }
-        guard seen.insert(id, now: now) else {
+        guard !pulled, seen.insert(id, now: now) else {
             counters.deduplicated += 1
             overheard(id, from: frame.from)
             return .duplicate
@@ -152,13 +160,14 @@ public struct Router: Sendable {
     /// Decides whether a frame a spool served is new (ADR 2026-11.adrq, P4a): the id's shape and the seen set, and nothing
     /// a link's door adds. No ingress budget, which meters a link, and no overhear: a spool is no neighbour, so its copy
     /// neither counts toward cancelling a relay nor is ever skipped when one fires (`MeshRouter.kt:64`, `:132-136` at
-    /// knit-next `0832b8462`). The heal loop's hourly budget bounds what a spool can bring.
+    /// knit-next `0832b8462`). The heal loop's hourly budget bounds what a spool can bring. The id goes into the spool's own
+    /// set, never the radios' (P4b1), and an id either set holds is a duplicate.
     public mutating func admitPulled(envelope: RelayEnvelope, now: Int64) -> Admission {
         guard FrameId.admits(envelope) else {
             counters.spoolNonCanonical += 1
             return .nonCanonical
         }
-        guard seen.insert(envelope.id, now: now) else {
+        guard !seen.contains(envelope.id, now: now), spoolSeen.insert(envelope.id, now: now) else {
             counters.spoolDeduplicated += 1
             return .duplicate
         }
@@ -240,12 +249,17 @@ public struct Router: Sendable {
     /// frame (a store unit failed): the next round's copy is new again, however many times the store fails, so a frame is
     /// never left seen and unheld (ADR 2026-11.adrq, P4a). Only after an admission that answered ``Admission/new``.
     mutating func reopenPulled(_ id: String) {
-        seen.forget(id)
+        spoolSeen.forget(id)
     }
 
-    /// Lets one more copy of `id` in inside its window (``SeenSet/reopen(_:now:)``).
+    /// Lets one more copy of `id` in inside its window (``SeenSet/reopen(_:now:)``), from whichever set holds it, since both
+    /// doors read both sets: a DM a relay served first and the radio then brings re-sealed would otherwise stay a duplicate
+    /// of the spool's mark. Each set keeps its own once-per-window memory, so an id is reopened at most once per set per
+    /// window, twice at most when both sets hold it.
     public mutating func reopen(_ id: String, now: Int64) -> Bool {
-        seen.reopen(id, now: now)
+        let radio = seen.reopen(id, now: now)
+        let pulled = spoolSeen.reopen(id, now: now)
+        return radio || pulled
     }
 
     /// A duplicate of `id` arrived from `neighbor`. Only a second *distinct* neighbour is evidence that someone

@@ -17,8 +17,8 @@ import Testing
 
     /// Alice (0) and Bob (1), ratcheting, linked by radio until a DM each way and its receipts confirmed the session, then
     /// apart; Carol (2), when asked for, pinned by Bob alone and never linked. Every node carries the spool's relay.
-    static func greeted(withCarol: Bool = false, spool: FakeSpool? = nil) throws -> SpoolLab {
-        var fixtures = [try EngineFixture.ratcheting(alice, seed: 11), try EngineFixture.ratcheting(bob, seed: 12)]
+    static func greeted(withCarol: Bool = false, spool: FakeSpool? = nil, bobStores: MeshStores = .inMemory()) throws -> SpoolLab {
+        var fixtures = [try EngineFixture.ratcheting(alice, seed: 11), try EngineFixture.ratcheting(bob, stores: bobStores, seed: 12)]
         if withCarol {
             fixtures.append(try EngineFixture.ratcheting(carol, seed: 13))
         }

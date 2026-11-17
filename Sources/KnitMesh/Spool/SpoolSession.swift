@@ -102,6 +102,8 @@ internal struct SpoolSession: Sendable {
     var claims: [SpoolID: ClaimSet] = [:]
     var subsInFlight: [Int64: SubInFlight] = [:]
     private var outbox: [SpoolSessionOutput] = []
+    /// The size of the last record queued, which the heal charges a push at (P4b1).
+    private(set) var lastSentCount = 0
 
     /// A session for a socket that opened at `now`, on the monotonic clock.
     init(openedAt now: Int64) {
@@ -252,6 +254,7 @@ internal struct SpoolSession: Sendable {
             return false
         }
         outbox.append(.send(bytes))
+        lastSentCount = bytes.count
         return true
     }
 

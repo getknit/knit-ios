@@ -208,3 +208,59 @@ protocol byte for byte and needs no Android change.
   set that succeeds decides. Our own reset takes the pair's scopes out before the next heal input.
 - None of it changes what a spool or a peer receives beyond fewer bridged frames on the radios: no record, field or
   capability moves.
+
+**Amended 2026-11-17 (P4b1, the connections; a draft until the maintainer accepts it):**
+
+- **A relay is dialled at an accepted address alone.** `AcceptedSpoolURL` is built only by its factory: the canonical
+  form, a scheme this build dials, a plain address (printable ASCII, no `@` and no `\` in the authority), no fragment, at
+  most 256 bytes. `ws://` is taken only in a debug build whose caller allows it, only to `localhost` or a loopback,
+  private or link-local address literal, and never with a `k=` parameter; a release build refuses it. It prints its host
+  alone and mirrors nothing; in a cleartext address, an IPv4 part of more than one digit never starts with `0`, and a
+  query key `k` in either case, or any key holding `%`, counts as a token. Its
+  text leaves through `socketURLText`, which the socket factory alone reads. Everywhere else a relay is its
+  `SpoolRelayHandle`.
+- **The socket contract.** Reads are pulled: the reader asks for the next message only once its last post into the mesh
+  returned, so one record is in flight per connection. A text message is dropped and counted. One send is in flight; the
+  rest wait in the plane. Failures are fault words and a close code held to 1000…4999; a close frame's reason is dropped,
+  and `Retry-After` comes as its first 16 bytes.
+- **The plane owns a session's life.** Each dial takes a token from one counter per engine. A dial has 20 s to open. Every
+  session that began ends through one path, in the same turn as the pause, removal, timeout or close that ended it, and
+  that end clears the relay's queued records. A post under a token that is over is dropped. A relay is dialled only when
+  its last task has ended. While a relay has no session, the plane reports only its dial deadline.
+- **Inbound and outbound bounds.** Per connection, 64 records and 1 MiB as a burst, refilling over a second, text
+  included; past it the reader waits for the refill. Per relay, at most 1 MiB queued to send, past which the heal holds
+  its pushes until the queue drains; bytes queued with no send done for 30 s end the session as unreached. Pushes cost at
+  most 16 MiB an hour, charged at the encoded size when each goes. Within one session, a blob the relay stored from us is
+  not pushed again inside the hour; a scope's first `digest` of each session, and a `digest` of no blob (the relay shed
+  the scope), forget that scope's entries, so a listing that lacks the blob takes it back. The hourly budget bounds
+  repeats across sessions.
+- **Dropped records.** A connection that drops more than two whole late pulls' worth of records (`2 × (256 + 1)` = 514:
+  each pull's blobs at the largest `maxPull` and its `ok`), or more than 4 MiB of them, unread inside a rolling minute
+  ends as an unreached session under the fault word `dropped`. A record of a type this build does not know counts toward
+  the bytes alone, so a newer record type never ends a session by its count. Below the bound a dropped record leaves the
+  connection standing, as before.
+- **Backoff.** `Retry-After` is delta-seconds alone (ASCII digits, spaces or tabs around them), held to 0…60 s; a sign, an
+  HTTP-date or anything else is no floor, and digits past the 16-byte cut read as 60 s. It floors the curve. A session is
+  reached once it lasted 30 s or ended a round that compared a scope against the spool's anchor; a fault of ours, an
+  `unopenable` end, a write stall and a close coded 4000…4003 are never reached. A session that ends before 30 s, reached
+  or not, floors the next dial at the rest of those 30 s: a relay is dialled at most once per 30 s while its sessions end
+  early. A pause is no failure, and a resume dials every relay at once with its count reset.
+- **The table before a send's end.** The end of a send reads the table first, as every input does, so a scope that left
+  takes its held pushes with it before they go on.
+- **Relays and lifecycle.** At most eight relays. A pause ends every session and keeps every heal (its accounted, invalid
+  and unpushable sets, stamps, searches and owed listings); only a process start or removing the relay makes a fresh
+  heal. The mesh's stop pauses the plane and its start resumes it. Turning the plane off, or a consent withdrawn, removes
+  every relay.
+- **A stamp answer reaches the heal with no session.** It clears the search, keeps and counts the stamp and marks the
+  scope wanted; only the `sub` waits for a session. An answer the heal no longer waits on changes and counts nothing. A
+  request is matched by its value until P4b2 gives each one a plane-assigned serial. Every search in `mining` has exactly one search queued or running,
+  and ends in exactly one answer or one cancel.
+- **The spool's own seen set.** A pulled id goes into a seen set of the spool's own, of the radios' size and window, and
+  both doors check both sets, so a spool backlog never evicts a radio id. A failed store unit forgets the id from the
+  spool's set; a reopen reopens it in whichever set holds it, each set at most once per window.
+- **Logging.** At most one line per kind per relay per minute, at warning level, carrying what moved: count names,
+  numbers, a relay's handle and the spec's refusal codes (any other code reads `other`). No line carries an address, a
+  token, a node id, a scope id or any part of one, or a spool's own text. No per-frame line is written at warning level;
+  per-frame debug lines say `spool` and name neither the relay nor the scope. `status` gains a `spool` key of handles and counts.
+- None of it changes what a spool or a peer receives beyond fewer pushes and bounded reads: no record, field or
+  capability moves.

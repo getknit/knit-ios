@@ -92,9 +92,9 @@ extension SpoolSession {
         claims[scope]?.contains(blobId) == true
     }
 
-    /// How many ids `scope` has claimed on this connection, delivered and in flight.
-    /// Read by the tests alone, through `@testable`, which `swiftlint analyze` (Sources only) does not see.
-    func claimCount(_ scope: SpoolID) -> Int { // swiftlint:disable:this unused_declaration
+    /// How many ids `scope` has claimed on this connection, delivered and in flight: the tests' and `SpoolSessionFuzz`'s
+    /// bound.
+    func claimCount(_ scope: SpoolID) -> Int {
         claims[scope]?.count ?? 0
     }
 

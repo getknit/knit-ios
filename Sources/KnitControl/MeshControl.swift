@@ -329,6 +329,8 @@ public actor MeshControl {
             "seekSpells": .int(Int64(await mesh.seekSpells)),
             "footprint": ControlLines.describe(await mesh.footprint),
             "router": ControlLines.describe(await mesh.routerCounters),
+            // The spool plane's relays by handle and counts (ADR 2026-11.adrq, P4b1), a key of its own beside the rest.
+            "spool": ControlLines.describe(await mesh.spoolStatus),
             "typing": ControlLines.typing(await mesh.typing),
         ]) { _, own in own }
         fields.merge(await linkCounters()) { _, own in own }

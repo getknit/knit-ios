@@ -42,13 +42,18 @@ internal struct SpoolScope: Sendable, Equatable, CustomStringConvertible, Custom
 
 /// A relay as the plane names it: a number the app gives each one it dials, never its URL, which a private relay's token
 /// rides in (ADR 2026-11.adrq).
-internal struct SpoolRelayHandle: Hashable, Comparable, Sendable, CustomStringConvertible {
+public struct SpoolRelayHandle: Hashable, Comparable, Sendable, CustomStringConvertible {
     /// The app's number for the relay.
-    let number: Int
+    public let number: Int
 
-    static func < (lhs: Self, rhs: Self) -> Bool { lhs.number < rhs.number }
+    /// The relay the app numbers `number`.
+    public init(number: Int) {
+        self.number = number
+    }
 
-    var description: String { "relay \(number)" }
+    public static func < (lhs: Self, rhs: Self) -> Bool { lhs.number < rhs.number }
+
+    public var description: String { "relay \(number)" }
 }
 
 /// The two clocks the heal loop reads: the monotonic one for its timers (ADR 2026-09.gq84), as ``SpoolSession`` does, and

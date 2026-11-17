@@ -68,6 +68,13 @@ extension ScopeHeal {
         var faults = 0
         /// Scopes parked after a `quota` or `pow` refusal.
         var parks = 0
+        /// Pushes a round left for the next because the hour's upload budget was spent (P4b1).
+        var pushBudgetDeferred = 0
+        /// Times a round's pushes waited for the connection's send queue to drain (P4b1).
+        var outboundHeld = 0
+        /// Rounds that ended with the session ready after comparing at least one scope against the spool's anchor: what
+        /// makes a session reached for the backoff (P4b1).
+        var roundsCompared = 0
     }
 
     /// One scope's state across connections.
@@ -100,6 +107,8 @@ extension ScopeHeal {
     struct Round: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
         var due: [SpoolID]
         let frames: [CarriedFrame]
+        /// Whether a scope compared its fold against an anchor the spool gave.
+        var compared = false
 
         var description: String { "round: \(due.count) scopes due, \(frames.count) frames" }
         var debugDescription: String { description }
@@ -114,6 +123,8 @@ extension ScopeHeal {
             case pushing(request: Int64, blob: HeldBlob, stamped: Bool)
             /// A push refused `rate`, waited out until the instant given, at most 5 s.
             case rateWait(until: Int64)
+            /// The connection's send queue is at its cap: the pushes wait until it drains (``ScopeHeal/outboundDrained(_:now:)``).
+            case held
         }
 
         let scope: SpoolScope

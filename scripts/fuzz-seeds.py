@@ -11,7 +11,8 @@ and a verify code (docs/CONTACT_CARD.md §5), and FuzzExiflessJPEG small JPEGs c
 (II) and a big-endian (MM) EXIF, the two real EXIF blocks from knit-ios #12 (Knit for Android's and the one Photos wrote
 over it, as KnitTestSupport's JPEGFixture pins them), an XMP APP1 alone, and a trailer after EOI. FuzzLinkPreview gets
 knit-next's two link-preview card vectors and a few addresses a card's check must judge. FuzzSpool gets every spool record
-and HELLO from `spool-v1.json`, §13's sealed blob, and its three invite links, bare, in text and behind each prefix.
+and HELLO from `spool-v1.json`, §13's sealed blob, and its three invite links, bare, in text and behind each prefix, and
+FuzzSpoolSession each of those records as a script after the spool's hello.
 `scripts/fuzz.sh` calls this into a scratch directory; the committed Fuzz/Corpus/ holds only inputs that once found a bug.
 """
 
@@ -91,7 +92,7 @@ def main() -> int:
     vectors = json.loads((ROOT / "Tests" / "Vectors" / "wire-v1.json").read_text(encoding="utf-8"))["vectors"]
     for harness in (
         "FuzzCBOR", "FuzzLinkRecords", "FuzzAdvert", "FuzzContactCard", "FuzzExiflessJPEG", "FuzzLinkPreview", "FuzzOpenGraph",
-        "FuzzSpool",
+        "FuzzSpool", "FuzzSpoolSession",
     ):
         (out / harness).mkdir(parents=True, exist_ok=True)
     for name, hexed in vectors.items():
@@ -131,6 +132,13 @@ def main() -> int:
     spool = json.loads((ROOT / "Tests" / "Vectors" / "spool-v1.json").read_text(encoding="utf-8"))
     for name, hexed in {**spool["scope"]["Records"], **spool["helloVariants"]}.items():
         (out / "FuzzSpool" / name).write_bytes(bytes.fromhex(hexed))
+    # FuzzSpoolSession reads a script: op 0 feeds a record of a two-byte length, so each seed opens with the spool's hello,
+    # then one of §13's records, then the harness's own subscribe (op 2), tick (op 1) and round (op 8).
+    hello = bytes.fromhex(spool["scope"]["Records"]["helloSpool"])
+    for name, hexed in spool["scope"]["Records"].items():
+        record = bytes.fromhex(hexed)
+        script = b"\x00" + len(hello).to_bytes(2, "big") + hello + b"\x02\x04" + b"\x00" + len(record).to_bytes(2, "big") + record
+        (out / "FuzzSpoolSession" / name).write_bytes(script + b"\x01" + (40_000).to_bytes(8, "big") + b"\x08\x01\x07\x00")
     # §13's sealed blob, which opens under the DM keys the harness fixes (ADR 2026-11.adrq, P2).
     (out / "FuzzSpool" / "seal-blob").write_bytes(bytes.fromhex(spool["scope"]["Seal"]["blob"]))
     spoofs = {

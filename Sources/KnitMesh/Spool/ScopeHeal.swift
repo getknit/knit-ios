@@ -65,6 +65,19 @@ internal struct ScopeHeal: Sendable, CustomStringConvertible, CustomDebugStringC
     var step: Step?
     var seals = ScopeSealCache()
     var intake = SpoolIntake()
+    /// The hour's pushes and the ids this relay stored from us in it (P4b1).
+    var upload = SpoolUpload()
+    /// Whether the connection's send queue is at its cap, set by the plane before every input (P4b1).
+    var outboundFull = false
+    /// The scopes this session has had a `digest` for.
+    var digested: Set<SpoolID> = []
+    /// The stamp searches asked for and not yet answered. Invariant (P4b1): every entry has exactly one search for it queued
+    /// or running, and every search ends in exactly one answer, ``stampMined(_:counter:session:now:)``, or in the
+    /// ``Output/cancelMining(_:)`` that removed the entry. Nothing else adds or removes one, and a connection's end touches
+    /// none, so a scope never waits on a search nobody runs and never runs two.
+    ///
+    /// A request is matched by its value (relay, scope, day, bits) until P4b2: an identical request asked again after a
+    /// cancel can take the earlier search's answer. P4b2's plane-assigned serial replaces this.
     var mining: [SpoolID: SpoolMiningRequest] = [:]
     /// The scopes whose `sub` on this connection carried a stamp.
     var stampedSubs: Set<SpoolID> = []
@@ -250,6 +263,15 @@ internal struct ScopeHeal: Sendable, CustomStringConvertible, CustomDebugStringC
         case .digest(let scope):
             // A digest is the spool holding the scope, so it asks no stamp again until it sheds it (`handleDigest`).
             states[scope]?.stampDemanded = false
+            // A digest of no blob is the spool letting the scope go: what it stored from us there goes back up (P3b's shed
+            // rule), whatever the upload memo says. A false one costs at most the hour's upload budget.
+            // The upload memo damps re-pushes within one connection: the first digest of each session for the scope, and one
+            // of no blob (the spool letting the scope go, P3b's shed rule), forget what it stored from us there, so it goes
+            // back up when a listing lacks it. The hour's upload budget bounds repeats across sessions.
+            // swiftlint:disable:next empty_count - the spool's own count of the scope's blobs, not a collection
+            if digested.insert(scope).inserted || session.anchor(scope)?.count == 0 {
+                upload.forget(scope: scope)
+            }
             markDirty(scope)
         case .live(let arrival):
             accept(arrival, .live, request: nil, session: &session, now: now)
@@ -273,6 +295,7 @@ internal struct ScopeHeal: Sendable, CustomStringConvertible, CustomDebugStringC
     /// The connection is gone: the round with it, and what the spool knew of this connection's `sub`s. Dirty marks
     /// stay, and the next session's `connected` subscribes everything again.
     mutating func sessionEnded() {
+        digested.removeAll()
         round = nil
         step = nil
         stampedSubs.removeAll()

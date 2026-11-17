@@ -16,7 +16,12 @@ final class SpoolLab {
     /// The relay every node dials.
     let relay = SpoolRelayHandle(number: 1)
     var planes: [SpoolPlane]
+    /// The address the relay is added under.
+    static let url = AcceptedSpoolURL("wss://lab.spool.test/spool/v1", allowCleartext: false)
     private var connections: [FakeSpool.Connection?]
+    /// Each node's open token, and the dial its plane last asked for that the lab has not answered.
+    private(set) var tokens: [SpoolConnectionToken?]
+    private(set) var pendingDials: [SpoolConnectionToken?]
     private var revisions: [Int]
     /// Every record each node sent the spool, in order.
     private(set) var sent: [[SpoolRecord]]
@@ -34,11 +39,13 @@ final class SpoolLab {
         self.spool = spool ?? FakeSpool(now: fixtures.first?.clock.wallMilliseconds() ?? 0)
         planes = fixtures.map { SpoolPlane(me: $0.me.nodeId) }
         connections = Array(repeating: nil, count: fixtures.count)
+        tokens = Array(repeating: nil, count: fixtures.count)
+        pendingDials = Array(repeating: nil, count: fixtures.count)
         revisions = fixtures.map(\.engine.custodyRevision)
         sent = Array(repeating: [], count: fixtures.count)
         mined = Array(repeating: [], count: fixtures.count)
         for index in fixtures.indices {
-            planes[index].add(relay, engine: radio[index].engine)
+            Self.add(&planes[index], relay, engine: radio[index].engine)
         }
     }
 
@@ -46,21 +53,100 @@ final class SpoolLab {
         radio[index]
     }
 
-    /// Opens node `index`'s connection to the spool, and carries what follows.
+    /// Adds the lab's relay to `plane`, paused: the lab dials only when a test connects.
+    static func add(_ plane: inout SpoolPlane, _ relay: SpoolRelayHandle, engine: MeshEngine) {
+        guard let url else {
+            Issue.record("the lab's relay address is refused")
+            return
+        }
+        _ = plane.add(relay, url: url, engine: engine)
+    }
+
+    /// Opens node `index`'s connection to the spool, and carries what follows: the plane is resumed, and the dial it asks
+    /// for opens.
     func connect(_ index: Int) {
+        let engine = radio[index].engine
+        if pendingDials[index] == nil {
+            planes[index].resume(engine: engine)
+            collect(index)
+        }
+        guard let token = pendingDials[index] else {
+            Issue.record("the plane asked for no dial")
+            return
+        }
+        pendingDials[index] = nil
         connections[index] = spool.connect()
-        planes[index].connected(relay, engine: radio[index].engine)
+        tokens[index] = token
+        _ = planes[index].opened(relay, token: token, engine: engine)
         pump()
     }
 
-    /// Closes node `index`'s connection.
+    /// A second open on node `index`'s token with no close between, as a new socket: the old session must give way.
+    func reopen(_ index: Int) -> Bool {
+        guard let token = tokens[index] else {
+            return false
+        }
+        if let connection = connections[index] {
+            spool.drop(connection)
+        }
+        connections[index] = spool.connect()
+        let opened = planes[index].opened(relay, token: token, engine: radio[index].engine)
+        pump()
+        return opened
+    }
+
+    /// Closes node `index`'s connection, as a pause does: the session ends and the heal stays.
     func disconnect(_ index: Int) {
         if let connection = connections[index] {
             spool.drop(connection)
         }
         connections[index] = nil
-        planes[index].socketClosed(relay, engine: radio[index].engine)
+        tokens[index] = nil
+        pendingDials[index] = nil
+        planes[index].pause(engine: radio[index].engine)
+        collect(index)
         pump()
+    }
+
+    /// The socket under node `index`'s open token closed from the far side.
+    func socketClosed(_ index: Int, _ end: SpoolSocketEnd = SpoolSocketEnd(.closed)) {
+        guard let token = tokens[index] else {
+            return
+        }
+        if let connection = connections[index] {
+            spool.drop(connection)
+        }
+        connections[index] = nil
+        tokens[index] = nil
+        planes[index].socketClosed(relay, token: token, end, engine: radio[index].engine)
+        collect(index)
+        pump()
+    }
+
+    /// Takes node `index`'s socket actions that are not sends: a dial is held until a test connects, and a close of the open
+    /// token drops the connection. Answers the sends.
+    @discardableResult
+    private func collect(_ index: Int) -> [[UInt8]] {
+        var sends: [[UInt8]] = []
+        for action in planes[index].takeActions() {
+            switch action {
+            case .dial(_, let token, _):
+                pendingDials[index] = token
+            case .send(_, let token, let bytes) where token == tokens[index]:
+                sends.append(bytes)
+            case .close(_, let token, _) where token == tokens[index]:
+                if let connection = connections[index] {
+                    spool.drop(connection)
+                }
+                connections[index] = nil
+                tokens[index] = nil
+            case .close(_, let token, _) where token == pendingDials[index]:
+                pendingDials[index] = nil
+            default:
+                break
+            }
+        }
+        return sends
     }
 
     /// Puts `fixture` in node `index`'s place with a fresh plane, as a restart or a reinstall does: the old connection is
@@ -70,9 +156,11 @@ final class SpoolLab {
             spool.drop(connection)
         }
         connections[index] = nil
+        tokens[index] = nil
+        pendingDials[index] = nil
         radio.replace(index, with: fixture)
         planes[index] = SpoolPlane(me: fixture.me.nodeId)
-        planes[index].add(relay, engine: fixture.engine)
+        Self.add(&planes[index], relay, engine: fixture.engine)
         revisions[index] = fixture.engine.custodyRevision
     }
 
@@ -120,6 +208,7 @@ final class SpoolLab {
         planes[index].refreshTable(engine: engine)
         let asked = mine(index)
         guard let connection = connections[index] else {
+            collect(index)
             return asked
         }
         return exchange(index, over: connection) || asked
@@ -149,36 +238,60 @@ final class SpoolLab {
     }
 
     /// Carries node `index`'s records to the spool and the spool's back. Answers whether any moved.
+    /// Every send completes at once, so the plane's one send in flight never holds the next.
     private func exchange(_ index: Int, over connection: FakeSpool.Connection) -> Bool {
         let engine = radio[index].engine
         var moved = false
-        for output in planes[index].takeOutgoing(relay) {
+        var sends = collect(index)
+        while !sends.isEmpty, let token = tokens[index] {
             moved = true
-            switch output {
-            case .send(let bytes):
+            for bytes in sends {
                 if let record = SpoolRecord(decoding: bytes) {
                     sent[index].append(record)
                 }
                 spool.receive(bytes, from: connection)
-            case .close:
-                spool.drop(connection)
-                connections[index] = nil
-                planes[index].socketClosed(relay, engine: engine)
-            case .event:
-                break
+                planes[index].sent(relay, token: token, ok: true, engine: engine)
             }
+            sends = collect(index)
+        }
+        guard connections[index] == connection, let token = tokens[index] else {
+            return true
         }
         for outgoing in spool.take(connection) {
             moved = true
             switch outgoing {
             case .record(let bytes):
-                planes[index].receive(bytes, from: relay, engine: engine)
-            case .close:
+                _ = planes[index].receive(.binary(bytes), from: relay, token: token, engine: engine)
+            case .close(let code):
                 connections[index] = nil
-                planes[index].socketClosed(relay, engine: engine)
+                tokens[index] = nil
+                planes[index].socketClosed(relay, token: token, SpoolSocketEnd(.closed, code: code), engine: engine)
+            }
+            guard tokens[index] == token else {
+                collect(index)
+                break
             }
         }
         return moved
+    }
+}
+
+extension SpoolLab {
+    /// Answers every search node `index`'s plane is waiting on, as a runner would, whether or not it is connected.
+    func answerMining(_ index: Int) {
+        let asked = pendingMining.filter { $0.relay == relay && mined[index].contains($0) }
+        for request in asked {
+            pendingMining.removeAll { $0 == request }
+            let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits)
+            planes[index].stampMined(request, counter: counter, engine: radio[index].engine)
+        }
+        pump()
+    }
+
+    /// Takes node `index`'s actions now, as ``Mesh`` does after every input.
+    @discardableResult
+    func takeActions(_ index: Int) -> [[UInt8]] {
+        collect(index)
     }
 
     /// Marks node `index`'s table dirty and settles, as ``Mesh`` does after a block, an acceptance or a verification.

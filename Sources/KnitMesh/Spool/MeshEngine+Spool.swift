@@ -38,13 +38,14 @@ extension MeshEngine {
     ///
     /// No presence is recorded from a spool frame, and nothing link-only (a key request, the blob controls, a hand-on) is
     /// reachable from here: the frame rule admits a DM-form chat and a profile alone.
-    func receiveFromSpool(_ candidate: ScopeCandidate, relay: SpoolRelayHandle) -> ScopeHeal.Settlement {
-        let settlement = spoolSettlement(candidate, relay: relay)
+    /// Its lines say `spool` and name neither the relay nor the scope (P4b1).
+    func receiveFromSpool(_ candidate: ScopeCandidate, relay _: SpoolRelayHandle) -> ScopeHeal.Settlement {
+        let settlement = spoolSettlement(candidate)
         spoolInbound.note(settlement)
         return settlement
     }
 
-    private func spoolSettlement(_ candidate: ScopeCandidate, relay: SpoolRelayHandle) -> ScopeHeal.Settlement {
+    private func spoolSettlement(_ candidate: ScopeCandidate) -> ScopeHeal.Settlement {
         let id = candidate.frameId
         guard !refusesOversizeProfile(type: candidate.claimedType, id: id, signedCount: candidate.signedByteCount) else {
             spoolInbound.noteOversizeProfile()
@@ -54,7 +55,7 @@ extension MeshEngine {
             return .notTaken
         }
         guard let frame = verified else {
-            log.log(.debug, "spool unopenable \(id.prefix(CustodySync.idCharacters)) from \(relay): no key or a bad signature")
+            log.log(.debug, "spool unopenable \(id.prefix(CustodySync.idCharacters)): no key or a bad signature")
             return .unopenable
         }
         let wall = clock.wallMilliseconds()
@@ -84,7 +85,6 @@ extension MeshEngine {
             if fresh {
                 router.reopenPulled(id)
             }
-            log.log(.warning, "spool frame \(id.prefix(CustodySync.idCharacters)) from \(relay) not taken: a custody unit failed")
             return .notTaken
         }
         let newlyCarried = fresh && !heldBefore && carry.changed && keptLive

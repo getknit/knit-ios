@@ -230,14 +230,18 @@ final class HealMember {
     /// Answers `request` as a search that found nothing, or one cancelled.
     func failMining(_ request: SpoolMiningRequest) {
         pendingMining.removeAll { $0 == request }
-        heal.stampMined(request, counter: nil, session: &session, now: now)
+        var open: SpoolSession? = session
+        heal.stampMined(request, counter: nil, session: &open, now: now)
+        session = open ?? session
         pump()
     }
 
     /// Mines `request` and answers the heal.
     func mine(_ request: SpoolMiningRequest) {
         let counter = SpoolPow.mine(scopeId: request.scope.bytes, day: request.day, bits: request.bits)
-        heal.stampMined(request, counter: counter, session: &session, now: now)
+        var open: SpoolSession? = session
+        heal.stampMined(request, counter: counter, session: &open, now: now)
+        session = open ?? session
         pump()
     }
 

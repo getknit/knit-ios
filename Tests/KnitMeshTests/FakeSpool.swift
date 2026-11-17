@@ -75,6 +75,17 @@ final class FakeSpool {
     var refusesEveryPushPow = false
     /// The bytes every `blob` record this spool sent carried.
     var servedBytes = 0
+    /// The bytes `blob` records carried, by connection.
+    var servedTo: [Connection: Int] = [:]
+    /// The bytes of every `push` record clients sent.
+    var uploadedBytes = 0
+    /// Modes of P4b1's tests: a stored push is acked and then forgotten, with a fresh `digest` to every subscriber, so the
+    /// digests churn; and every socket is closed right after the client's `hello`.
+    var forgetsAfterPush = false
+    var closesAfterHello = false
+    /// At each clock step, every socket whose `sub` was answered is closed 1000: a session that ends right after its first
+    /// round.
+    var closesAfterRound = false
     private var minted = 0
     /// How many of the next pushes are refused `rate`, and the `retryMs` they carry.
     var ratedPushes = 0
@@ -139,21 +150,17 @@ final class FakeSpool {
         planted[scope] = SpoolErr(code: code, scope: scope.bytes, retryMs: retryMs)
     }
 
-    /// The live ids of `scope`, oldest first.
-    func liveIds(_ scope: SpoolID) -> [SpoolID] {
-        scopes[scope]?.live.map(\.id) ?? []
-    }
-
-    /// The tombstoned ids of `scope`, oldest first.
-    func tombstones(_ scope: SpoolID) -> [SpoolID] {
-        scopes[scope]?.tombstones.map(\.id) ?? []
-    }
-
     /// Moves the clock to `now`, expires what is due, and sends a fresh `digest` for every scope whose live set changed.
     func advance(to now: Int64) {
         self.now = now
         for scope in scopes.keys where expire(scope) {
             broadcastDigest(scope)
+        }
+        if closesAfterRound {
+            for (connection, socket) in sockets where socket.open && !socket.subscribed.isEmpty {
+                emit(.close(SpoolCloseCode.normal), to: connection)
+                sockets[connection]?.open = false
+            }
         }
     }
 
@@ -166,12 +173,7 @@ final class FakeSpool {
             return
         }
         guard sockets[connection]?.greeted == true else {
-            if case .hello = record {
-                sockets[connection]?.greeted = true
-            } else {
-                emit(.close(SpoolCloseCode.malformed), to: connection)
-                sockets[connection]?.open = false
-            }
+            greet(record, connection)
             return
         }
         switch record {
@@ -182,6 +184,7 @@ final class FakeSpool {
         case .pull(let pull):
             onPull(pull, connection)
         case .push(let push):
+            uploadedBytes += bytes.count
             onPush(push, connection)
         default:
             break
@@ -272,13 +275,8 @@ final class FakeSpool {
         guard let scope = subscribed(push.scope, push.request, connection), let blobId = SpoolID(push.blobId) else {
             return
         }
-        if refusesEveryPushPow {
-            emit(SpoolErr(code: SpoolErrorCode.pow, request: push.request, scope: push.scope), to: connection)
-            return
-        }
-        if ratedPushes > 0 {
-            ratedPushes -= 1
-            emit(SpoolErr(code: SpoolErrorCode.rate, request: push.request, scope: push.scope, retryMs: rateRetryMs), to: connection)
+        if let mode = modeRefusal(push) {
+            emit(mode, to: connection)
             return
         }
         let evicted = expire(scope)
@@ -309,8 +307,49 @@ final class FakeSpool {
         for (other, socket) in sockets where other != connection && socket.open && socket.subscribed.contains(scope) {
             emit(.record(event), to: other)
         }
-        if evicted || overflowed {
+        if forgetsAfterPush {
+            scopes[scope]?.live.removeAll { $0.id == blobId }
+            broadcastDigest(scope)
+        } else if evicted || overflowed {
             broadcastDigest(scope)
         }
+    }
+}
+
+extension FakeSpool {
+    /// The refusal a test mode answers `push` with: `pow` every time, or `rate` for the next ``ratedPushes``.
+    func modeRefusal(_ push: SpoolPush) -> SpoolErr? {
+        if refusesEveryPushPow {
+            return SpoolErr(code: SpoolErrorCode.pow, request: push.request, scope: push.scope)
+        }
+        guard ratedPushes > 0 else {
+            return nil
+        }
+        ratedPushes -= 1
+        return SpoolErr(code: SpoolErrorCode.rate, request: push.request, scope: push.scope, retryMs: rateRetryMs)
+    }
+
+    /// The client's first record: its `hello`, or a close 4000; and in ``closesAfterHello`` mode, a close right after.
+    func greet(_ record: SpoolRecord, _ connection: Connection) {
+        guard case .hello = record else {
+            emit(.close(SpoolCloseCode.malformed), to: connection)
+            sockets[connection]?.open = false
+            return
+        }
+        sockets[connection]?.greeted = true
+        if closesAfterHello {
+            emit(.close(SpoolCloseCode.goingAway), to: connection)
+            sockets[connection]?.open = false
+        }
+    }
+
+    /// The live ids of `scope`, oldest first.
+    func liveIds(_ scope: SpoolID) -> [SpoolID] {
+        scopes[scope]?.live.map(\.id) ?? []
+    }
+
+    /// The tombstoned ids of `scope`, oldest first.
+    func tombstones(_ scope: SpoolID) -> [SpoolID] {
+        scopes[scope]?.tombstones.map(\.id) ?? []
     }
 }

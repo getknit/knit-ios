@@ -1,33 +1,75 @@
 import KnitStore
 import KnitWire
 
-/// The spool plane's synchronous core (ADR 2026-11.adrq, P4a): the scope table, one heal loop and connection per relay,
-/// and the one seal cache the relays share, owned by ``Mesh`` beside its links. Every input runs to completion in one
-/// turn: each candidate a heal raises is verified, delivered and settled through the engine
-/// (``MeshEngine/receiveFromSpool(_:relay:)``) before the heal's next input, and nothing awaits across a delivery.
+/// The spool plane (ADR 2026-11.adrq, P4a and P4b1): the scope table, one heal loop and connection per relay, and the one
+/// seal cache the relays share, owned by ``Mesh`` beside its links. Every input runs to completion in one turn: each
+/// candidate a heal raises is verified, delivered and settled through the engine (``MeshEngine/receiveFromSpool(_:relay:)``)
+/// before the heal's next input, and nothing awaits across a delivery.
 ///
-/// P4b's sockets and miners are tasks that post into ``Mesh``; here a driver (a test's, or ``Mesh``'s) opens a relay's
-/// connection with ``connected(_:engine:)``, hands it every record with ``receive(_:from:engine:)``, takes what to write
-/// with ``takeOutgoing(_:)``, answers stamps with ``stampMined(_:counter:engine:)``, and fires ``tick(engine:)`` at
-/// ``nextDeadline``.
+/// **The plane owns a session's life** (`SpoolPlane+Connections`). It decides when each relay dials and hands ``Mesh`` a
+/// ``SocketAction`` for it under a fresh ``SpoolConnectionToken``; the socket's task posts back under that token, and a post
+/// under any other is dropped. Every session that began ends through one path, exactly once, in the same turn as the pause,
+/// the removal, the dial or write-stall timeout or the socket's close that ended it, and that end clears the relay's queued
+/// records, so nothing written for one socket reaches the next ahead of its hello.
+///
+/// **No session, no heal deadlines.** While a relay has no session, ``nextDeadline`` reports only its dial (none while
+/// paused); its heal's tick and parks are read again at the next open. A pause keeps every heal (its accounted, invalid and
+/// unpushable sets, stamps, searches and owed listings): only a process start or a removal makes a fresh one.
 ///
 /// **The table** is read again only between inputs, never inside a store unit, so every input it reads committed: when
 /// the ratchet's ``RatchetSessions/generation`` moved (a root replaced, a reset sealed or adopted, an init answered, a
 /// session confirmed or forgotten), when ``markTableDirty()`` says an unblock, an acceptance, a deleted thread or a
 /// verification moved the gate, when ``block(_:engine:)`` dropped a peer's scopes in its own turn, at the earliest
-/// retiring scope's drain end, and every ``reconcileMilliseconds``. Each of
-/// its inputs is read in a store unit of its own (``SpoolTableInputs``); one that failed keeps the table and keeps it
-/// dirty for the next input. Our own reset bumps the generation, so its peer's scopes leave the table before any heal
-/// input after it: nothing sealed under the new root is pushed into the old scope.
+/// retiring scope's drain end, and every ``reconcileMilliseconds``. Each of its inputs is read in a store unit of its own
+/// (``SpoolTableInputs``); one that failed keeps the table and keeps it dirty for the next input. Our own reset bumps the
+/// generation, so its peer's scopes leave the table before any heal input after it: nothing sealed under the new root is
+/// pushed into the old scope.
 internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
     /// The table's timed reconcile (`RECONCILE_INTERVAL_MS`, `ScopeSync.kt:3373` at knit-next `0832b8462`).
     static let reconcileMilliseconds: Int64 = 60_000
+    /// The most relays carried at once.
+    static let maxRelays = 8
 
-    /// One relay: its heal loop, which outlives every connection, and the connection open now, if any.
+    /// One relay: its heal loop, which outlives every connection, the connection open now, if any, the records waiting
+    /// for the socket, and the dial and its bounds.
     struct Relay {
+        let url: AcceptedSpoolURL
         var heal: ScopeHeal
         var session: SpoolSession?
-        var outgoing: [SpoolSessionOutput] = []
+        var outgoing: [[UInt8]] = []
+        var link = SpoolLink()
+        /// The spool's refusals naming no request, by code (``SpoolPlane/knownErrorCodes``, or `other`).
+        var errors: [String: Int] = [:]
+        /// What the session dropped, by kind.
+        var drops: [String: Int] = [:]
+        /// Every record the session dropped, of any kind.
+        var droppedRecords = 0
+        /// The dropped records of a type this build does not know, which the drop window charges by their bytes alone.
+        var unknownRecords = 0
+        /// The close code of a session this side ended for a fault, until the turn hands it on.
+        var faultClose: Int?
+    }
+
+    /// What ``Mesh`` does with a relay's socket.
+    enum SocketAction: Equatable, Sendable {
+        /// Open a socket to `url` and read it under `token`.
+        case dial(SpoolRelayHandle, SpoolConnectionToken, AcceptedSpoolURL)
+        /// Write one record: the only send in flight.
+        case send(SpoolRelayHandle, SpoolConnectionToken, [UInt8])
+        /// Cancel the task and close its socket with `code`.
+        case close(SpoolRelayHandle, SpoolConnectionToken, code: Int)
+        /// Let the reader that waited for the inbound budget read on.
+        case resumeReader(SpoolRelayHandle, SpoolConnectionToken)
+    }
+
+    /// What the reader does after its post.
+    enum ReaderNext: Equatable, Sendable {
+        /// Read the next message.
+        case next
+        /// Wait until ``SocketAction/resumeReader(_:_:)``.
+        case park
+        /// Stop: the token is over.
+        case stop
     }
 
     /// What the plane asks of its miner.
@@ -48,18 +90,30 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
         }
     }
 
+    /// The refusal codes counted by name (§7.2); any other counts as `other`.
+    static let knownErrorCodes = [
+        SpoolErrorCode.version, SpoolErrorCode.pow, SpoolErrorCode.tombstoned, SpoolErrorCode.quota, SpoolErrorCode.tooLarge,
+        SpoolErrorCode.badId, SpoolErrorCode.rate, SpoolErrorCode.notSubscribed, SpoolErrorCode.malformed, SpoolErrorCode.internal,
+        SpoolErrorCode.conflict, SpoolErrorCode.ticket,
+    ]
+
     let me: NodeId
-    private(set) var table = ScopeTable()
-    private(set) var relays: [SpoolRelayHandle: Relay] = [:]
+    var table = ScopeTable()
+    var relays: [SpoolRelayHandle: Relay] = [:]
     /// The one seal cache, lent to each heal for the input it runs (P3b's "one seal cache per engine").
     private var seals = ScopeSealCache()
-    private var tableDirty = true
-    private var readGeneration: Int?
-    private var reconcileAt: Int64?
-    private var drainEndAt: Int64?
-    private var mining: [Mining] = []
+    var tableDirty = true
+    var readGeneration: Int?
+    var reconcileAt: Int64?
+    var drainEndAt: Int64?
+    var mining: [Mining] = []
+    var actions: [SocketAction] = []
+    /// Whether the plane is paused: no dial, and no session.
+    var paused = true
+    var nextToken: Int64 = 1
+    var logBook = SpoolLogBook()
     /// Table reads that kept the table because an input could not be read.
-    private(set) var unreadableTables = 0
+    var unreadableTables = 0
 
     var description: String { "spool plane: \(table.scopes.count) scopes, \(relays.count) relays" }
     var customMirror: Mirror { Mirror(self, children: [:]) }
@@ -68,184 +122,89 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
         self.me = me
     }
 
-    // MARK: Relays
-
-    /// Carries `relay` from now on, with no connection yet.
-    /// P4b's socket and mining tasks call it; until then the tests alone do.
-    mutating func add(_ relay: SpoolRelayHandle, engine: MeshEngine) { // swiftlint:disable:this unused_declaration
-        guard relays[relay] == nil else {
-            return
-        }
-        var heal = ScopeHeal(relay: relay, me: me)
-        heal.adopt(table.scopes)
-        relays[relay] = Relay(heal: heal)
-        tableDirty = true
-        refreshTable(engine: engine)
-    }
-
-    /// Drops `relay`, cancelling every stamp its heal was mining.
-    /// P4b's socket and mining tasks call it; until then the tests alone do.
-    mutating func remove(_ relay: SpoolRelayHandle) { // swiftlint:disable:this unused_declaration
-        guard let gone = relays.removeValue(forKey: relay) else {
-            return
-        }
-        for request in gone.heal.mining.values {
-            mining.append(.cancel(request))
-        }
-    }
-
-    /// A socket to `relay` opened.
-    /// P4b's socket and mining tasks call it; until then the tests alone do.
-    mutating func connected(_ relay: SpoolRelayHandle, engine: MeshEngine) { // swiftlint:disable:this unused_declaration
-        refreshTable(engine: engine)
-        relays[relay]?.session = SpoolSession(openedAt: engine.clock.monotonicMilliseconds())
-        run(relay, engine: engine, nil)
-    }
-
-    /// One record off `relay`'s socket.
-    /// P4b's socket and mining tasks call it; until then the tests alone do.
-    mutating func receive(_ bytes: [UInt8], from relay: SpoolRelayHandle, engine: MeshEngine) { // swiftlint:disable:this unused_declaration
-        refreshTable(engine: engine)
-        relays[relay]?.session?.receive(bytes)
-        run(relay, engine: engine, nil)
-    }
-
-    /// `relay`'s socket closed, whoever closed it.
-    /// P4b's socket and mining tasks call it; until then the tests alone do.
-    mutating func socketClosed(_ relay: SpoolRelayHandle, engine: MeshEngine) { // swiftlint:disable:this unused_declaration
-        refreshTable(engine: engine)
-        relays[relay]?.session?.socketClosed()
-        run(relay, engine: engine, nil)
-        relays[relay]?.session = nil
-    }
-
-    /// What to write to `relay`'s socket, in order: records, and a close.
-    /// P4b's socket and mining tasks call it; until then the tests alone do.
-    mutating func takeOutgoing(_ relay: SpoolRelayHandle) -> [SpoolSessionOutput] { // swiftlint:disable:this unused_declaration
-        defer { relays[relay]?.outgoing.removeAll() }
-        return relays[relay]?.outgoing ?? []
-    }
-
     /// What the miner should start or stop.
-    /// P4b's socket and mining tasks call it; until then the tests alone do.
-    mutating func takeMining() -> [Mining] { // swiftlint:disable:this unused_declaration
+    mutating func takeMining() -> [Mining] {
         defer { mining.removeAll() }
         return mining
     }
 
-    /// A stamp search ended: `counter` found, or `nil` when it ran out of tries. A search cancelled because its connection
-    /// dropped is never answered (P3b's "what P4 owes").
-    /// P4b's socket and mining tasks call it; until then the tests alone do.
-    mutating func stampMined( // swiftlint:disable:this unused_declaration
-        _ request: SpoolMiningRequest, counter: Int64?, engine: MeshEngine
-    ) {
+    /// A stamp search ended: `counter` found, or `nil` when it ran out of tries. The answer reaches the heal whether or not
+    /// the relay has a session (``ScopeHeal/stampMined(_:counter:session:now:)``); a search for a relay since removed answers
+    /// nothing.
+    mutating func stampMined(_ request: SpoolMiningRequest, counter: Int64?, engine: MeshEngine) {
         refreshTable(engine: engine)
-        run(request.relay, engine: engine) { heal, session, now in
-            heal.stampMined(request, counter: counter, session: &session, now: now)
-        }
-    }
-
-    // MARK: Inputs from the engine
-
-    /// Custody changed: every scope of every relay looks again. ``Mesh`` calls it where it notices a custody revision
-    /// change, beside the advert's digest cue, never per writer.
-    mutating func custodyChanged() {
-        for relay in relays.keys {
-            relays[relay]?.heal.custodyChanged()
-        }
-    }
-
-    /// Something the gate reads moved (a block or an unblock, an acceptance, a deleted thread, a verification): the table
-    /// is read again before the next heal input.
-    mutating func markTableDirty() {
-        tableDirty = true
-    }
-
-    /// Reads the table again now if it is due, and hands every heal the result: a block commit drops its peer's scopes, and
-    /// cancels their mining, in the same turn.
-    mutating func refreshTable(engine: MeshEngine) {
-        guard !relays.isEmpty else {
+        guard var state = relays[request.relay] else {
             return
         }
-        let now = engine.clock.monotonicMilliseconds()
-        let wall = engine.clock.wallMilliseconds()
-        let due =
-            tableDirty || readGeneration != engine.ratchet.generation || reconcileAt.map { now >= $0 } != false
-            || drainEndAt.map { wall >= $0 } == true
-        guard due else {
+        guard state.session != nil else {
+            // With no session the heal subscribes nothing, so it asks nothing of the miner here.
+            let now = SpoolNow(monotonic: engine.clock.monotonicMilliseconds(), wall: engine.clock.wallMilliseconds())
+            var none: SpoolSession?
+            if state.heal.stampMined(request, counter: counter, session: &none, now: now) {
+                state.link.counts.stampsAnsweredOffline += 1
+            }
+            relays[request.relay] = state
             return
         }
-        let generation = engine.ratchet.generation
-        let inputs = engine.spoolTableInputs(now: wall)
-        reconcileAt = SpoolSession.later(now, by: Self.reconcileMilliseconds)
-        guard let dmScopes = inputs.dmScopes, let accepted = inputs.accepted, let blocked = inputs.blocked, let recent = inputs.recent
-        else {
-            // A store that could not answer keeps the table, and the next input tries again.
-            unreadableTables += 1
-            tableDirty = true
-            return
-        }
-        tableDirty = false
-        readGeneration = generation
-        drainEndAt = dmScopes.compactMap(\.retiringUntil).min()
-        let update = table.updated(dmScopes: dmScopes, accepted: accepted, blocked: blocked, recent: recent, relays: Array(relays.keys))
-        guard case .table(let next) = update else {
-            return
-        }
-        adopt(next)
-    }
-
-    /// `peer` was blocked: its scopes leave the table, and their mining is cancelled, in this turn, whatever the stores
-    /// answer; a later read of the blocked set that succeeds decides, and one that fails keeps the table without them.
-    mutating func block(_ peer: NodeId, engine: MeshEngine) {
-        tableDirty = true
-        adopt(table.dropping(peer))
-        refreshTable(engine: engine)
-    }
-
-    /// Hands every heal `next`: a scope that left cancels its search now, connected or not, since a search can outlive
-    /// its connection.
-    private mutating func adopt(_ next: ScopeTable) {
-        table = next
-        for (handle, var state) in relays {
-            state.heal.adopt(next.scopes)
-            mining += state.heal.drain().compactMap(Mining.init)
-            state.session?.retainSubscriptions(next.ids)
-            relays[handle] = state
+        run(request.relay, engine: engine, cause: .socket(SpoolSocketEnd(.closed))) { heal, session, now in
+            var open: SpoolSession? = session
+            heal.stampMined(request, counter: counter, session: &open, now: now)
+            if let open {
+                session = open
+            }
         }
     }
 
     // MARK: Time
 
-    /// When ``tick(engine:)`` next has something to do, on the monotonic clock. The drain end is on the wall clock, so it
-    /// is read at the reconcile at the latest.
+    /// When ``tick(engine:)`` next has something to do, on the monotonic clock. A relay with no session reports its dial
+    /// alone, and the table's reconcile and drain end only matter while a session is open: the next open reads the table.
     var nextDeadline: Int64? {
-        // A plane with no relay keeps no timer: the table is read when the first relay comes.
-        guard !relays.isEmpty else {
-            return nil
-        }
-        var deadlines: [Int64?] = [reconcileAt]
+        var deadlines: [Int64?] = []
+        var anyOpen = false
         for relay in relays.values {
-            let ready = relay.session?.isReady == true
-            deadlines.append(relay.heal.nextDeadline(sessionReady: ready))
-            deadlines.append(relay.session?.nextDeadline)
+            switch relay.link.phase {
+            case .idle:
+                deadlines.append(paused ? nil : relay.link.nextDialAt)
+            case .dialing(_, let openBy):
+                deadlines.append(openBy)
+            case .open:
+                anyOpen = true
+                let ready = relay.session?.isReady == true
+                deadlines.append(relay.heal.nextDeadline(sessionReady: ready))
+                deadlines.append(relay.session?.nextDeadline)
+                deadlines.append(relay.link.stallDeadline)
+                if relay.link.readerParked {
+                    deadlines.append(relay.link.inbound.readyAt)
+                }
+            }
+        }
+        if anyOpen {
+            deadlines.append(reconcileAt)
         }
         return deadlines.compactMap(\.self).min()
     }
 
-    /// Runs what is due at the engine's clock: the table, then each relay's session and heal timers, and a round where one
-    /// is due.
+    /// Runs what is due at the engine's clock: the table, each relay's dial, its connection's bounds, its session and heal
+    /// timers, and a round where one is due.
     mutating func tick(engine: MeshEngine) {
         refreshTable(engine: engine)
         for relay in relays.keys.sorted() {
-            run(relay, engine: engine) { _, session, now in
+            if let link = relays[relay]?.link {
+                linkTimers(relay, link, engine: engine)
+            }
+            guard relays[relay]?.session != nil else {
+                continue
+            }
+            run(relay, engine: engine, cause: .socket(SpoolSocketEnd(.closed))) { _, session, now in
                 session.tick(now: now.monotonic)
             }
-            run(relay, engine: engine) { heal, session, now in
+            run(relay, engine: engine, cause: .socket(SpoolSocketEnd(.closed))) { heal, session, now in
                 heal.tick(session: &session, now: now)
             }
             startRoundIfDue(relay, engine: engine)
         }
+        dialDue(engine: engine)
     }
 
     /// Starts `relay`'s round when one is due, over one custody read in a unit of its own.
@@ -264,7 +223,7 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
             } else {
                 .unreadable
             }
-        run(relay, engine: engine) { heal, session, now in
+        run(relay, engine: engine, cause: .socket(SpoolSocketEnd(.closed))) { heal, session, now in
             heal.roundStarted(custody, session: &session, now: now)
         }
     }
@@ -272,23 +231,20 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
     // MARK: The turn
 
     /// Runs `input`, if any, on `relay`'s heal and session with the shared seal cache lent to it, then carries every output until
-    /// quiet: records out to ``takeOutgoing(_:)``, events into the heal, each candidate through the engine and settled
-    /// before the next, and stamps to the miner.
-    private mutating func run(
-        _ relay: SpoolRelayHandle, engine: MeshEngine, _ input: ((inout ScopeHeal, inout SpoolSession, SpoolNow) -> Void)?
+    /// quiet: records into the relay's queue, events into the heal, each candidate through the engine and settled before the
+    /// next, and stamps to the miner. A session that ended in the turn is torn down in it (``finish(_:_:engine:)``), for
+    /// its own fault when it ended itself for one, and for `cause` otherwise: the socket's close, unless the input was one
+    /// of the plane's ends.
+    mutating func run(
+        _ relay: SpoolRelayHandle, engine: MeshEngine, cause: SpoolSessionEnd,
+        _ input: ((inout ScopeHeal, inout SpoolSession, SpoolNow) -> Void)?
     ) {
-        guard var state = relays[relay] else {
+        guard var state = relays[relay], var session = state.session else {
             return
         }
         let now = SpoolNow(monotonic: engine.clock.monotonicMilliseconds(), wall: engine.clock.wallMilliseconds())
         swap(&seals, &state.heal.seals)
-        defer {
-            swap(&seals, &state.heal.seals)
-            relays[relay] = state
-        }
-        guard var session = state.session else {
-            return
-        }
+        state.heal.outboundFull = state.link.queuedBytes >= SpoolLink.maxQueuedBytes
         input?(&state.heal, &session, now)
         var quiet = false
         while !quiet {
@@ -296,16 +252,25 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
             for output in session.drain() {
                 quiet = false
                 switch output {
-                case .send, .close:
-                    state.outgoing.append(output)
+                case .send(let bytes):
+                    queue(bytes, on: &state, now: now.monotonic)
+                case .close(let code):
+                    state.faultClose = code
                 case .event(let event):
+                    note(event, in: &state)
                     state.heal.handle(event, session: &session, now: now)
                 }
                 serve(&state, &session, relay: relay, engine: engine, now: now)
             }
             serve(&state, &session, relay: relay, engine: engine, now: now)
         }
+        swap(&seals, &state.heal.seals)
         state.session = session
+        if session.phase == .closed {
+            let ended: SpoolSessionEnd = if let fault = session.fault { .fault(fault) } else { cause }
+            finish(&state, ended, engine: engine)
+        }
+        relays[relay] = state
     }
 
     /// Hands the heal's outputs on: each candidate settled in this turn, before anything else reaches the heal.
@@ -319,6 +284,25 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
                 let settlement = engine.receiveFromSpool(candidate, relay: relay)
                 state.heal.settle(candidate, settlement, session: &session, now: now)
             }
+        }
+    }
+
+    /// Counts what the session dropped or the spool refused unasked, for `status` and the log: the drop's kind and the
+    /// refusal's cleaned code, never its message.
+    private func note(_ event: SpoolSessionEvent, in state: inout Relay) {
+        switch event {
+        case .dropped(let drop):
+            state.drops[SpoolLogBook.word(for: drop), default: 0] += 1
+            state.droppedRecords += 1
+            if case .unknown = drop {
+                state.unknownRecords += 1
+            }
+        case .spoolError(let refusal):
+            // A code the spec names counts under its name; anything else a spool wrote is one word, so no line carries it.
+            let code = Self.knownErrorCodes.first { refusal.code.is($0) } ?? "other"
+            state.errors[code, default: 0] += 1
+        default:
+            break
         }
     }
 }

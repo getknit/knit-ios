@@ -15,6 +15,7 @@ extension FakeSpool {
 
     func serve(_ blob: SpoolBlob, _ connection: Connection) {
         servedBytes += blob.data.count
+        servedTo[connection, default: 0] += blob.data.count
         emit(.record(blob.encoded), to: connection)
     }
 

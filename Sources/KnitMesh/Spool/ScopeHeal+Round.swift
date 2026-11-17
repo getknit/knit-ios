@@ -33,6 +33,9 @@ extension ScopeHeal {
         while step == nil, var current = round {
             guard !current.due.isEmpty else {
                 round = nil
+                if current.compared, session.isReady {
+                    counts.roundsCompared += 1
+                }
                 return
             }
             let id = current.due.removeFirst()
@@ -64,7 +67,11 @@ extension ScopeHeal {
         state.lastHealAt = now.monotonic
         states[id] = state
         // The `sub` has not been answered yet: there is nothing to compare against (`:1931`).
-        guard let anchor = session.anchor(id), anchor.digest != fold || state.listOwed else {
+        guard let anchor = session.anchor(id) else {
+            return
+        }
+        round?.compared = true
+        guard anchor.digest != fold || state.listOwed else {
             return
         }
         // The session sends a LIST for every scope it anchored while it stands.
@@ -216,7 +223,7 @@ extension ScopeHeal {
     /// Whether `held` passes every gate a push meets on this relay (`pushable` and `mayRefill`, `:2130-2174`): not
     /// tombstoned, the rule's refill (never a retiring scope, never our own flagged reset), alive in a 48 h scope, and no
     /// larger than the tighter of the spool's `maxBlob` and ours.
-    private func pushable(_ held: HeldBlob, _ current: Step, session: SpoolSession, now: SpoolNow) -> Bool {
+    func pushable(_ held: HeldBlob, _ current: Step, session: SpoolSession, now: SpoolNow) -> Bool {
         !current.tombstones.contains(held.id) && ScopeFrames.mayRefill(held.envelope, me: me, scope: current.scope)
             && !ScopeFrames.deadOnArrival(held.envelope, ttl: ScopeFrames.ttlMilliseconds, now: now.wall)
             && held.sealed.blob.count <= min(session.limits?.maxBlob ?? Int.max, ScopeFrames.maxBlob)
@@ -258,120 +265,12 @@ extension ScopeHeal {
         }
     }
 
-    /// The frames this spool lacks and will take (`pushMissing`, `:2122-2153`), in custody's order. A retiring scope takes
-    /// none (C-3.1-3).
-    private mutating func beginPushes(_ session: inout SpoolSession, now: SpoolNow) {
-        // Every caller holds a step.
-        if var current = step, let state = states[current.scope.id] {
-            if !current.scope.retiring {
-                current.pushes = current.held.filter { held in
-                    !current.listedSet.contains(held.id) && !state.invalid.contains(held.id) && !state.unpushable.contains(held.id)
-                        && pushable(held, current, session: session, now: now)
-                }
-            }
-            step = current
-            nextPush(&session, now: now)
-        }
-    }
-
-    /// Pushes the next frame, one at a time. A push the session cannot send while it is ready and the scope subscribed
-    /// did not fit the spool's `maxRecord`, so that frame is unpushable here, or the scope would list every tick.
-    mutating func nextPush(_ session: inout SpoolSession, now: SpoolNow) {
-        // Every caller holds a step.
-        if var current = step {
-            let scope = current.scope.id
-            while let held = current.pushes.first {
-                current.pushes.removeFirst()
-                let stamp: PowStamp?
-                switch stampNeed(scope, session: session, now: now) {
-                case .unasked:
-                    stamp = nil
-                case .stamp(let ready):
-                    stamp = ready
-                case .waiting:
-                    demandStamp(scope, session: session, now: now)
-                    current.pushes.removeAll()
-                    continue
-                }
-                if let request = session.push(scope, blobId: held.id, data: held.sealed.blob, pow: stamp, now: now.monotonic) {
-                    current.phase = .pushing(request: request, blob: held, stamped: stamp != nil)
-                    step = current
-                    return
-                }
-                guard session.isReady, session.isSubscribed(scope) else {
-                    current.pushes.removeAll()
-                    break
-                }
-                if states[scope]?.unpushable.insert(held.id) == true {
-                    counts.unpushable += 1
-                    current.learnt = true
-                }
-                states[scope]?.stickyUnpushable.insert(held.id)
-            }
-            step = current
-            finishStep(&session)
-        }
-    }
-
-    /// A push's answer (`pushMissing` and `survivable`, `:2139-2151`, `:2236-2251`): a stored blob folds into the anchor; a
-    /// refusal of the blob (`tombstoned`, `too_large`, `bad_id`) makes it unpushable and the round steps over it; `rate`
-    /// waits at most 5 s and goes on to the next; `pow` without a stamp asks one mined; anything else ends the scope's
-    /// pushes. A push refusal parks nothing: a park is a scope refusal's (`handleScopeError`).
-    private mutating func pushAnswered(_ held: HeldBlob, stamped: Bool, _ reply: SpoolReply, session: inout SpoolSession, now: SpoolNow) {
-        // Every caller holds a step.
-        if var current = step {
-            let scope = current.scope.id
-            switch reply {
-            case .stored:
-                session.foldPushed(scope, blobId: held.id)
-                current.pushed.append(held.id)
-                counts.pushed += 1
-                step = current
-                nextPush(&session, now: now)
-            case .refused(let refusal) where Self.refusesTheBlob(refusal):
-                if states[scope]?.unpushable.insert(held.id) == true {
-                    counts.unpushable += 1
-                }
-                // A tombstone lapses and a listing says so; a blob the spool called too large or misaddressed stays refused.
-                if !refusal.code.is(SpoolErrorCode.tombstoned) {
-                    states[scope]?.stickyUnpushable.insert(held.id)
-                }
-                current.learnt = true
-                step = current
-                nextPush(&session, now: now)
-            case .refused(let refusal) where refusal.code.is(SpoolErrorCode.rate):
-                current.phase = .rateWait(until: SpoolSession.later(now.monotonic, by: refusal.rateWaitMilliseconds))
-                step = current
-            case .refused(let refusal) where refusal.code.is(SpoolErrorCode.pow):
-                // `stampDemand` (`:3271-3283`): a demand for a stamp we did not send is met next time. A refused stamp on a push
-                // parks the scope, as on a `sub`.
-                if stamped {
-                    states[scope]?.stamp = nil
-                    park(scope, for: refusal.parkMilliseconds, now: now)
-                } else {
-                    demandStamp(scope, session: session, now: now)
-                }
-                current.pushes.removeAll()
-                step = current
-                finishStep(&session)
-            default:
-                current.pushes.removeAll()
-                step = current
-                finishStep(&session)
-            }
-        }
-    }
-
-    private static func refusesTheBlob(_ refusal: SpoolRefusal) -> Bool {
-        refusal.code.is(SpoolErrorCode.tombstoned) || refusal.code.is(SpoolErrorCode.tooLarge) || refusal.code.is(SpoolErrorCode.badId)
-    }
-
     /// Ends a scope's heal (`reanchor`, `:2265-2280`, and the mark at `:1991`): the anchor becomes the listing less what
     /// the spool said was gone, plus what we pushed, but only over the digest the listing ran against. Each stored push
     /// already folded itself into the anchor, so after any push the compare-and-set fails and the anchor stays the one
     /// the pushes moved, as a `digest` that landed during the round stays. The scope looks again only when the round
     /// pushed something or the listing taught something; an accepted blob marks it at its settlement.
-    private mutating func finishStep(_ session: inout SpoolSession) {
+    mutating func finishStep(_ session: inout SpoolSession) {
         // Every caller holds a step.
         if let current = step {
             step = nil

@@ -34,7 +34,7 @@ import Testing
         lab.run(2)
         #expect(lab.mined[0].count == 1 && lab.pendingMining.count == 1, "alice waits on her own search")
         let cancelled = lab.cancelledMining.count
-        lab.planes[0].remove(lab.relay)
+        lab.planes[0].remove(lab.relay, engine: lab[0].engine)
         lab.pump()
         #expect(lab.cancelledMining.count == cancelled + 1 && lab.pendingMining.isEmpty, "dropping the relay cancelled its search")
     }
@@ -55,19 +55,27 @@ import Testing
         #expect(lab.heal(1)?.localFold(scope.id) == lab.spoolDigest(scope.id))
     }
 
-    @Test func aRelayTheTableDoesNotCarryAnswersNothing() {
+    @Test func aRelayTheTableDoesNotCarryAnswersNothing() throws {
         let fixture = EngineFixture(SpoolEngineLabTests.alice)
         var plane = SpoolPlane(me: fixture.me.nodeId)
         let unknown = SpoolRelayHandle(number: 9)
         #expect(plane.nextDeadline == nil, "no relay, no timer")
-        plane.receive([0xA0], from: unknown, engine: fixture.engine)
-        plane.remove(unknown)
-        let outgoing = plane.takeOutgoing(unknown)
-        #expect(outgoing.isEmpty)
+        let token = SpoolConnectionToken(value: 1)
+        #expect(plane.receive(.binary([0xA0]), from: unknown, token: token, engine: fixture.engine) == .stop)
+        plane.remove(unknown, engine: fixture.engine)
+        let step1 = plane.takeActions()
+
+        #expect(step1.isEmpty)
         let relay = SpoolRelayHandle(number: 1)
-        plane.add(relay, engine: fixture.engine)
-        plane.add(relay, engine: fixture.engine)
-        #expect(plane.relays.count == 1 && plane.nextDeadline != nil)
+        let url = try #require(SpoolLab.url)
+        let first = plane.add(relay, url: url, engine: fixture.engine)
+        let second = plane.add(relay, url: url, engine: fixture.engine)
+        #expect(first && !second, "a handle already carried is refused")
+        #expect(plane.relays.count == 1 && plane.nextDeadline == nil, "a paused plane keeps no timer")
+        plane.resume(engine: fixture.engine)
+        let step2 = plane.takeActions()
+
+        #expect(step2.count == 1, "a resume dials at once")
         #expect("\(plane)" == "spool plane: 0 scopes, 1 relays" && Mirror(reflecting: plane).children.isEmpty)
     }
 
@@ -115,11 +123,11 @@ import Testing
         #expect(lab.scopes(1).isEmpty && lab.operations(1, on: scope.id) == 0, "a read that succeeds decides: still blocked")
     }
 
-    @Test func theTableIsReadAgainOnAGenerationBumpAlone() {
+    @Test func theTableIsReadAgainOnAGenerationBumpAlone() throws {
         let failable = FailableStores()
         let fixture = EngineFixture(SpoolEngineLabTests.bob, stores: failable.stores)
         var plane = SpoolPlane(me: fixture.me.nodeId)
-        plane.add(SpoolRelayHandle(number: 1), engine: fixture.engine)
+        _ = plane.add(SpoolRelayHandle(number: 1), url: try #require(SpoolLab.url), engine: fixture.engine)
         failable.ratchet.failsSessionList = true
         let misses = plane.unreadableTables
         plane.refreshTable(engine: fixture.engine)

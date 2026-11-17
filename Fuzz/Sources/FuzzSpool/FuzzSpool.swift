@@ -12,7 +12,8 @@ private let scope = ScopeKeys(
 /// Arbitrary bytes as a record from a spool, which is untrusted (ADR 2026-11.adrq), as a blob it serves, and as a pasted
 /// or opened text through the relay invite's parser and the spool URL rules. Nothing traps. A record that decodes encodes
 /// to bytes that decode to it again; a blob that opens seals back to the same bytes and id; an invite that parses carries
-/// a URL a release build may dial; the stored form of a URL is stable.
+/// a URL a release build may dial; the stored form of a URL is stable; a dialled address passes every rule and prints its
+/// host alone.
 @_cdecl("LLVMFuzzerTestOneInput")
 public func fuzzSpool(_ data: UnsafePointer<UInt8>, _ count: Int) -> CInt {
     let bytes = Array(unsafe UnsafeBufferPointer(start: data, count: count))
@@ -67,5 +68,22 @@ public func fuzzSpool(_ data: UnsafePointer<UInt8>, _ count: Int) -> CInt {
     precondition(SpoolURL.canonical(canonical) == canonical, "the stored form moved when stored again")
     precondition(!SpoolURL.redact(text).utf8.contains(UInt8(ascii: "?")), "a redacted URL kept its query")
     _ = SpoolURL.host(text)
+    checkDialledAddress(text)
     return 0
+}
+
+/// The dialled address (P4b1): what the factory takes from `text` passes every rule, and prints no query, user info or
+/// fragment.
+private func checkDialledAddress(_ text: String) {
+    for cleartext in [false, true] {
+        guard let accepted = AcceptedSpoolURL(text, allowCleartext: cleartext) else {
+            continue
+        }
+        let dialled = accepted.socketURLText
+        precondition(SpoolURL.isAcceptable(SpoolURL.canonical(dialled), allowCleartext: cleartext), "a dialled address its build refuses")
+        precondition(SpoolURL.isPlain(dialled) && dialled.utf8.count <= AcceptedSpoolURL.maxBytes, "a dialled address not plain")
+        precondition(
+            !"\(accepted)".utf8.contains { $0 == UInt8(ascii: "?") || $0 == UInt8(ascii: "@") || $0 == UInt8(ascii: "#") },
+            "an address printed past its host")
+    }
 }

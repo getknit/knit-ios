@@ -138,7 +138,8 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 | P3a | the connection (`SpoolSession`), `SpoolBackoff`, the fake spool's record layer, hostile-input tests | done 2026-11-16 |
 | P3b | the DM frame rules (`ScopeFrames`, `mayRefill`), the heal loop (`ScopeHeal`), the gated scope table (`ScopeTable`), the seal cache, the pull budget (`SpoolIntake`), convergence tests | done 2026-11-17 |
 | P4a | the engine's spool door, settlement, the bridge and its budget, reset evidence, the table's inputs and re-reads, `SpoolPlane`, two-engine tests over `FakeSpool` | done 2026-11-17 |
-| P4b | sockets, mining tasks, backgrounding, backoff, logging, `status` | next |
+| P4b1 | the dialled address (`AcceptedSpoolURL`), the socket contract (`SpoolSocket`), the session's life in the plane (`SpoolLink`, tokens), inbound and outbound bounds, the upload budget and memo, `Retry-After`, backoff, relays, pause and resume, the spool's own seen set, counts, logs, `status`'s `spool` key, `FuzzSpoolSession` | done 2026-11-17 |
+| P4b2 | the stamp miner's tasks | next |
 | P5 | `KnitSpoolNet`, `check.sh spool` against the daemon | |
 | P6 | the app: settings, consent, invites, the release gate | |
 | P7 | device trials | |
@@ -295,6 +296,79 @@ any set. What P4 wires:
 - A `Mesh.block`-level test with a live relay: no `sub`, `pull` or `.mine` for the peer's scope in the block's turn.
 - Remove the `unused_declaration` disables on `SpoolPlane`'s inputs and outputs (`add`, `remove`, `connected`, `receive`,
   `socketClosed`, `takeOutgoing`, `takeMining`, `stampMined`) and on `SpoolBackoff` once their callers land.
+
+### The connections as P4b1 left it (2026-11-17)
+
+- **The address.** `AcceptedSpoolURL` (`KnitWire/Spool`) is the only form a socket factory takes: canonical, a scheme the
+  build dials, plain, no fragment, at most 256 bytes; `ws://` only in a debug build that allows it, only to `localhost` or
+  a loopback, private or link-local literal, never with `k=`. It prints its host; `socketURLText` is its one way out.
+- **The socket** (`Spool/SpoolSocket.swift`): `SpoolSocketFactory.open` answers `SpoolDial`; `SpoolSocket` has a pulled
+  `receive()`, a one-at-a-time `send`, and `close(code:)`. Faults are `SpoolSocketFault` words, a close is
+  `SpoolSocketEnd` (code held to 1000…4999, no reason), a failed dial `SpoolDialFailure` (status held to 100…599,
+  `SpoolRetryAfter` cut to 16 bytes). `Tests/KnitMeshTests/SpoolNet.swift` is the test adapter over `FakeSpool`.
+- **The plane owns the session** (`SpoolPlane+Connections`, `SpoolLink`). It hands `Mesh` `SocketAction`s (dial, send,
+  close, resume a reader) under a `SpoolConnectionToken` from one engine-wide counter, and takes the socket's posts
+  (`opened`, `dialFailed`, `receive`, `socketClosed`, `sent`) under it; a post under an old token is dropped. A dial has
+  20 s to open. Every session ends through `end` and `finish`, which clear the relay's queue and count it reached (30 s,
+  or a round that compared a scope against an anchor) or not; a fault, an `unopenable` end, a write stall and a close
+  coded 4000…4003 are never reached. A relay with no session reports only its dial in `nextDeadline`.
+- **Dropped records.** A connection that drops more than `2 × (maxPullCeiling + 1)` = 514 records (two whole late pulls,
+  each its blobs and its `ok`), or more than 4 MiB of them, unread inside a rolling minute (`SpoolDropWindow`) ends as
+  `SpoolFault.dropped`, an unreached session, counted as `dropFaults`. A record of a type this build does not know is
+  charged to the bytes alone, never to the count. This bounds P3a's rule that a dropped record leaves the connection
+  standing: below the bound it still does.
+- **Early ends.** A session that ends before 30 s floors the next dial at the rest of those 30 s, reached or not, so a
+  relay is dialled at most once per 30 s while its sessions end early.
+- **Bounds.** `SpoolInboundBudget` (64 records, 1 MiB, refilled over a second) parks the reader; 1 MiB queued holds the
+  heal's pushes (`ScopeHeal.outboundFull`, `.held`, `outboundDrained`); 30 s of queued bytes with no send done ends the
+  session; `SpoolUpload` holds pushes to 16 MiB an hour and keeps a blob the relay stored out of the next pushes for the
+  hour within one session: a scope's first `digest` in each session, and any `digest` of no blob, forget its entries.
+- **`Mesh+Spool`** (under `Spool/`): `addSpoolRelay(_:url:)` (at most eight; refused on a mesh with no socket factory),
+  `removeSpoolRelay`, `pauseSpool`, `resumeSpool`, `spoolStatus`. One task a dial reads the socket; one task a send writes.
+  `Mesh.stop` pauses the plane and `start` resumes it. `.mine` requests wait in `spoolMiningQueue`; `spoolStampMined` is
+  the runner's entry, and `SpoolPlane.stampMined` reaches the heal with no session.
+- **The router** keeps a seen set of the spool's own (`spoolSeen`); both doors check both sets.
+- **Logs and `status`.** `SpoolLogBook` writes at most a line per kind per relay per minute, at warning level, of counts
+  and the spec's refusal codes. `status` has a `spool` key (`ControlLines+Spool`) of handles and counts.
+- **Fuzz.** `FuzzSpoolSession` drives `SpoolSessionFuzz` (`@_spi(Fuzz)`, the `KnitMesh` product); `FuzzSpool` also runs
+  the address factory.
+
+### What P4b2, P5, P6 and P7 owe from P4b1 (2026-11-17)
+
+- **P4b2.** A runner that takes `Mesh.spoolMiningQueue`, mines off the actor with `SpoolPow.mine`, answers
+  `spoolStampMined` exactly once per search, and cancels on the plane's `.cancel`; never answers a cancelled search.
+  Stamp identity moves from the request's value to a plane-assigned serial: a cancelled request's answer clears nothing,
+  an identical request asked again is a new one, the stamp keeps its bits, and a stamp is reused only while
+  `stamp.bits >= powBits`.
+- **P5.** A `URLSessionWebSocketTask` adapter for `SpoolSocket`:
+  - `maximumMessageSize` at 128 KiB before buffering, a text message reported by its size, a close's reason dropped,
+    `Retry-After` cut to `SpoolRetryAfter.keptBytes`, the URL read only through `socketURLText`, an empty mirror;
+  - no redirects; an ephemeral `URLSessionConfiguration` with no cookies and no cache;
+  - `URLError` mapped to `SpoolSocketFault` at the adapter's own edge, so no Foundation error, its user info or the
+    dialled URL reaches anything past it;
+  - cancellation honoured in `open` and `receive`;
+  - a stub-server suite: a 503 with each `Retry-After` variant (digits, an HTTP-date, `99999999999999999999`, negative,
+    empty), a redirect to loopback, a 128 KiB message sent slowly, a server that never reads, an upgrade that never
+    finishes and a socket whose `receive` never ends. Oracle: `spoolTasks.running` empties within the 20 s open deadline
+    plus one tick, `dialTimeouts` counts it, and the next dial follows the curve.
+- **P6.** The scene phase calls `pauseSpool`/`resumeSpool`; the master switch off or consent withdrawn removes every relay;
+  a private relay's address, token included, goes to the Keychain through `socketURLText` and comes back through the
+  factory; the daily stamp spend is persisted across launches; a relay-URL command on the debug bridge, if a trial needs
+  one, is USB-only.
+- **P7.**
+  - An `idevicesyslog` capture on a release build, and on a debug build with a private relay (a `k=` token and URL user
+    info), grepped for `wss://`, `k=`, 64-hex runs, node ids and frame-id lines at warning level: none found.
+  - The backgrounding trial: iPhone and Pixel 9 apart over `public-1`, Knit in the background at least 10 minutes while
+    the Pixel sends 5 DMs, then foregrounded: every DM lands, ✓✓ within 2 minutes, `failures` 0 and `dropFaults` 0 in
+    `status` after the resume, the first redial within about 1 s.
+- **Before P5**, the first phase a relay serves real frames, a two-engine test on the two seen sets (`SpoolMeshRig` with
+  a radio `TestPeer`): a ratchet DM X reaches A first by the spool and fails to open; the same X then arrives by radio
+  inside 10 minutes. Pass: no reset counted, no second open, `noteUndecryptable` never called for X; the peer's
+  reset-evidence counters can stand in for a `noteUndecryptable` hook. Not written in P4b1: serving X sealed under a
+  session A does not hold inside A's confirmed scope needs a second-session seal helper beyond a small one.
+- **Before P7**, the reverse two-engine test: three radio failures seal A's reset; the retiring scope then serves X's old seal before B's re-seal
+    arrives by radio. Pass: the re-seal is delivered within the second re-seal's ~11 minutes on the manual clock, and
+    both sides confirm the same `rootHash` after.
 
 ### What later phases owe from P3a's reviews (2026-11-16)
 

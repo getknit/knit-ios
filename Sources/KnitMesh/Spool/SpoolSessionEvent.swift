@@ -95,6 +95,9 @@ internal enum SpoolFault: String, Sendable {
     /// Most of what this spool served in the last hour failed its content address or came oversize (``SpoolIntake``). This
     /// port's own word.
     case unopenable = "unopenable"
+    /// More records dropped unread on one connection inside a minute than ``SpoolDropWindow`` keeps (P4b1). This port's own
+    /// word.
+    case dropped = "dropped"
 }
 
 /// A spool's refusal of a request or a scope, every field read through a clamp.
