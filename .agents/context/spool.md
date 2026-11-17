@@ -380,7 +380,8 @@ The rules are ADR 2026-11.adrq's P4b2 amendment; this is where each lives.
 - **The value.** `SpoolMiner` (`Spool/SpoolMiner.swift`) is a value in `SpoolPlane`, beside the table: the requests by
   serial (`SpoolMiningRequest.serial`, drawn from `SpoolPlane.nextSerial` and lent to each heal for the input it runs), the
   values they wait on, the one run (`SpoolMinerJob`), `SpoolMinerCache` and `SpoolMinerBudget`. A value several relays ask
-  for is charged to the least-spent of them whose share holds (`SpoolMiner.charged`). `SpoolPlane.serviceMiner`,
+  for is charged to the least-spent of them whose share holds (`SpoolMiner.charged`), chosen among the relays asking when
+  it is scheduled; a spent relay asking alone parks, then joins a running search or takes the cache. `SpoolPlane.serviceMiner`,
   which `Mesh.serviceSpool` calls after every input, takes the heals' asks, hands what the miner answers at once (the cache,
   the budget) back to the heals after their turn, and loops until no ask is left; then the runner's actions (`.start`,
   `.stop`, `.proceed`). `searchEnded` is the runner's result; `pause` and `resume` stop and restart the run.

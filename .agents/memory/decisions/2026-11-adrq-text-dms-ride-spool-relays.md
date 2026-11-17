@@ -298,7 +298,9 @@ protocol byte for byte and needs no Android change.
   search starts only when the engine and both shares hold its whole remaining range (2^26 less where it resumes);
   otherwise its requests are answered over budget at once, with the park until that much frees, counted apart (over
   budget, over the relay's share, over the peer's share). A value several relays ask for is charged to the least-spent of
-  those relays whose share holds, ties by handle; it is refused for want of a relay share only when none holds.
+  those relays whose share holds, ties by handle; it is refused for want of a relay share only when none holds. The choice
+  is made among the relays asking when the value is scheduled: a relay whose share is spent and asks alone is refused and
+  parks, and after the park it joins a running search for the value or is answered from the cache.
 - **Order.** A free runner takes the value whose charged relay has spent the fewest counters in the window, then whose
   peer has, then the scope's rank in the table (live before retiring, most recent activity first), then the oldest request.
 - **Stamp bits.** A stamp is sent only while the bits it meets reach the session's `powBits`. Kotlin's stamp cache keys by

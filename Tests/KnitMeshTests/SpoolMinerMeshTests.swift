@@ -53,8 +53,10 @@ import Testing
         #expect(await rig[1].spoolStatus.counts["minerRuns"] == 1)
     }
 
-    /// A mesh carrying two relays, the first with its share spent: the scope both relays ask a stamp for is mined on the
-    /// second relay's share, and the second relay's scope never parks over budget while the engine's window has room.
+    /// A mesh carrying two relays, the first with its share spent: a value the second relay asks for is mined on the second
+    /// relay's share, the first relay's ask joins the running search and gets its answer, and the second relay's scope never
+    /// parks over budget while the engine's window has room. The choice among several asking relays is pinned by
+    /// `SpoolMinerBudgetTests.aValueSeveralRelaysAskForIsChargedToALeastSpentRelayWhoseShareHolds`.
     @Test func aSharedValueIsMinedOnTheShareOfARelayThatHoldsIt() async throws {
         let bob = FakeStampRunner()
         let spool = FakeSpool(now: EngineFixture.start)
