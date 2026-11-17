@@ -135,8 +135,8 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 | P1 | the codecs, `SpoolURL`, invites, fuzz targets (`SpoolRecord`, `SpoolURL`, `RelayInvite`, `FuzzSpool`) | done 2026-11-16 |
 | P2 | the export (`RatchetCrypto.exportRoot`), scope crypto and proof of work (`KnitCrypto/Scope`: `ScopeKeys`, `ScopeCrypto`, `SpoolPow`), `RatchetSessions.dmScopes(now:)` in `RatchetSessions+Scopes`; `FuzzSpool` opens blobs | done 2026-11-16 |
 | P3a | the connection (`SpoolSession`), `SpoolBackoff`, the fake spool's record layer, hostile-input tests | done 2026-11-16 |
-| P3b | the DM frame rules (`ScopeFrames`, `mayRefill`), the heal loop (`ScopeHeal`), the gated scope table, convergence tests | next |
-| P4 | the engine's wiring, the `.spool` source, the bridge, two-engine tests | |
+| P3b | the DM frame rules (`ScopeFrames`, `mayRefill`), the heal loop (`ScopeHeal`), the gated scope table (`ScopeTable`), the seal cache, the pull budget (`SpoolIntake`), convergence tests | done 2026-11-17 |
+| P4 | the engine's wiring, the `.spool` source, the bridge, two-engine tests | next |
 | P5 | `KnitSpoolNet`, `check.sh spool` against the daemon | |
 | P6 | the app: settings, consent, invites, the release gate | |
 | P7 | device trials | |
@@ -178,6 +178,67 @@ clock, no log and nothing that outlives the connection. What P3b and P4 build on
 - **Faults** are `SpoolFault`'s words: `unresponsive`, `no_hello`, `too_large` (a `sub` past `maxRecord`) and `version`.
   A session we end is no reached session; `SpoolBackoff.delay` takes the failures, the `Retry-After` floor and a
   `RandomNumberGenerator`.
+
+### The heal loop as P3b left it (2026-11-17)
+
+Everything per scope and across connections is pure and keyed by `ScopeKeys.id` alone (`SpoolID`), with no peer id in
+any set. What P4 wires:
+
+- **`ScopeTable.updated(dmScopes:accepted:blocked:recent:relays:)`** answers `.table` or `.unchanged`. `nil` for
+  `dmScopes`, `accepted` or `blocked` keeps the table. `accepted` is `DirectContacts.candidates` (the facts `Acquaintances`
+  reads: accepted and authored DM threads, verified peers); `blocked` is every blocked node id with the device-tag blocks
+  resolved, as `directContacts()` builds it. `recent` is this phone's own last activity per peer. At most 128 peers, live
+  scopes before retiring. A spool's `maxScopes` is not read here: each session holds its `sub`s to its own spool's cap,
+  in the table's order, so one spool's cap costs no other relay a scope or its heal state.
+- **`ScopeHeal`**, one per relay (`SpoolRelayHandle`, never a URL), outlives every `SpoolSession`. P4 calls `adopt` with
+  the table's scopes, feeds every event the session drains to `handle(_:session:now:)`, calls `tick(session:now:)` at
+  `nextDeadline(sessionReady:)`, and when `wantsRound(sessionReady:now:)` reads `CustodyStore.liveFrames` once, inside a
+  store unit, and calls `roundStarted(.frames(…) | .unreadable, …)`. `custodyChanged()` after every custody write.
+- **Its outputs** (`drain()`): `.candidate(ScopeCandidate)`, settled with `settle(_:_:session:now:)` **before the heal's
+  next input**, and `.mine` / `.cancelMining` for stamps (`SpoolPow.mine` off the actor, answered with
+  `stampMined(_:counter:session:now:)`; P4 cancels every request in `mining` when it drops the relay).
+- **Times.** `SpoolNow` carries the monotonic clock (floors, parks, `rate` waits, the 60 s tick, the hour's budget) and
+  the wall clock (`sentAt` rules, custody's reads, a stamp's UTC day).
+- **What it keeps.** The accounted, invalid and unpushable sets (512 each, oldest dropped), a park after a `sub` refused
+  `quota` or `pow` or a refused stamp on a push, a stamp and the day's stamp count (two a scope), the hour's intake
+  (`SpoolIntake`), and `Counts` for `status`. A dirty scope heals at most once per 5 s; the 60 s tick heals all.
+  `ScopeHeal`, its round and step, `ScopeCandidate` and `ScopeFrame` print counts and id prefixes alone, and mirror nothing.
+- **This port's own rules** (ADR 2026-11.adrq, amended 2026-11-17, a draft): the unpushable set and when an id leaves
+  it; accounting at the listing; the 5 s heal floor; the hourly pull budget, priced at our own `maxBlob`, and the
+  `unopenable` fault; a refused stamp on a push parks the scope; at most two stamps mined per scope per UTC day, a search
+  that found none not counted; a live event already accounted or quarantined is dropped before it is claimed; the `sub`
+  batch halving.
+- **`FakeSpool`** gained `subBatchLimit`, `shed`, and the test modes `freshIdsPerListing`, `freshJunkPerListing`,
+  `oversizeServes`, `garblesServes` and `refusesEveryPushPow`, with `servedBytes`. The tests' `HealMember` and `HealLab` drive members over
+  it with a real `MemoryCustodyStore` each; `HealBench` drives one heal record by record.
+
+### What P4 owes from P3b (2026-11-17)
+
+- A stamp search the actor cancels because the connection dropped is never answered with `stampMined(nil)`: it is dropped,
+  so `mining` stays set and the next connection starts no new search, and only a search that ran out of tries answers
+  `nil`. A test drops the session mid-search and reconnects: no new `.mine` before the park ends, and at most
+  `maxStampsPerDay` mined.
+- **Verify through the engine, never a second key picker.** Each candidate's `verified(by:)` takes the engine's own
+  `verifierBundle(for:)` (ours for our own frame, the payload's own key for a profile, the pinned key otherwise), or the
+  `ScopeFrame` passes through the engine's `verify` path; a candidate with no key settles `.unopenable`.
+- **Settle every candidate in the turn that delivers it,** with a two-engine test:
+  - `.delivered(keptLive: custody.frame(id, now:) != nil)`, read in the same turn, when the engine took the frame **or its
+    router dropped it as already seen**. A second relay's pull of a frame the first relay delivered is such a drop: it
+    is accounted, never quarantined.
+  - `.unopenable` for a signature that fails or a sender with no key; `.refusedByCarry` only for a refusal about the
+    frame's own bytes (both quarantine a pulled blob).
+  - `.notTaken` when a store unit failed: the claim is released and nothing else (no quarantine, no intake count).
+- **Bridge only what custody did not already hold,** checked before the delivery, and never a late frame
+  (`ScopeFrame.bridges`).
+- **Read the gate inside a store unit** whose failure becomes `nil`, never `[]`: SQL stores answer a failed read as empty
+  (ADR 2026-09.nyya), and an empty `blocked` would let a blocked peer's scope back in. A two-engine test where the block
+  read fails and the blocked peer's scope stays out.
+- **An `unopenable` end counts as an unreached session** for `SpoolBackoff`.
+- **One seal cache per engine,** sized for the table and shared by the relays (today each `ScopeHeal` holds its own
+  `ScopeSealCache`, 2,048 entries); `held`, the unpushable set and the intake stay per relay.
+- A log line per kind per interval for `Counts` (overlong listings, quarantines, faults, parks, budget deferrals, capped
+  stamps, replays), in Kotlin's words where it has one, naming at most a scope id's prefix, never beside a node id.
+- `custodyChanged()` from every path that writes or sweeps custody, and `adopt` after every table change.
 
 ### What later phases owe from P3a's reviews (2026-11-16)
 

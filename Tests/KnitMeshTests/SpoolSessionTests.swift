@@ -173,7 +173,11 @@ import Testing
         session.receive(Fixture.ok(pull))
 
         // Accounted rather than dropped: the spool still holds it, so without §9.3 the digests diverge for good.
-        #expect(session.drain().events == [.answered(request: pull, .pulled(missing: [], oversize: [other]))])
+        #expect(
+            session.drain().events == [
+                .servedOversize(request: pull, scope: scope, bytes: SpoolRecordLayer.defaultMaxBlob + 1),
+                .answered(request: pull, .pulled(missing: [], oversize: [other])),
+            ])
     }
 
     @Test func keepsABlobExactlyAtTheBoundWeDeclaredAtSub() throws {

@@ -37,6 +37,11 @@ extension SpoolSession {
         }
 
         var count: Int { order.count }
+
+        /// Whether `id` is claimed here, delivered or in flight.
+        func contains(_ id: SpoolID) -> Bool {
+            members.contains(id)
+        }
     }
 
     /// The spool's last word on a subscribed scope: `nil` until its `digest` came on this connection.
@@ -79,6 +84,17 @@ extension SpoolSession {
     /// Gives a claim back (`release`): a blob that failed its checks off the event path may come again by a pull.
     mutating func release(_ scope: SpoolID, blobId: SpoolID) {
         claims[scope]?.remove(blobId)
+    }
+
+    /// Whether `blobId` is claimed on this connection (`acceptedFor`): the heal loop's "processed", which it never pulls
+    /// again on this connection.
+    func hasClaimed(_ scope: SpoolID, blobId: SpoolID) -> Bool {
+        claims[scope]?.contains(blobId) == true
+    }
+
+    /// How many ids `scope` has claimed on this connection, delivered and in flight.
+    func claimCount(_ scope: SpoolID) -> Int {
+        claims[scope]?.count ?? 0
     }
 
     /// Holds a scope's claims to ``maxClaimsPerScope`` after a delivery (`settle`), the oldest going first.

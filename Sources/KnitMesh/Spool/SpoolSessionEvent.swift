@@ -92,6 +92,9 @@ internal enum SpoolFault: String, Sendable {
     case tooLarge = "too_large"
     /// The spool's versions do not include ours; the close carries 4002.
     case version = "version"
+    /// Most of what this spool served in the last hour failed its content address or came oversize (``SpoolIntake``). This
+    /// port's own word.
+    case unopenable = "unopenable"
 }
 
 /// A spool's refusal of a request or a scope, every field read through a clamp.
@@ -202,6 +205,9 @@ internal enum SpoolSessionEvent: Equatable, Sendable {
     case live(SpoolArrival)
     /// A blob an outstanding pull named, at most once per named id.
     case pulled(request: Int64, SpoolArrival)
+    /// A blob an outstanding pull named, served past the `maxBlob` this side declared: its id goes back in the pull's
+    /// `oversize`, and this says how many bytes it cost, so the heal loop charges them to the relay's hourly budget.
+    case servedOversize(request: Int64, scope: SpoolID, bytes: Int)
     /// A request's terminal answer.
     case answered(request: Int64, SpoolReply)
     /// A scope the spool refused (a `sub` refused `pow` or `quota`, most often). It is no longer subscribed here.

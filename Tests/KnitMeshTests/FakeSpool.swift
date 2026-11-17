@@ -31,20 +31,20 @@ final class FakeSpool {
         case close(Int)
     }
 
-    private struct Held {
+    struct Held {
         let id: SpoolID
         let data: [UInt8]
         let arrivedAt: Int64
     }
 
-    private struct Scope {
+    struct Scope {
         var bounds: ScopeBounds
         var live: [Held] = []
         /// Each tombstone and when it expires, `now + ttlMs` at the eviction.
         var tombstones: [(id: SpoolID, expiresAt: Int64)] = []
     }
 
-    private struct Socket {
+    struct Socket {
         var greeted = false
         var open = true
         var subscribed: Set<SpoolID> = []
@@ -58,13 +58,31 @@ final class FakeSpool {
     /// Scopes this spool will hold at most; a new one past it is refused `quota` (the daemon's store rule).
     var scopeQuota: Int?
     var quotaRetryMs: Int64?
+    /// The most scopes one `sub` may name; a larger one is refused whole with an unscoped `malformed` carrying its `q`, as
+    /// the daemon refuses a batch past its own `maxScopes` (knit-spool `SpoolServer.kt:1622-1628` at `a682524`).
+    var subBatchLimit: Int?
+    /// Hostile modes: each listing names this many fresh ids it never held; every pulled id is served this many bytes
+    /// long, past any `maxBlob`; every served blob has a byte flipped, so it no longer hashes to its id; and every push
+    /// is refused `pow`, stamp or not.
+    var freshIdsPerListing: Int?
+    /// Each listing also names this many fresh blobs of ``junkSize`` bytes that hash to their ids and open to nothing,
+    /// served when pulled.
+    var freshJunkPerListing: Int?
+    var junkSize = 61_440
+    var junk: [SpoolID: [UInt8]] = [:]
+    var oversizeServes: Int?
+    var garblesServes = false
+    var refusesEveryPushPow = false
+    /// The bytes every `blob` record this spool sent carried.
+    var servedBytes = 0
+    private var minted = 0
     /// How many of the next pushes are refused `rate`, and the `retryMs` they carry.
     var ratedPushes = 0
     var rateRetryMs: Int64?
     private let version: Int
     private let minimum: Int?
-    private var scopes: [SpoolID: Scope] = [:]
-    private var sockets: [Connection: Socket] = [:]
+    var scopes: [SpoolID: Scope] = [:]
+    var sockets: [Connection: Socket] = [:]
     private var planted: [SpoolID: SpoolErr] = [:]
     private var nextConnection = 1
     /// Every blob id a push stored, in order.
@@ -173,6 +191,10 @@ final class FakeSpool {
     // MARK: Records
 
     private func onSub(_ sub: SpoolSub, _ connection: Connection) {
+        if let limit = subBatchLimit, sub.subs.count > limit {
+            emit(SpoolErr(code: SpoolErrorCode.malformed, request: sub.request), to: connection)
+            return
+        }
         for entry in sub.subs {
             guard let scope = SpoolID(entry.scope) else {
                 continue
@@ -203,7 +225,19 @@ final class FakeSpool {
             return
         }
         _ = expire(scope)
-        let live = liveIds(scope).map(\.bytes)
+        var live = liveIds(scope).map(\.bytes)
+        for _ in 0..<(freshIdsPerListing ?? 0) {
+            minted += 1
+            live.append([0xF5] + withUnsafeBytes(of: UInt64(minted).bigEndian, Array.init) + [UInt8](repeating: 0, count: 23))
+        }
+        for _ in 0..<(freshJunkPerListing ?? 0) {
+            minted += 1
+            let data = withUnsafeBytes(of: UInt64(minted).bigEndian, Array.init) + [UInt8](repeating: 0x5A, count: max(junkSize - 8, 0))
+            if let id = SpoolID(ScopeCrypto.blobId(of: data)) {
+                junk[id] = data
+                live.append(id.bytes)
+            }
+        }
         let tombstones = tombstones(scope).map(\.bytes)
         let answer = SpoolList(
             request: list.request, scope: list.scope, blobIds: live.isEmpty ? nil : live, tombstones: tombstones.isEmpty ? nil : tombstones)
@@ -217,8 +251,16 @@ final class FakeSpool {
         _ = expire(scope)
         var missing: [[UInt8]] = []
         for id in pull.blobIds.prefix(limits.maxPull) {
-            if let held = scopes[scope]?.live.first(where: { $0.id.bytes == id }) {
-                emit(.record(SpoolBlob(scope: pull.scope, blobId: id, data: held.data).encoded), to: connection)
+            if let size = oversizeServes {
+                serve(SpoolBlob(scope: pull.scope, blobId: id, data: [UInt8](repeating: 0xAB, count: size)), connection)
+            } else if let blobId = SpoolID(id), let data = junk[blobId] {
+                serve(SpoolBlob(scope: pull.scope, blobId: id, data: data), connection)
+            } else if let held = scopes[scope]?.live.first(where: { $0.id.bytes == id }) {
+                var data = held.data
+                if garblesServes, !data.isEmpty {
+                    data[data.count - 1] ^= 0x01
+                }
+                serve(SpoolBlob(scope: pull.scope, blobId: id, data: data), connection)
             } else {
                 missing.append(id)
             }
@@ -228,6 +270,10 @@ final class FakeSpool {
 
     private func onPush(_ push: SpoolPush, _ connection: Connection) {
         guard let scope = subscribed(push.scope, push.request, connection), let blobId = SpoolID(push.blobId) else {
+            return
+        }
+        if refusesEveryPushPow {
+            emit(SpoolErr(code: SpoolErrorCode.pow, request: push.request, scope: push.scope), to: connection)
             return
         }
         if ratedPushes > 0 {
@@ -266,107 +312,5 @@ final class FakeSpool {
         if evicted || overflowed {
             broadcastDigest(scope)
         }
-    }
-}
-
-extension FakeSpool {
-    // MARK: Rules
-
-    /// The scope a request names, once it is subscribed on this connection; `not_subscribed` otherwise (B-7.1-9).
-    private func subscribed(_ bytes: [UInt8], _ request: Int64, _ connection: Connection) -> SpoolID? {
-        guard let scope = SpoolID(bytes), sockets[connection]?.subscribed.contains(scope) == true else {
-            emit(SpoolErr(code: SpoolErrorCode.notSubscribed, request: request, scope: bytes), to: connection)
-            return nil
-        }
-        return scope
-    }
-
-    /// Whether a stamp is wanted and missing or wrong: only for a scope the spool does not hold (S-6.4-2).
-    private func powRefused(_ scope: SpoolID, _ stamp: PowStamp?) -> Bool {
-        guard powBits > 0, scopes[scope] == nil else {
-            return false
-        }
-        guard let stamp else {
-            return true
-        }
-        return !SpoolPow.verify(scopeId: scope.bytes, day: stamp.day, n: stamp.counter, bits: powBits)
-    }
-
-    /// The most recent declaration clamped to the hello's caps (S-6.2-2).
-    private func applied(_ declared: ScopeBounds) -> ScopeBounds {
-        ScopeBounds(
-            maxFrames: min(declared.maxFrames, limits.maxFramesCap),
-            ttlMs: min(declared.ttlMs, limits.maxTtlMs),
-            maxBlob: min(declared.maxBlob, limits.maxBlob)
-        )
-    }
-
-    /// Ages out what is past its `ttlMs` on the spool's clock, live and tombstoned, on the daemon's edges: a blob once
-    /// `arrivedAt + ttlMs < now`, a tombstone once its expiry `< now` (knit-spool `InMemoryScopeStore.sweepScope`,
-    /// `:418-430`, at `a682524`). Answers whether the live set moved.
-    private func expire(_ scope: SpoolID) -> Bool {
-        guard var state = scopes[scope] else {
-            return false
-        }
-        let ttl = state.bounds.ttlMs
-        let gone = state.live.filter { $0.arrivedAt + ttl < now }
-        state.live.removeAll { $0.arrivedAt + ttl < now }
-        state.tombstones.removeAll { $0.expiresAt < now }
-        state.tombstones += gone.map { ($0.id, now + ttl) }
-        scopes[scope] = state
-        trimTombstones(scope)
-        return !gone.isEmpty
-    }
-
-    /// Evicts the oldest past `maxFrames` into the tombstones. Answers whether any went.
-    private func evict(_ scope: SpoolID) -> Bool {
-        guard var state = scopes[scope], state.live.count > state.bounds.maxFrames else {
-            return false
-        }
-        let over = state.live.count - max(state.bounds.maxFrames, 0)
-        state.tombstones += state.live.prefix(over).map { ($0.id, now + state.bounds.ttlMs) }
-        state.live.removeFirst(over)
-        scopes[scope] = state
-        trimTombstones(scope)
-        return true
-    }
-
-    private func trimTombstones(_ scope: SpoolID) {
-        guard let state = scopes[scope] else {
-            return
-        }
-        let bound = max(2 * state.bounds.maxFrames, 1024)
-        if state.tombstones.count > bound {
-            scopes[scope]?.tombstones.removeFirst(state.tombstones.count - bound)
-        }
-    }
-
-    private func digest(_ scope: SpoolID) -> SpoolDigest {
-        let state = scopes[scope] ?? Scope(bounds: applied(ScopeBounds(maxFrames: 400, ttlMs: 172_800_000, maxBlob: 65_536)))
-        return SpoolDigest(
-            scope: scope.bytes,
-            digest: ScopeCrypto.digestBytes(ScopeCrypto.digest(of: state.live.map(\.id.bytes))),
-            count: state.live.count,
-            full: state.live.count >= state.bounds.maxFrames,
-            bounds: state.bounds
-        )
-    }
-
-    private func broadcastDigest(_ scope: SpoolID) {
-        let record = digest(scope).encoded
-        for (connection, socket) in sockets where socket.open && socket.subscribed.contains(scope) {
-            emit(.record(record), to: connection)
-        }
-    }
-
-    private func emit(_ err: SpoolErr, to connection: Connection) {
-        emit(.record(err.encoded), to: connection)
-    }
-
-    private func emit(_ outgoing: Outgoing, to connection: Connection) {
-        guard sockets[connection]?.open == true else {
-            return
-        }
-        sockets[connection]?.outbox.append(outgoing)
     }
 }

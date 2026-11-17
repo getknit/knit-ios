@@ -119,6 +119,7 @@ extension SpoolSession {
         // loop to quarantine in its invalid set (§9.3, `PullOutcome.oversize`).
         if record.data.count > bounds.maxBlob {
             pending[owner]?.oversize.append(blobId)
+            emit(.servedOversize(request: owner, scope: scope, bytes: record.data.count))
         } else {
             emit(.pulled(request: owner, SpoolArrival(scope: scope, blobId: blobId, data: record.data)))
         }

@@ -113,7 +113,7 @@ protocol byte for byte and needs no Android change.
   inside its 48 h retention, until the person accepts. The gate decides per scope, never per frame, so a scope's fold
   stays the spool's. Blocking a peer drops its scopes.
 - **At most 128 peers have live scopes,** live scopes ranked before retiring ones, then by this phone's own record of
-  recent activity, never a peer's `sentAt`. A spool's `maxScopes` can only lower the cap. Android has none.
+  recent activity, never a peer's `sentAt`. A spool's `maxScopes` can only lower the cap.
 - **A late frame is delivered here and never bridged.** A pulled frame past `sentAt + 48 h`, or more than five minutes
   ahead of this phone's clock, is accounted and never relayed onto the radios: a spool can serve a frame long after the
   router's memory of it is gone.
@@ -143,3 +143,36 @@ protocol byte for byte and needs no Android change.
   never 256 × 64 KiB; one that times out has delivered what came. A named blob
   past the declared `maxBlob` comes back as an id the heal loop quarantines in its invalid set (§9.3), as Kotlin's
   `PullOutcome.oversize` does.
+
+**Amended 2026-11-17 (P3b, the frame rules and the heal loop; a draft until the maintainer accepts it):**
+
+- **What a relay will never take leaves the local fold.** The unpushable set takes a held frame the listing leaves out
+  when it is tombstoned there, refused by `mayRefill` (a retiring scope, our own flagged reset), past the tighter
+  `maxBlob`, dead on arrival in a 48 h scope, refused per blob, or too large for a `push` the session can send. A listing
+  that names the id puts it back. An id that went in for a listing reason leaves as soon as a listing shows the reason
+  lapsed (a tombstone let go, a scope shed), and is pushed again; a push the relay refused as `too_large` or `bad_id`, or
+  one past its `maxRecord`, stays refused. A pushable frame never goes in.
+- **Accounting at the listing.** A listed blob this connection delivered that custody no longer holds is accounted when
+  the listing names it, and so is one the round's custody read predates but custody now holds, which the fold never
+  counts twice (held ids are never folded from the accounted set). A blob this connection never took is re-pulled once,
+  and accounted when custody refuses it.
+- **A dirty scope heals at most once per 5 s,** whatever marked it; the 60 s tick heals every scope.
+- **A relay's pulls are budgeted to 16 MiB an hour.** A pull goes only while its worst case (every id at our own
+  `maxBlob`, the bound the session enforces on a pulled blob) fits what the hour has left, and is charged that when it
+  goes; an arrival past it is charged at once, the unused part comes back when the pull ends, and a blob served past our
+  `maxBlob` is charged in full. Nothing starts the hour over but the hour.
+- **The `unopenable` fault.** A blob that does not hash to its id, or one served past our `maxBlob`, counts against the
+  relay: 32 in an hour, more than blobs that hashed true, end the session as `unopenable`, a fault word of this port's
+  own, which counts as an unreached session for the backoff. A blob that hashes true and then fails to open, decode, fit
+  the rule, verify or pass the carry gate is not counted against the relay: a pulled one is quarantined, a live one
+  released.
+- **Parks and stamps.** A `sub` refusal under `quota` or `pow` parks the scope for the session's clamped
+  `parkMilliseconds`, and a refused stamp on a push parks it the same way; any other refused push parks nothing. At most
+  two stamps are mined per scope per UTC day, counting only searches that found one; past them the scope parks until the
+  day rolls. A search that found none parks the scope for the shortest park.
+- **A live event already accounted or quarantined is dropped** before it is claimed.
+- **The gate reads `DirectContacts.candidates`**, the facts the presence keys already read (accepted and authored DM
+  threads, verified peers), less every blocked id; never `Conversations.isAccepted`, whose group branch counts a group's
+  senders. A spool's `maxScopes` is each session's own cap, never the table's.
+- None of it changes what a spool or a peer receives beyond fewer `list`, `pull` and stamped records: no record, field or
+  capability moves.

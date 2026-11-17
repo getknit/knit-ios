@@ -13,7 +13,7 @@ growing an explanation, that explanation belongs in the ADR.
 | If touching | READ |
 | --- | --- |
 | a radio plane, a capability bit we advertise, or anything Wi-Fi Aware, LoRa, spool or Wi-Fi Direct | [ADR 2026-09.zwdp](../memory/decisions/2026-09-zwdp-knit-for-ios-meshes-over.md) |
-| a spool relay, `KnitWire/Spool`, `KnitCrypto/Scope`, `KnitMesh/Spool`, `KnitSpoolNet`, `RatchetSessions+Scopes`, `spool-v1.json`, a relay invite link (`/r#`, `knit://r/`), the relay settings, `check.sh spool`, or ctl 7 (scope config) | [ADR 2026-11.adrq](../memory/decisions/2026-11-adrq-text-dms-ride-spool-relays.md) |
+| a spool relay, `KnitWire/Spool`, `KnitCrypto/Scope`, `KnitMesh/Spool` (`SpoolSession`, `ScopeHeal`, `ScopeFrames`, `ScopeTable`, `SpoolIntake`), `KnitSpoolNet`, `RatchetSessions+Scopes`, `spool-v1.json`, a relay invite link (`/r#`, `knit://r/`), the relay settings, `check.sh spool`, or ctl 7 (scope config) | [ADR 2026-11.adrq](../memory/decisions/2026-11-adrq-text-dms-ride-spool-relays.md) |
 | the `WiFiAware` or DeviceDiscoveryUI frameworks, the `com.apple.developer.wifi-aware` entitlement, AWDL, or a faster lane for files | [ADR 2026-10.2c6c](../memory/decisions/2026-10-2c6c-wi-fi-aware-on-the.md) |
 | `KnitWire`, `KnitCrypto`, `KnitMesh`, golden vectors, or the knit-next pin | [ADR 2026-09.2ved](../memory/decisions/2026-09-2ved-knit-next-s-code-and.md) |
 | the target layout in `Package.swift`, or a `#if canImport` / `#if os` guard | [ADR 2026-09.wde9](../memory/decisions/2026-09-wde9-the-protocol-core-is-platform.md) |
