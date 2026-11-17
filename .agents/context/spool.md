@@ -46,8 +46,8 @@ commons, attachments, TURN, tickets, casts and signals stay out.
 - **DM scopes** (§3.1): `pairwiseRoot = HKDF(root, "knit/dm/v2/export/root", 32)`; with `ctx = idLow|idHigh|`,
   `scopeId = HKDF(pairwiseRoot, "knit/scope/v1/dm/id" ‖ ctx, 32)` and `HKDF(pairwiseRoot, "knit/scope/v1/seal" ‖ ctx,
   64)` split into the seal key and the nonce key. Every HKDF here is SHA-256 with a salt of 32 zero bytes. Confirmed
-  sessions only; a live `prevRoot` is a retiring scope; our own unanswered reset keeps the replaced root's scope as
-  retiring and derives the new one (C-3.1-4, knit-next ADR 2026-10.j67x). The vector for the export is
+  sessions only; a live `prevRoot` is a retiring scope. C-3.1-4's exception for our own unanswered reset (knit-next ADR
+  2026-10.j67x) is deferred with the slot and race rules it needs (ADR 2026-11.adrq). The vector for the export is
   `ratchet-v1.json`'s `exportRoot`.
 - **The seal** (§4.3): `pt = sig(64) ‖ signed`; `nonce = HKDF(nonceKey, "knit/scope/v1/nonce" ‖ SHA-256(pt), 12)`;
   `blob = 0x01 ‖ nonce ‖ AES-256-GCM(sealKey, nonce, pt, aad = "knit/scope/v1" ‖ scopeId)`; `blobId = SHA-256(blob)`.
@@ -56,7 +56,7 @@ commons, attachments, TURN, tickets, casts and signals stay out.
   is either a `chat` between exactly the scope's two members, sealed v2 or v3 with the ratchet header `r`, or a
   `profile` from either. The id has its minted shape (C-4.4-14). On a pull, in order: the blob's hash, the AEAD, the
   envelope's decode, the id, the rule, then the signature against the pinned key. The spec's C-4.4-7 says v2 alone;
-  the Kotlin takes v3 as well, and the Kotlin wins.
+  the Kotlin takes v3 as well, and the Kotlin wins (knit/knit-next#339).
 - **The heal loop** (§9): the digest is the XOR of FNV-1a-64 over the raw blob ids, 0 for none. On a mismatch with the
   spool's latest `digest`: `list`, pull what custody lacks (at most `maxPull` ids a request), push what the spool lacks,
   then re-anchor over the digest the listing ran against. A listing past 512 live ids, or past `max(2 × maxFrames,
@@ -117,18 +117,45 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 `SpoolConnectionTest`, `ScopeFramesTest`, `ScopeRegistryTest`, `ScopeSyncTest`, the DM half of
 `RatchetSessionsExportTest`, and the DM scenarios of `InternetPlaneLabTest` and `ResetOverRelayLabTest`.
 
+## Open knit-next issues that bear on it
+
+- knit/knit-next#290 bears on which sessions get a scope; P2's design pass decides `dmScopes`' gate.
+- knit/knit-next#188: a superseded reset of ours stays in the scope's local fold though it is never pushed, so the
+  scope lists every round for up to 24 h. P3's heal loop must not copy it.
+- knit/knit-next#339: C-4.4-7's v2-only wording, filed for this port on 2026-11-16.
+
 ## Phases
 
 | Phase | What | State |
 | --- | --- | --- |
 | P0 | ADR 2026-11.adrq, this file, `spool-v1.json`, the routing | done 2026-11-16 |
-| P1 | the codecs, `SpoolURL`, invites, fuzz targets | next |
-| P2 | the export, scope crypto, proof of work, `RatchetSessions+Scopes` | |
+| P1 | the codecs, `SpoolURL`, invites, fuzz targets (`SpoolRecord`, `SpoolURL`, `RelayInvite`, `FuzzSpool`) | done 2026-11-16 |
+| P2 | the export, scope crypto, proof of work, `RatchetSessions+Scopes` | next |
 | P3 | the pure plane and a fake spool | |
 | P4 | the engine's wiring, the `.spool` source, the bridge, two-engine tests | |
 | P5 | `KnitSpoolNet`, `check.sh spool` against the daemon | |
 | P6 | the app: settings, consent, invites, the release gate | |
 | P7 | device trials | |
+
+### What P3 and P5 owe from P1's security review (2026-11-16)
+
+`KnitWire` decodes as kotlinx does, refuses a record past `SpoolRecordLayer.maxInboundRecord` before decoding, and clamps HELLO's
+limits in `SpoolLimits.clamped()`. The rest of Kotlin's bounds sit in the connection and the socket, as they do there:
+
+- an id that is not 32 bytes (`SpoolConnection.isId`) refused wherever one is read;
+- `SpoolErr.code` and `.message`, and an unknown `t`, cut to 32 UTF-16 units and cleaned before any log line, since
+  `UnifiedLog` writes `privacy: .public`;
+- `powBits` held to at most 24, and every spool `Int64` (`retryMs`, `ttlMs`, `maxTtlMs`, `count`) added or shifted
+  only through clamping or `addingReportingOverflow`, since a trap ends Knit;
+- a limit used as a count or a range bound only once `clamped()` has held it at 0 or above;
+- the dialer calls `SpoolURL.isAcceptable` again on the canonical URL;
+- a hostile-input test for each: an oversize record, short and long ids, `retryMs = Int64.max`, `powBits` of -1 and 64,
+  and a listing of 128K empty ids.
+
+P6 owes two more:
+
+- the consent sheet names the host the dialer will use, from the same parse, never `SpoolURL.host`;
+- it says what an added relay learns: the scope ids it is given, timings and the phone's IP address.
 
 Each phase that adds a target or a directory updates `architecture.md`, and the reviewers' paths in
 `.claude/hooks/review-gate.conf` and `.agents/rules/owners.md`: `Sources/KnitMesh/Spool` for the blobs and security

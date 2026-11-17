@@ -701,6 +701,10 @@ explicit direction.** Update this file in the change that ships an item.
   - P7, the device trials: an iPhone and a Pixel with Bluetooth apart, over `public-1`.
 
   Deferred, each with an amendment of its own:
+  - our own unanswered reset's scopes (knit-next ADR 2026-10.j67x), with the two ratchet rules they need: the slot a
+    second re-root keeps and the race an old era's own init must not start. One crypto phase, ahead of group scopes;
+  - the reclaim of an abandoned init after a race (knit-next ADR 2026-10.4mjm), without which a pair split by a race and
+    a restore stays split over the relay;
   - group scopes: the group root's mint, adoption, re-mint and gossip, the founding roster and the group frame-set rule;
   - applying a received ctl 7, which matters once knit-next turns its `SPOOL_DIRECTORY` on and homes move off
     `public-1`;

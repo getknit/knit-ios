@@ -10,12 +10,14 @@ FuzzAdvert gets a pinned advert and a node id, FuzzContactCard knit-next's two c
 and a verify code (docs/CONTACT_CARD.md §5), and FuzzExiflessJPEG small JPEGs carrying an orientation in a little-endian
 (II) and a big-endian (MM) EXIF, the two real EXIF blocks from knit-ios #12 (Knit for Android's and the one Photos wrote
 over it, as KnitTestSupport's JPEGFixture pins them), an XMP APP1 alone, and a trailer after EOI. FuzzLinkPreview gets
-knit-next's two link-preview card vectors and a few addresses a card's check must judge. `scripts/fuzz.sh` calls
+knit-next's two link-preview card vectors and a few addresses a card's check must judge. FuzzSpool gets every spool record
+and HELLO from `spool-v1.json` and its three invite links, bare, in text and behind each prefix. `scripts/fuzz.sh` calls
 this into a scratch directory; the committed Fuzz/Corpus/ holds only inputs that once found a bug.
 """
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import struct
@@ -75,13 +77,21 @@ PAGES = {
     "redirect-pair": b"https://example.com/a/b/c?q\n../../d;p?y#f",
 }
 
+def invite_body(url: str) -> bytes:
+    """A relay invite's body, `{v: 1, u: url}`, as the house CBOR writes it."""
+    encoded = url.encode()
+    head = bytes([0x78, len(encoded)]) if len(encoded) < 256 else bytes([0x79]) + struct.pack(">H", len(encoded))
+    return bytes([0xA2, 0x61]) + b"v" + bytes([0x01, 0x61]) + b"u" + head + encoded
+
+
 def main() -> int:
     if len(sys.argv) != 2:
         sys.exit(__doc__)
     out = Path(sys.argv[1])
     vectors = json.loads((ROOT / "Tests" / "Vectors" / "wire-v1.json").read_text(encoding="utf-8"))["vectors"]
     for harness in (
-        "FuzzCBOR", "FuzzLinkRecords", "FuzzAdvert", "FuzzContactCard", "FuzzExiflessJPEG", "FuzzLinkPreview", "FuzzOpenGraph"
+        "FuzzCBOR", "FuzzLinkRecords", "FuzzAdvert", "FuzzContactCard", "FuzzExiflessJPEG", "FuzzLinkPreview", "FuzzOpenGraph",
+        "FuzzSpool",
     ):
         (out / harness).mkdir(parents=True, exist_ok=True)
     for name, hexed in vectors.items():
@@ -118,6 +128,21 @@ def main() -> int:
     }
     for name, picture in pictures.items():
         (out / "FuzzExiflessJPEG" / name).write_bytes(picture)
+    spool = json.loads((ROOT / "Tests" / "Vectors" / "spool-v1.json").read_text(encoding="utf-8"))
+    for name, hexed in {**spool["scope"]["Records"], **spool["helloVariants"]}.items():
+        (out / "FuzzSpool" / name).write_bytes(bytes.fromhex(hexed))
+    spoofs = {
+        "invite-user-info": "wss://relay.example@other.example/spool/v1",
+        "invite-backslash": "wss://other.example\\relay.example/spool/v1",
+        "invite-bidi": "wss://\u202egro.elpmaxe/spool/v1",
+        "invite-lookalike": "wss://r\u0435lay.example/spool/v1",
+    }
+    for name, url in spoofs.items():
+        body = invite_body(url)
+        (out / "FuzzSpool" / name).write_bytes(("knit://r/" + base64.urlsafe_b64encode(body).rstrip(b"=").decode()).encode())
+    for name, invite in spool["relayInvite"].items():
+        (out / "FuzzSpool" / f"{name}-link").write_bytes(("https://getknit.app/r#" + invite["link"]).encode())
+        (out / "FuzzSpool" / f"{name}-scheme").write_bytes(("Join: knit://r/" + invite["link"] + " thanks").encode())
     for name in ("linkPreviewBlob", "linkPreviewBlobTextOnly"):
         (out / "FuzzLinkPreview" / name).write_bytes(bytes.fromhex(vectors[name]))
     addresses = {

@@ -31,10 +31,16 @@ protocol byte for byte and needs no Android change.
   both, and the Kotlin wins (`.agents/rules/interop.md`).
 - **Scopes come from the session root, on demand.** `pairwiseRoot = HKDF(root, "knit/dm/v2/export/root")` from the
   `root` and `prevRoot` the session already stores, so no column and no migration. It is derived for confirmed sessions
-  only. A `prevRoot` inside its drain is a retiring scope, pulled but never refilled. While our own reset is unanswered,
-  the replaced root's scope stays retiring and takes that one flagged reset, and the new root's scope is derived too
-  (knit-next ADR 2026-10.j67x). The roots never leave `KnitMesh/Ratchet`: the plane gets a scope id, a seal key and a
-  nonce key. `/export/epoch` and `sendEpochExport` stay out; they are reserved for a seal version 2 nobody sends.
+  only, Kotlin's `exports` rule unchanged, since two phones meet only in a scope both derive (knit/knit-next#290 bears on
+  that rule). A `prevRoot` inside its drain is a retiring scope, pulled but never refilled. The roots never leave
+  `KnitMesh/Ratchet`: the plane gets a scope id, a seal key and a nonce key. `/export/epoch` and `sendEpochExport` stay
+  out; they are reserved for a seal version 2 nobody sends.
+- **Our own unanswered reset exports nothing yet** (P2's design pass, 2026-11-16). Android keeps the replaced root's
+  scope for it and refills that scope with the reset alone (knit-next ADR 2026-10.j67x), and that exception needs two
+  ratchet rules this port has not taken: the slot a second re-root keeps, and the race an old era's own init must not
+  start. Without them a relay-only pair could go dark or split onto two roots, so the exception lands with both rules
+  as one unit, a crypto phase of its own. Until then a reset this iPhone sends reaches a relay-only peer over the
+  radios alone.
 - **The spool mirrors custody, both ways.** Each live custody frame a scope's rule admits is sealed and pushed when the
   spool lacks it: our own text, the sealed ✓✓ receipt (ctl 5, already carried) and the republished profile, which is
   how a relay-only contact learns a rotated prekey. A pulled frame that opens, verifies against the pinned key and
@@ -43,10 +49,13 @@ protocol byte for byte and needs no Android change.
 - **Relays.** `public-1` is seeded; the person adds others by invite link (`https://getknit.app/r#…` or `knit://r/…`,
   `docs/RELAY_INVITE.md`), applied only after a consent sheet, with the commons fields `c`/`n` and Knit Anywhere's
   `i`/`k` ignored. A master switch, off until the person consents, runs the plane; a per-relay park keeps a relay
-  without using it (knit-next ADR 063). The list lives in `AppPreferences`, each private relay's token inside its
-  `?k=` URL and redacted wherever a URL is shown, as Android keeps it (knit-next ADR 2026-09.66cw). The security
-  reviewer's design pass decides whether the tokens move into the Keychain item instead (ADR 2026-09.tkww). Release
-  refuses `ws://` at entry and again at dial (C-7.1-2).
+  without using it (knit-next ADR 063). The list lives in `AppPreferences`, but a private relay's `?k=` URL, token and
+  all, lives in a Keychain item, `AfterFirstUnlockThisDeviceOnly` (ADR 2026-09.tkww): `UserDefaults` is backed up and
+  sits outside the database's protection. Android keeps the token in the clear (knit-next ADR 2026-09.66cw); the
+  security review of P1 moved it here (2026-11-16). A URL is redacted wherever it is shown. Release refuses `ws://` at
+  entry and again at dial (C-7.1-2).
+- **An invite's relay URL is plain.** Its bytes are printable ASCII and its authority names a host alone, with no `@`
+  and no `\`, so the host a person is shown is the host the socket dials (P1's security review).
 - **One gate.** `spoolEnabled` is `DEBUG` and the switch. The plane, the settings row and invite handling read it, and
   `check.sh release` fails a store build that carries the plane, as it does link cards (ADR 2026-11.hcvg).
 - **No scope config is sent.** The iPhone never sends ctl 7, so Android counts it undeclared and keeps the pair on
@@ -77,7 +86,11 @@ protocol byte for byte and needs no Android change.
   spool has no push. A relay DM to an iPhone arrives the next time Knit is open, with no notification before then.
   Background refresh is a later phase, and copy must name the boundary (`.agents/rules/copy.md`).
 - **Confirmed sessions only.** A contact whose session never confirmed, first contact included, cannot be reached by
-  relay until pair scopes land. Groups stay on Bluetooth.
+  relay until pair scopes land, and neither can one whose reset this iPhone sent and the peer has not answered. Groups
+  stay on Bluetooth.
+- **Two roots stay two roots over the relay.** A pair split by a race and a restore, which Kotlin reclaims through its
+  abandoned init and this port does not (ADR 2026-10.5sk9, knit-next ADR 2026-10.4mjm), derives disjoint scopes, so it
+  stays split until the radios meet and a reset heals it.
 - **What a spool sees** (spec §10): scope ids, blob sizes, timings and the phone's IP address, never node ids or
   content. `public-1` is run by the Knit project.
 - **Proof of work** costs about a million SHA-256 rounds per new scope per day at the spool's usual 20 bits, mined off

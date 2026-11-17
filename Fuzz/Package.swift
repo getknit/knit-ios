@@ -26,6 +26,7 @@ let package = Package(
             dependencies: [.product(name: "KnitCrypto", package: "knit-ios"), .product(name: "KnitWire", package: "knit-ios")]
         ),
         .executableTarget(name: "FuzzLinkPreview", dependencies: [.product(name: "KnitWire", package: "knit-ios")]),
+        .executableTarget(name: "FuzzSpool", dependencies: [.product(name: "KnitWire", package: "knit-ios")]),
         .executableTarget(
             name: "FuzzOpenGraph",
             dependencies: [.product(name: "KnitAppCore", package: "knit-ios"), .product(name: "KnitWire", package: "knit-ios")]

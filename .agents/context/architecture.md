@@ -9,7 +9,7 @@ code that builds and tests on Linux, or a thin radio adapter for one platform. T
 | Target | Builds on | Role | Phase |
 | --- | --- | --- | --- |
 | `KnitSync` | all | `Lock`, the lock every target uses in place of `Synchronization.Mutex` (ADR 2026-09.ahrr) | P6 |
-| `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold | P1 |
+| `KnitWire` | all | CBOR (kotlinx profile), wire types, registries, link records, HELLO/DIGEST, advert, NodeId/FrameId/FrameKey, UTF-16 limits, FNV fold, and the spool's record layer, relay URLs and relay invites (ADR 2026-11.adrq) | P1 |
 | `KnitCrypto` | all | identity and bundle, node id, sign/verify, v1 DM and group seal/open, a chat photo's seal/open (ADR 2026-10.6cas), group ids, safety number, the verify code, the signed contact card (ADR 2026-10.tpr5), alias words, identities minted inside a node id window | P2 |
 | `KnitStore` | all | repository protocols and in-memory stores (messages and their status lines and reactions, groups and their rosters among them, blobs, the people blocked, and the ids of deleted messages, ADR 2026-10.u7cq), the ratchet's store unit and its form in memory, the ratchet's session store in memory and the retention rules every ratchet store applies (ADR 2026-10.5sk9), and the custody rules every store applies | P3 |
 | `KnitStoreSQL` | all | the `KnitStore` protocols on SQLite through GRDB: the frozen schema, its migrations and the SQL stores, the store unit on the database, and the blob store's files beside the database | P5 |
