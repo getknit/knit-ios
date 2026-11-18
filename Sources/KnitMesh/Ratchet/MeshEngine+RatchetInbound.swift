@@ -173,6 +173,7 @@ extension MeshEngine {
     /// A typed failure of `open`'s frame, counted, and fed to the reset heuristic when it is evidence.
     private func refusedOpen(_ open: DirectOpen, failure: RatchetEngine.OpenOutcome.Failed) {
         refused(open.envelope, failure, header: open.header)
+        noteSpoolUndelivered(open.envelope, route: open.route)
         if RatchetInbound.countsTowardReset(failure, route: open.route) {
             let base = failure == .epochGone ? open.header.pe : nil
             unreadable(open.envelope, from: open.sender, now: open.now, epochGoneBase: base)
@@ -189,6 +190,7 @@ extension MeshEngine {
     /// failure counts there (ADR 2026-11.adrq, P4a).
     private func resolvedStale(_ open: DirectOpen, failure: RatchetEngine.OpenOutcome.Failed, resetsAtOnce: Bool) {
         refused(open.envelope, failure, header: open.header, stale: true)
+        noteSpoolUndelivered(open.envelope, route: open.route)
         guard open.route.signed, open.route.origin == .firstVerdict, !open.route.isSpool else {
             return
         }
@@ -283,6 +285,7 @@ extension MeshEngine {
         drop(.storeRefused, envelope)
         log.log(.warning, "mesh ratchet frame \(envelope.id) from \(envelope.senderId) left for the replay: a store failed")
         ratchetReplay.keep(envelope, route: route)
+        noteSpoolUndelivered(envelope, route: route)
         if route.origin == .firstVerdict {
             _ = router.reopen(envelope.id, now: clock.monotonicMilliseconds())
         }

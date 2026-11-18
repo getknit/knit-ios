@@ -82,6 +82,18 @@ import Testing
         #expect(newWindow == [true] && newReopen, "a new window, and a new reopen")
     }
 
+    @Test func aReopenIsRememberedForItsWindowWhateverCameSince() {
+        var seen = SeenSet(windowMilliseconds: 10_000)
+        _ = Self.insert([("dm", 0), ("other", 0)], into: &seen)
+        #expect(!seen.wasReopened("dm", now: 0), "seen, never reopened")
+        let reopened = seen.reopen("dm", now: 1)
+        #expect(reopened)
+        _ = Self.insert([("dm", 2)], into: &seen)
+        #expect(seen.wasReopened("dm", now: 10_000), "the re-seal since leaves the reopen remembered")
+        #expect(!seen.wasReopened("dm", now: 10_001), "until its window has passed")
+        #expect(!seen.wasReopened("never", now: 1) && !seen.wasReopened("other", now: 1))
+    }
+
     @Test func aReopenedIdGoesToTheBackOfTheLine() {
         var seen = SeenSet(capacity: 2)
         _ = Self.insert([("a", 0), ("b", 0)], into: &seen)

@@ -24,9 +24,19 @@ public struct SystemClock: MeshClock {
         Self.base + Self.milliseconds(ContinuousClock.now - origin)
     }
 
+    /// Sleeps until `deadline`, which may be any `Int64`. Callers use `.min` for "due now" and a saturated `Int64.max`
+    /// for "never", so a deadline at or before the origin returns at once, and one past ``farthest`` wakes there and
+    /// the caller arms its timer again.
     public func sleep(untilMonotonic deadline: Int64) async throws {
-        try await Task.sleep(until: origin.advanced(by: .milliseconds(deadline - Self.base)), clock: .continuous)
+        let bounded = min(max(deadline, Self.base), Self.farthest)
+        try await Task.sleep(until: origin.advanced(by: .milliseconds(bounded - Self.base)), clock: .continuous)
     }
+
+    /// A hundred years past the origin: far enough that no timer meets it, near enough that its instant stays inside
+    /// what `Task.sleep` can count in nanoseconds.
+    static let farthest: Int64 = base + centuryMilliseconds
+    /// 100 years of 365 days, in milliseconds.
+    private static let centuryMilliseconds: Int64 = 3_153_600_000_000
 
     private static func milliseconds(_ duration: Duration) -> Int64 {
         let (seconds, attoseconds) = duration.components

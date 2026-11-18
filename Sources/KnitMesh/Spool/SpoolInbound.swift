@@ -1,3 +1,5 @@
+import KnitWire
+
 /// What the engine's spool door keeps between candidates (``MeshEngine/receiveFromSpool(_:relay:)``, ADR 2026-11.adrq,
 /// P4a): the engine's one bridge budget, and the counts `status` reads. Pure, its times on the monotonic clock the caller
 /// passes.
@@ -20,11 +22,18 @@ internal struct SpoolInbound: Sendable {
         var bridged = 0
         /// Frames newly carried that the bridge budget left to custody's own digest exchange.
         var bridgeDeferred = 0
+        /// Candidates whose ratchet open was refused, or left for the replay, so they delivered nothing: none is bridged,
+        /// and the door takes back its mark when custody already held the id.
+        var undelivered = 0
     }
 
     private(set) var counts = Counts()
     /// The engine's one bridge budget, shared by every relay, full from its first use.
     private var bridge: SpoolBridgeBudget?
+    /// The id whose spool-borne ratchet open was refused, or left for the replay, last. The door clears it before each
+    /// delivery (``beginDelivery()``) and reads it back right after (``takeUndelivered(_:)``), so a note a replay or a
+    /// seed's release leaves between candidates is never read for a later one.
+    private var undelivered: ExactKey?
 
     /// Takes a bridge token at `now`, for a frame the router will schedule, and counts what came of it.
     mutating func takesBridgeToken(now: Int64) -> Bool {
@@ -59,6 +68,28 @@ internal struct SpoolInbound: Sendable {
 
     mutating func noteDuplicate() {
         counts.duplicates += 1
+    }
+
+    /// Clears the note before the door delivers a candidate.
+    mutating func beginDelivery() {
+        undelivered = nil
+    }
+
+    /// The ratchet refused the open of `id`, a frame a spool served, with a typed failure, or left it for the replay.
+    mutating func noteUndelivered(_ id: String) {
+        undelivered = ExactKey(id)
+    }
+
+    /// Whether the delivery of `id` just made was noted undelivered, counted when it was; clears the note either way.
+    mutating func takeUndelivered(_ id: String) -> Bool {
+        defer {
+            undelivered = nil
+        }
+        guard undelivered == ExactKey(id) else {
+            return false
+        }
+        counts.undelivered += 1
+        return true
     }
 }
 

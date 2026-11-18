@@ -287,7 +287,7 @@ public final class MeshEngine {
             // that were still relayed.
             log.log(.debug, "mesh drop \(frame.envelope.type.rawValue) \(frame.envelope.id) from \(frame.envelope.senderId): nonCanonical")
             return
-        case .duplicate, .refused:
+        case .duplicate, .refused, .reopened:
             return
         }
         deliver(frame)

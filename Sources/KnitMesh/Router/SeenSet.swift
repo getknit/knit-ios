@@ -67,4 +67,14 @@ public struct SeenSet: Sendable {
         reopened.stamp(id, at: now)
         return true
     }
+
+    /// Whether ``reopen(_:now:)`` let `id` through inside the window, whether or not a copy has come since: the spool's door
+    /// reads it so a copy a relay serves under that id is no first sight (``Router/admitPulled(envelope:now:)``). As bounded
+    /// as the reopens it reads: the last 256 ids, each for one window.
+    public func wasReopened(_ id: String, now: Int64) -> Bool {
+        guard let reopenedAt = reopened[id] else {
+            return false
+        }
+        return now - reopenedAt < window
+    }
 }

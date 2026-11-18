@@ -235,11 +235,16 @@ enum SpoolCandidates {
     }
 
     @Test func aRefusalOfTheFramesOwnBytesIsRefusedByCarryAndMarksNothing() {
-        #expect(MeshEngine.pulledAdmission(nil, heldBefore: false) == .settled(.refusedByCarry), "the carry gate refused it")
-        #expect(MeshEngine.pulledAdmission(.nonCanonical, heldBefore: true) == .settled(.refusedByCarry))
-        #expect(MeshEngine.pulledAdmission(.new, heldBefore: false) == .new)
-        #expect(MeshEngine.pulledAdmission(.refused, heldBefore: false) == .unheld)
-        #expect(MeshEngine.pulledAdmission(.duplicate, heldBefore: true) == .settled(.delivered(keptLive: true)))
+        let bytes: [UInt8] = [1, 2]
+        let held = MeshEngine.HeldCopy.held(signed: bytes)
+        #expect(MeshEngine.pulledAdmission(nil, held: .absent, served: bytes) == .settled(.refusedByCarry), "the carry gate refused it")
+        #expect(MeshEngine.pulledAdmission(.nonCanonical, held: held, served: bytes) == .settled(.refusedByCarry))
+        #expect(MeshEngine.pulledAdmission(.new, held: .absent, served: bytes) == .new)
+        #expect(MeshEngine.pulledAdmission(.refused, held: .absent, served: bytes) == .unheld)
+        #expect(MeshEngine.pulledAdmission(.duplicate, held: held, served: [3]) == .settled(.delivered(keptLive: true)))
+        #expect(MeshEngine.pulledAdmission(.reopened, held: held, served: bytes) == .settled(.delivered(keptLive: true)), "judged")
+        #expect(MeshEngine.pulledAdmission(.reopened, held: held, served: [3]) == .reopened, "other bytes open once")
+        #expect(MeshEngine.pulledAdmission(.reopened, held: .absent, served: bytes) == .reopened)
         var inbound = SpoolInbound()
         inbound.note(.refusedByCarry)
         #expect(inbound.counts.refusedByCarry == 1)

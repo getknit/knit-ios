@@ -54,6 +54,9 @@ public struct Router: Sendable {
         /// Android refuses it at the same point (`MeshRouter.kt:96` at knit-next `a81f2050`, knit-next ADR 2026-10.9qr4),
         /// so a copy this port kept would be re-served to every Android neighbour at every exchange.
         case nonCanonical
+        /// A spool's copy of an id the radios' set let past for a re-seal inside its window (``admitPulled(envelope:now:)``):
+        /// marked in neither set. The radios' door never answers it.
+        case reopened
     }
 
     /// What the router has done, for diagnostics and tests.
@@ -76,6 +79,9 @@ public struct Router: Sendable {
         public var spoolAdmitted = 0
         /// Frames a spool served that were already seen, counted apart from ``deduplicated``.
         public var spoolDeduplicated = 0
+        /// Frames a spool served under an id the radios' set let past for a re-seal inside its window, answered as
+        /// duplicates and marked in neither set (``Router/admitPulled(envelope:now:)``).
+        public var spoolReopened = 0
         /// Frames a spool served with an id not of their type's shape, counted apart from ``nonCanonical``.
         public var spoolNonCanonical = 0
         /// Spool frames scheduled onto the radios (the bridge), counted apart from the relays they become.
@@ -162,12 +168,24 @@ public struct Router: Sendable {
     /// neither counts toward cancelling a relay nor is ever skipped when one fires (`MeshRouter.kt:64`, `:132-136` at
     /// knit-next `0832b8462`). The heal loop's hourly budget bounds what a spool can bring. The id goes into the spool's own
     /// set, never the radios' (P4b1), and an id either set holds is a duplicate.
+    ///
+    /// An id the radios' set let past for a peer's re-seal (``reopen(_:now:)``) inside its window is ``Admission/reopened``,
+    /// counted as ``Counters/spoolReopened`` and marked in neither set: the door settles a copy whose bytes custody holds
+    /// and opens any other once, and only a copy that delivers is marked (``markPulled(_:now:)``). It is the cheap path
+    /// alone: the door also takes back the mark of a copy that did not deliver (``reopenPulled(_:)``), so a flushed or
+    /// lapsed reopen costs one failed open. Kotlin keeps one seen set, where a relay's copy after the reopen takes the mark
+    /// (`MeshRouter.kt:130` at knit-next `0832b8462`); this port marks only what delivered (ADR 2026-11.adrq, P7 prep).
     public mutating func admitPulled(envelope: RelayEnvelope, now: Int64) -> Admission {
         guard FrameId.admits(envelope) else {
             counters.spoolNonCanonical += 1
             return .nonCanonical
         }
-        guard !seen.contains(envelope.id, now: now), spoolSeen.insert(envelope.id, now: now) else {
+        let heard = seen.contains(envelope.id, now: now) || spoolSeen.contains(envelope.id, now: now)
+        if !heard, seen.wasReopened(envelope.id, now: now) {
+            counters.spoolReopened += 1
+            return .reopened
+        }
+        guard !heard, spoolSeen.insert(envelope.id, now: now) else {
             counters.spoolDeduplicated += 1
             return .duplicate
         }
@@ -247,9 +265,16 @@ public struct Router: Sendable {
 
     /// Takes back the seen mark ``admitPulled(envelope:now:)`` just made for `id`, when the spool's door could not take the
     /// frame (a store unit failed): the next round's copy is new again, however many times the store fails, so a frame is
-    /// never left seen and unheld (ADR 2026-11.adrq, P4a). Only after an admission that answered ``Admission/new``.
+    /// never left seen and unheld (ADR 2026-11.adrq, P4a). Also when the copy's ratchet open delivered nothing and custody
+    /// already held the id (P7 prep). Only after an admission that answered ``Admission/new``.
     mutating func reopenPulled(_ id: String) {
         spoolSeen.forget(id)
+    }
+
+    /// Marks `id` in the spool's set, for a copy ``admitPulled(envelope:now:)`` answered ``Admission/reopened`` that has
+    /// since delivered: from then on it is an ordinary delivered copy.
+    mutating func markPulled(_ id: String, now: Int64) {
+        _ = spoolSeen.insert(id, now: now)
     }
 
     /// Lets one more copy of `id` in inside its window (``SeenSet/reopen(_:now:)``), from whichever set holds it, since both

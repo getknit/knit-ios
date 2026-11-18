@@ -714,6 +714,11 @@ explicit direction.** Update this file in the change that ships an item.
   - pair scopes, for a contact known only from a card;
   - the release flip: the privacy manifest, the store's answers and the changelog, and before it the miner's window
     buckets and found stamps kept in the database (P4b2's owed line, which P6 moved here);
+  - the two re-seal limits, closed together in a fix paired with knit-next: the spool door's first-sight mark and the
+    radio's own reopen (spool.md's two accepted limits). The shape suggested: when a first-sight copy fails, take back the
+    id's mark and stamp a memo keyed by `ExactKey(id)` and the SHA-256 of `signed`, 256 entries for one window each, which
+    both doors read, a copy whose bytes match it a duplicate, neither opened, counted nor marked, and any other bytes let
+    through. Closed, or accepted again by the maintainer, before the release flip (G6);
   - `/r` in getknit.app's association file. On 2026-11-17 the file, from the site and from Apple's CDN, listed `/c`
     alone, so a tapped `https://getknit.app/r#…` opens the website, whose scripts can read the fragment and whose history
     keeps it. `knit://r/…` opens Knit in a debug build. The site's file claiming `/r` for both bundle ids, and the app's

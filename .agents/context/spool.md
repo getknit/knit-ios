@@ -263,6 +263,21 @@ any set. What P4 wires:
   (`MeshEngine.pulledAdmission`). Then custody's carry through `CustodySync.carrying`, which surfaces `.writeFailed`
   (`.notTaken`); delivery with no link (a chat's route is `.spool`, its hop `nil`; a profile as any is); `keptLive` in a
   unit of its own (`.notTaken` on failure). Every custody outcome, refusals included, is `.delivered`.
+- **A spool's mark stands for a copy that delivered, or for this node's first sight of the id.** A DM a spool served
+  whose ratchet open is refused with a typed failure, or left for the replay (`SpoolInbound.noteUndelivered`, read back
+  by the door in the same turn), has the mark its admission made taken back (`Router.reopenPulled`) when custody already
+  held the id before the turn, and is never bridged. A first sight (custody held nothing under the id) keeps its mark, so
+  the radio's copy of the same bytes is a duplicate and counts toward no reset; that mark can deduplicate the re-seal
+  (the accepted limit, a spool's first sight, below). Bound: a stale copy that keeps arriving
+  costs one failed open per copy, which counts no reset evidence on the spool route, within the heal's hourly budget.
+  Counted: `spoolInbound.counts.undelivered`, `status`'s `undelivered`.
+- **The reopen's cheap path.** Inside the radios' window after `Router.reopen` let an id past for a peer's re-seal
+  (`SeenSet.wasReopened`: the last 256 reopens, 10 minutes each), and while neither set marks the id, `Router.admitPulled`
+  answers `.reopened`, counted `spoolReopened`, and marks nothing. The door compares the copy's signed bytes with
+  custody's under that id: equal settles `.delivered(keptLive: true)` unopened; different, or not held, is carried and
+  opened once, unmarked and unbridged until it delivers, and a copy that delivers is marked (`Router.markPulled`) and
+  bridged as a first sight would be. A reopen that lapsed or was pushed out of the 256 removes only this path: the copy
+  is then a first sight, and the rule above takes its mark back.
 - **A failed unit takes back the mark this turn made** (`Router.reopenPulled`, `SeenSet.forget`), never `reopen`, which is
   once per window: a second failure must not leave an id seen and unheld. An id the router saw before the turn keeps its
   mark. And a `.notTaken` candidate owes its scope a listing (`ScopeState.listOwed`): a live `event` moves no anchor, so
@@ -271,11 +286,22 @@ any set. What P4 wires:
   late, as a flood heard from nobody (`Router.relayPulled`), under one `SpoolBridgeBudget` per engine shared by every relay
   (32 in a burst, one back every two seconds), a token spent only on a frame the router schedules (`Router.relaysPulled`).
   Over it, the frame is kept and custody's digest exchange carries it. Counts: `spoolInbound.counts.bridged`,
-  `.bridgeDeferred`, the router's `spoolAdmitted`, `spoolDeduplicated`, `spoolNonCanonical`, `spoolBridged`.
+  `.bridgeDeferred`, the router's `spoolAdmitted`, `spoolDeduplicated`, `spoolReopened`, `spoolNonCanonical`,
+  `spoolBridged`. A copy is bridged only once it delivered.
 - **No reset evidence from a spool** (`.agents/context/crypto.md`, the reset heuristic). A relay's copy of a DM this phone
   already holds is never acknowledged again; a first delivery over the relay is. Accepted limit: a peer's re-sealed copy
   of a DM this phone already holds, reaching it only by a relay, earns no new ✓✓ until a radio copy arrives; it belongs to
   the deferred reset unit.
+- **Accepted limit, a spool's first sight.** When custody here does not hold a DM's id (it never received it, lost it
+  to eviction or expiry, or refused the carry, `CustodyRefusal.aheadOfWindow` for a sender's clock more than 5 minutes
+  fast) and no reopen of it is live, a spool copy that fails to open is a first sight and keeps its mark, and that mark
+  deduplicates the peer's re-seal of the id for the window, at either pass. Pinned by
+  `SpoolSeenSetsTests.aFirstSightOfXsOldSealBeforeTheSecondPassKeepsItsMark` as a known issue. It closes with the next
+  limit, in the same paired fix (`.agents/memory/roadmap.md`).
+- **Accepted limit, the radio's own reopen.** When custody here lost a DM that failed to open by radio and was reopened,
+  the peer's custody re-serves it by radio at the next digest; that copy is admitted as new, fails, and takes a radio mark,
+  and `SeenSet.reopen` lets one copy past per window, so the mark deduplicates the peer's second re-seal pass. Kotlin's one
+  seen set does the same. It is left for a fix paired with knit-next.
 - **The table's inputs** (`Spool/MeshEngine+SpoolTable.swift`): `dmScopes`, `DirectContacts.candidates`, the blocked ids
   (the device-tag blocks resolved over every pinned peer) and our own activity (our send time, a peer's arrival here,
   from the thread heads) are each read in a unit of their own; any `nil` keeps the table and keeps it dirty. It is read
@@ -372,9 +398,16 @@ any set. What P4 wires:
   inside 10 minutes. Pass: no reset counted, no second open, `noteUndecryptable` never called for X; the peer's
   reset-evidence counters can stand in for a `noteUndecryptable` hook. Not written in P4b1: serving X sealed under a
   session A does not hold inside A's confirmed scope needs a second-session seal helper beyond a small one.
-- **Before P7**, the reverse two-engine test: three radio failures seal A's reset; the retiring scope then serves X's old seal before B's re-seal
-    arrives by radio. Pass: the re-seal is delivered within the second re-seal's ~11 minutes on the manual clock, and
-    both sides confirm the same `rootHash` after.
+- **Before P7** (met: `SpoolSeenSetsTests`, its relay-replay and honest-path cases, 2026-11-17), the reverse two-engine
+  test: radio failures seal A's reset; a spool then brings X's old seal before B's re-seal arrives by radio. Pass: the
+  re-seal is delivered by the second re-seal pass on the manual clock, A leaves no mark of the copy that failed, and both
+  sides confirm the same `rootHash` after. The fresh scope exists only once B's answer confirms the reset (j67x is
+  deferred), so every case confirms with B's other re-seals and holds X's back. The relay replay: the retiring scope serves
+  the bytes A failed 10 s, 2 minutes and 630 s after X's failure, and twice, 5 minutes after the reset and 601 s after X's
+  failure. The honest path: B's heal pushes its custodied X into the fresh scope, a live `event` to A, 10 s, 2 minutes and
+  630 s after the adoption; with the reset reaching B 15 minutes late; with the reset sealed 9 minutes after X's failure;
+  with X gone from A's custody; and with 300 other reopens after X's, driven through A's router. And B's custody lost X
+  before its re-seal, so the re-seal reaches A by the fresh scope alone, and lands.
 
 ### The miner as P4b2 left it (2026-11-17)
 

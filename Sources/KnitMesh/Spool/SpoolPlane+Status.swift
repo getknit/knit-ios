@@ -126,7 +126,7 @@ internal struct SpoolLogBook: Sendable {
         [
             "delivered": counts.delivered, "unopenable": counts.unopenable, "notTaken": counts.notTaken,
             "refusedByCarry": counts.refusedByCarry, "oversizeProfiles": counts.oversizeProfiles, "duplicates": counts.duplicates,
-            "bridged": counts.bridged, "bridgeDeferred": counts.bridgeDeferred,
+            "bridged": counts.bridged, "bridgeDeferred": counts.bridgeDeferred, "undelivered": counts.undelivered,
         ]
     }
 

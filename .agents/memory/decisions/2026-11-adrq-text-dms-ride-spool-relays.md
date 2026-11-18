@@ -431,3 +431,20 @@ protocol byte for byte and needs no Android change.
   them again. Persisting them in the database is owed before the release flip, and the plane does not ship in a store build
   before then. The DM phases keep the schema as it is.
 - None of it changes what a spool or a peer receives: no record, field or capability moves.
+
+**Amended 2026-11-17 (P7 prep, a spool's mark; a draft until the maintainer accepts it):**
+
+- **A spool's mark stands for a copy that delivered, or for this phone's first sight of the id.** A DM a spool served
+  whose ratchet open fails, under an id custody already held, leaves no mark in the spool's seen set and is not bridged,
+  so the bytes that failed never stop the peer's re-seal at either pass, however late they come. A first sight keeps its
+  mark, so the radio's copy of the same bytes counts toward no reset. That earlier first-sight mark can still stop the
+  re-seal at either pass: when custody does not hold the id, whether it never received it, lost it to eviction or expiry,
+  or refused the carry for a sender's clock more than 5 minutes fast, and no reopen of it is live. This limit and the
+  radios' own reopen limit close together in a fix paired with knit-next, before the release flip. A stale copy that keeps
+  arriving costs one failed open per copy, which counts nothing toward a reset.
+- **A reopen is a cheap path.** For the radios' window after a counted failure lets an id past for the peer's re-seal, a
+  spool's copy under that id is marked nowhere until it delivers: one whose signed bytes custody already holds settles
+  unopened, and any other is opened once. Losing the reopen removes only this path.
+- Kotlin keeps one seen set, where a relay's copy takes the mark whether or not it opened; this port marks a copy that
+  failed only at its first sight. A spool copy is bridged onto the radios only once it delivered. Nothing a spool
+  receives changes, and a peer receives fewer bridged frames.
