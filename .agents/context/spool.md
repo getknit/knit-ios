@@ -144,7 +144,7 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 | P4b2 | the stamp miner (`SpoolMiner`): serials, one search per value, the runner off the actor, the engine cache, the budget and its shares, pause, counts | done 2026-11-17 |
 | P5 | `KnitSpoolNet` (the address check, the URLSession adapter), the stub server and the test socket, `check.sh spool` against the daemon | done 2026-11-17 |
 | P6 | the app: the live mesh's factory and start paused, the scene's phases through one stream, the relay list, its Keychain items, the switch and consent, invites, the debug-only settings, the release markers | done 2026-11-17 |
-| P7 | device trials | |
+| P7 | device trials over `public-1` ("What P7 showed"); the lab-relay trials still owed | done 2026-11-18, in part |
 
 ### The connection as P3a left it (2026-11-16)
 
@@ -208,7 +208,7 @@ any set. What P4 wires:
   `quota` or `pow` or a refused stamp on a push, a stamp and the day's stamp count (two a scope), the hour's intake
   (`SpoolIntake`), and `Counts` for `status`. A dirty scope heals at most once per 5 s; the 60 s tick heals all.
   `ScopeHeal`, its round and step, `ScopeCandidate` and `ScopeFrame` print counts and id prefixes alone, and mirror nothing.
-- **This port's own rules** (ADR 2026-11.adrq, amended 2026-11-17, a draft): the unpushable set and when an id leaves
+- **This port's own rules** (ADR 2026-11.adrq, amended 2026-11-17, accepted 2026-11-18): the unpushable set and when an id leaves
   it; accounting at the listing; the 5 s heal floor; the hourly pull budget, priced at our own `maxBlob`, and the
   `unopenable` fault; a refused stamp on a push parks the scope; at most two stamps obtained (mined or from the engine's
   cache, P4b2) per scope per UTC day, an answer with no stamp not counted; a live event already accounted or quarantined

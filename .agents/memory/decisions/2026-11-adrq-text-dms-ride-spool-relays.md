@@ -51,8 +51,8 @@ protocol byte for byte and needs no Android change.
   `i`/`k` ignored. A master switch, off until the person consents, runs the plane; a per-relay park keeps a relay
   without using it (knit-next ADR 063). The list lives in `AppPreferences`, but a private relay's `?k=` URL, token and
   all, lives in a Keychain item, `AfterFirstUnlockThisDeviceOnly` (ADR 2026-09.tkww): `UserDefaults` is backed up and
-  sits outside the database's protection. Android keeps the token in the clear (knit-next ADR 2026-09.66cw); the
-  security review of P1 moved it here (2026-11-16). A URL is redacted wherever it is shown. Release refuses `ws://` at
+  sits outside the database's protection. The security review of P1 put it there (2026-11-16). A URL is redacted
+  wherever it is shown. Release refuses `ws://` at
   entry and again at dial (C-7.1-2).
 - **An invite's relay URL is plain.** Its bytes are printable ASCII and its authority names a host alone, with no `@`
   and no `\`, so the host a person is shown is the host the socket dials (P1's security review).
@@ -127,7 +127,7 @@ protocol byte for byte and needs no Android change.
 - **P3 lands in two parts:** P3a, the connection, backoff and the fake spool's record layer; P3b, the frame rules, the
   heal loop, the scope table and the convergence tests.
 
-**Amended 2026-11-16 (P3a, the connection; a draft until the maintainer accepts it):**
+**Amended 2026-11-16 (P3a, the connection; accepted 2026-11-18):**
 
 - **A connection reads only what answers it.** `SpoolSession` drops every record before the spool's `hello`, and a
   `digest`, `event`, `blob` or uncorrelated scoped `err` for a scope not subscribed on that connection, before anything
@@ -144,7 +144,7 @@ protocol byte for byte and needs no Android change.
   past the declared `maxBlob` comes back as an id the heal loop quarantines in its invalid set (§9.3), as Kotlin's
   `PullOutcome.oversize` does.
 
-**Amended 2026-11-17 (P3b, the frame rules and the heal loop; a draft until the maintainer accepts it):**
+**Amended 2026-11-17 (P3b, the frame rules and the heal loop; accepted 2026-11-18):**
 
 - **What a relay will never take leaves the local fold.** The unpushable set takes a held frame the listing leaves out
   when it is tombstoned there, refused by `mayRefill` (a retiring scope, our own flagged reset), past the tighter
@@ -178,7 +178,7 @@ protocol byte for byte and needs no Android change.
 - None of it changes what a spool or a peer receives beyond fewer `list`, `pull` and stamped records: no record, field or
   capability moves.
 
-**Amended 2026-11-17 (P4a, the engine's spool door; a draft until the maintainer accepts it):**
+**Amended 2026-11-17 (P4a, the engine's spool door; accepted 2026-11-18):**
 
 - **One door.** A frame a spool served enters the engine through `MeshEngine.receiveFromSpool` alone, in one synchronous
   turn: the oversize profile check, the signature against the key the engine already picks for the frame, whether custody
@@ -210,7 +210,7 @@ protocol byte for byte and needs no Android change.
 - None of it changes what a spool or a peer receives beyond fewer bridged frames on the radios: no record, field or
   capability moves.
 
-**Amended 2026-11-17 (P4b1, the connections; a draft until the maintainer accepts it):**
+**Amended 2026-11-17 (P4b1, the connections; accepted 2026-11-18):**
 
 - **A relay is dialled at an accepted address alone.** `AcceptedSpoolURL` is built only by its factory: the canonical
   form, a scheme this build dials, a plain address (printable ASCII, no `@` and no `\` in the authority), no fragment, at
@@ -267,7 +267,7 @@ protocol byte for byte and needs no Android change.
 - None of it changes what a spool or a peer receives beyond fewer pushes and bounded reads: no record, field or
   capability moves.
 
-**Amended 2026-11-17 (P4b2, the stamp miner; a draft until the maintainer accepts it):**
+**Amended 2026-11-17 (P4b2, the stamp miner; accepted 2026-11-18):**
 
 - **One miner per engine.** The plane holds the miner's bookkeeping as a value (`SpoolMiner`): the requests by serial, the
   values they wait on, the one run, the cache and the budget. Only the runner is off the actor: one serial `DispatchQueue`
@@ -321,7 +321,7 @@ protocol byte for byte and needs no Android change.
   background half the time (pass: no hashing while paused, no termination for CPU use).
 - None of it changes what a spool or a peer receives beyond fewer stamped `sub`s: no record, field or capability moves.
 
-**Amended 2026-11-17 (P5, the socket; a draft until the maintainer accepts it):**
+**Amended 2026-11-17 (P5, the socket; accepted 2026-11-18):**
 
 - **Where the socket runs.** `URLSessionSpoolSocketFactory` in `KnitSpoolNet` opens a relay's WebSocket through
   `URLSessionWebSocketTask`, one ephemeral `URLSession` per factory, on Apple platforms alone. Linux builds the module and
@@ -369,7 +369,7 @@ protocol byte for byte and needs no Android change.
   never pulls, and refuses a local tag whose ID is another.
 - None of it changes what a spool or a peer receives: no record, field or capability moves.
 
-**Amended 2026-11-17 (P6, the app; a draft until the maintainer accepts it):**
+**Amended 2026-11-17 (P6, the app; accepted 2026-11-18):**
 
 - **Relays run only at the front.** The live mesh starts with its spool paused (`Mesh(spoolStartsPaused:)`), whatever
   starts it: a launch, iOS's relaunch for Bluetooth restoration, the bridge's `start`. One serial stream carries the scene's
@@ -432,7 +432,7 @@ protocol byte for byte and needs no Android change.
   before then. The DM phases keep the schema as it is.
 - None of it changes what a spool or a peer receives: no record, field or capability moves.
 
-**Amended 2026-11-17 (P7 prep, a spool's mark; a draft until the maintainer accepts it):**
+**Amended 2026-11-17 (P7 prep, a spool's mark; accepted 2026-11-18):**
 
 - **A spool's mark stands for a copy that delivered, or for this phone's first sight of the id.** A DM a spool served
   whose ratchet open fails, under an id custody already held, leaves no mark in the spool's seen set and is not bridged,
