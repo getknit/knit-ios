@@ -22,8 +22,16 @@ extension MeshEngine {
     /// `broadcastSealedProfile` (`MeshManager.kt:2687-2688`; ``broadcastSealedProfile()``, phase P5e). A prekey's edit
     /// (``syncPrekey(atStart:)``) changes nothing presented, so it waits for the heal's fan-out, as a rotation does in Kotlin.
     /// A photo's edit pushes the photo between the two (``setAvatar(_:)``).
+    ///
+    /// A profile the store cannot read now is no profile to edit: `load()` would answer a fresh one, and the edit would
+    /// save and sign a blank name under a version every receiver takes (ADR 2026-10.5sk9, ADR 2026-11.xfcq). So nothing is
+    /// saved, signed or sealed, and the edit is dropped, logged.
     func publishEdit(_ change: (inout OwnProfile) -> Void) {
-        publishEdit(of: stores.ownProfile.load(), change)
+        guard let own = stores.ownProfile.loadIfReadable() else {
+            log.log(.warning, "mesh left our profile as it was: our profile could not be read")
+            return
+        }
+        publishEdit(of: own, change)
         broadcastSealedProfile()
     }
 

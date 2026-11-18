@@ -20,16 +20,24 @@ extension MeshEngine {
     /// hash in the clear, which an Android carrier would otherwise want and query for while our push sat queued
     /// (`InboundPipeline.onCarriedFrame`). Behind a file already streaming, the push waits for that file's END while the
     /// sealed copy goes between its chunks, as on Android, and the carrier's query is answered SENDING from the queue.
+    ///
+    /// A profile the store cannot read now is no profile to edit (``publishEdit(_:)``): the photo is dropped, logged, before
+    /// its bytes go in, so no blob is left that nothing names, nothing is pushed or sealed, and the photo it would replace
+    /// stays. The one read names both the photo replaced and the profile edited.
     public func setAvatar(_ jpeg: [UInt8]?) {
+        guard let own = stores.ownProfile.loadIfReadable() else {
+            log.log(.warning, "mesh left our photo as it was: our profile could not be read")
+            return
+        }
         let hash = jpeg.map { BlobHash(of: $0) }
-        let replaced = stores.ownProfile.load().avatarHash
+        let replaced = own.avatarHash
         guard hash != replaced else {
             return
         }
         if let jpeg, let hash {
             stores.blobs.insert(jpeg, hash: hash, mime: Self.avatarMime, storedAt: clock.wallMilliseconds())
         }
-        publishEdit(of: stores.ownProfile.load()) { $0.avatarHash = hash }
+        publishEdit(of: own) { $0.avatarHash = hash }
         for peer in neighborIds {
             pushAvatar(to: peer)
         }

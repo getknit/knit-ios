@@ -58,6 +58,25 @@ extension InternetRelaysTests {
         #expect(rig.relays.rows.isEmpty && secrets.items.isEmpty, "remove works in both cases")
     }
 
+    /// The list's bytes have their keys sorted, so a re-save of a list that did not change writes the same bytes.
+    @Test func aKeptListIsWrittenWithItsKeysSorted() throws {
+        var book = RelayBook()
+        book.entries = [RelayEntry(handle: 2, seeded: false, isPrivate: true, parked: true)]
+        book.nextHandle = 3
+        book.seeded = true
+        book.switchOn = true
+        book.consent = RelayConsent(version: 1, nonce: "ab")
+        book.pendingDeletes = [1]
+        let bytes = try #require(book.encoded)
+        let sorted =
+            #"{"consent":{"nonce":"ab","version":1},"#
+            + #""entries":[{"handle":2,"is_private":true,"parked":true,"seeded":false}],"#
+            + #""next_handle":3,"pending_deletes":[1],"seeded":true,"switch_on":true}"#
+        #expect(String(bytes: bytes, encoding: .utf8) == sorted)
+        #expect(RelayBook.read(bytes) == .stored(book))
+        #expect(book.encoded == bytes, "the same list, the same bytes")
+    }
+
     @Test func aWriteThatFailsKeepsNothingAndSpendsTheHandle() throws {
         let rig = RelayRig(target: RecordingTarget())
         rig.relays.load()

@@ -136,9 +136,12 @@ public struct RelayBook: Codable, Sendable, Equatable {
         return .stored(book)
     }
 
-    /// The bytes the preferences keep.
+    /// The bytes the preferences keep: keys sorted, so the same book always gives the same bytes and a re-save that
+    /// changes nothing rewrites nothing new.
     public var encoded: Data? {
-        try? JSONEncoder().encode(self)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(self)
     }
 
     /// A fresh consent nonce: 128 random bits as 32 hexadecimal digits.

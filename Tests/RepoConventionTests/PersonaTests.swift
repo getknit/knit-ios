@@ -12,6 +12,8 @@ import Testing
     private static let conf = ".claude/hooks/review-gate.conf"
     private static let owners = ".agents/rules/owners.md"
     private static let rounds = ".agents/rules/review-rounds.md"
+    /// The first migration the security reviewer's gate names (ADR 2026-11.xfcq's `own_profile_frame`).
+    private static let firstSecurityMigration = 25
 
     @Test func everyPersonaIsNamedForItsFileAndLinkedForClaudeCode() throws {
         let names = try personaNames()
@@ -93,6 +95,27 @@ import Testing
             #expect(gated("security-reviewer").contains(path), "security gates \(path)")
         }
         #expect(try RepoFiles.text(Self.owners).contains("`MeshEngine+OwnProfileFrame`"), "\(Self.owners) names the frame's reviewers")
+    }
+
+    /// Every migration from v25 on is the security reviewer's: at-rest storage is a trust boundary (`owners.md`), and the
+    /// conf names files, so a new `Schema+V<n>.swift` fails here until its line in the conf gates it.
+    @Test func everyMigrationFromV25IsGatedForSecurity() throws {
+        let gated = try gateLines().first { $0.name == "security-reviewer" }?.paths ?? []
+        let directory = "Sources/KnitStoreSQL"
+        let files = try FileManager.default.contentsOfDirectory(atPath: RepoFiles.root.appendingPathComponent(directory).path)
+        var migrations: [String] = []
+        for name in files where name.hasPrefix("Schema+V") && name.hasSuffix(".swift") {
+            // The version is the digits after `V`, so a helper file such as `Schema+V26+Backfill.swift` counts as v26.
+            let version = Int(String(name.dropFirst("Schema+V".count).prefix { $0.isASCII && $0.isNumber }))
+            #expect(version != nil, "\(directory)/\(name) names no version")
+            if (version ?? Self.firstSecurityMigration) >= Self.firstSecurityMigration {
+                migrations.append(name)
+            }
+        }
+        #expect(migrations.contains("Schema+V\(Self.firstSecurityMigration).swift"))
+        for name in migrations {
+            #expect(gated.contains("\(directory)/\(name)"), "security gates \(directory)/\(name)")
+        }
     }
 
     @Test func reviewersCannotEdit() throws {

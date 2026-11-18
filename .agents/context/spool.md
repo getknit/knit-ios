@@ -767,7 +767,8 @@ Bluetooth off alone, the Pixel 9 still reached the iPhone through the other Pixe
   held handles, flags and the nonce's copy alone.
 - **A locked restart.** The phone stayed locked for a long while, with Pixels near, before it was unlocked and Knit
   opened. The new process counted one dial and one session. The book's content was unchanged and no sweep ran. Its
-  bytes differed only in JSON key order, because the book is saved again after load.
+  bytes differed only in JSON key order, because the book is saved again after load. Since 2026-11-18 it is written
+  with its keys sorted.
 - **Upgrade installs.** Three installs over the app kept the relay, its row and the switch.
 - **Reinstall.** After deleting and reinstalling the app, the identity came back from the Keychain. The book was
   seeded with `public-1` alone, the switch was off and the consent gone, and the spool stayed paused.

@@ -461,11 +461,12 @@ explicit direction.** Update this file in the change that ships an item.
     Onboarding must follow every database that has never published. That is a product change, the maintainer's call.
   - **Found on the way, not the ratchet's (already on `main`):** a failed read of our own profile is taken for a fresh
     one. `updateProfile` and the photo edit then publish a blank name at a version every peer takes, and the next
-    start's sweep can delete our own photo (P3's blobs review). The fix reads with `loadIfReadable()` and does
-    nothing on a failure, in `publishEdit`, `setAvatar` and `referencedBlobs`. P3 already applied it to
-    `republishIfStale` and the prekey's sync. The same kind of failure reaches the blob sweep too (P7c's blobs review):
-    if the message read in `blobsTheRowsName()` fails, `attachmentHashes()` answers no hashes and the start's sweep
-    removes every message photo. The sweep should skip a pass whose reads failed.
+    start's sweep can delete our own photo (P3's blobs review). The fix reads with `loadIfReadable()` and does nothing
+    on a failure. P3 applied it to `republishIfStale` and the prekey's sync, and `publishEdit` and `setAvatar` have it
+    since 2026-11-18. The blob sweep, which P7c's blobs review found would remove every photo after a failed message
+    read, now reads every row it names inside one store unit, where a failed read fails the unit and removes nothing
+    (`sweepUnnamedBlobs`). Still owed: the profile screen and onboarding open from `load()`, and the screen records a
+    save the engine refused as made (`OwnProfileModel`, `OnboardingModel`).
 
   Two companion changes go with it:
   - **A9 (ratchet vectors):** a paired change that iOS leads. knit-next gains `vectors/ratchet-v1.json`, written by a

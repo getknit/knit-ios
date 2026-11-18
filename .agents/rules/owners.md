@@ -42,8 +42,9 @@ link proof and seal, the spool's scope seal and proof of work (`KnitCrypto/Scope
 the plane that reads what a spool sends (`KnitMesh/Spool`), the relay's WebSocket (`KnitSpoolNet`), the relay settings, their
 consent and invites and the Keychain items that hold relay addresses (`KnitAppCore/Relays`, `KeychainRelayStore`), the paths
 that carry an opened link or the scene's phase to them and keep their list (`Launch`, `KnitApp`, `AppEnvironment+Phases`,
-`DefaultsPreferences`, `AppPreferences`), at-rest storage and the Keychain (the schema's migrations, `Schema.swift` and `Schema+V25`, among it), logs, notifications and
-crash reports, the content filter,
+`DefaultsPreferences`, `AppPreferences`), at-rest storage and the Keychain (the schema's migrations, `Schema.swift`,
+`Schema+V25` and every later one, among it, each named in the conf, which `PersonaTests` checks), logs, notifications
+and crash reports, the content filter,
 mentions and names, link cards, the photo and voice decoders, the share inbox, Add contact, the debug bridge's
 listener, `App/`'s plist, entitlements and project, and CI. Adopt it too for a change elsewhere that acts on what a
 peer, a server, another app or an outsider wrote, or that sends, airs, stores, logs or shows something about the user:
