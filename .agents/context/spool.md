@@ -739,6 +739,46 @@ dials its stub on its own loopback, and a daemon there only through Colima on lo
 
 ## Trials
 
-None yet. P7 records here: an iPhone and a Pixel 9 with Bluetooth apart, over `public-1`, text and ✓✓ both ways;
-Knit backgrounded, then opened again; a reset over the relay; and a Pixel 8, linked to the iPhone, receiving a DM the
-Pixel 9 sent through the relay.
+### What P7 showed (2026-11-17 and 2026-11-18)
+
+The lab iPhone ran the debug build, at 1545cf1 with the clock fix and then at 1383641. The Pixel 9 and the Pixel 8 ran
+knit-next's debug build, 2.12.0-alpha.0, with the spool on. Every trial went through `public-1`. To keep the Pixel 9
+apart from the iPhone, its Bluetooth was off and its Knit's own Wi-Fi Aware plane was off (`…debug.NANOFF`). With
+Bluetooth off alone, the Pixel 9 still reached the iPhone through the other Pixels over Wi-Fi Aware.
+
+- **The first heal round trapped the app.** `ScopeHeal.nextDeadline` reports `.min` for "due now", and
+  `SystemClock.sleep` computed `Int64.min - base`. The trap came on the first accepted contact and on every launch after
+  it. The manual test clock never reaches that line. `SystemClock.sleep` now clamps any deadline to [base, base +
+  100 years] (`SystemClockTests`).
+- **Consent.** On a fresh install, the switch's sheet named `public-1` alone, as Knit's relay.
+- **Text and ✓✓ both ways, the Pixel 9 apart.** Each direction took about 5 s, and ✓✓ came back both ways. The Pixel 9
+  marks each message `via: Internet`, and the iPhone's door counted the copies `delivered` with no radio duplicate.
+- **Knit in the background.** The iPhone stayed in the background for about 2.5 hours while the Pixel 9 sent five DMs.
+  All five landed within seconds of the iPhone coming to the front, with ✓✓ on all five. `dials` rose by one, at the
+  front; `failures` and `dropFaults` stayed at 0.
+- **The bridge.** The Pixel 8, linked to the iPhone by Bluetooth, held all eight DMs the Pixel 9 had sent through the
+  relay (`…debug.STORE`'s `allIds`). The Pixel 8 is not a member of that scope.
+- **A reset over the relay.** With the Pixel 9 apart, `…debug.RATCHET --es reset` reached the iPhone in about 17 s.
+  Both sides confirmed the same `rootHash` and `establishedAt`, with no second reset. DMs then went both ways under the
+  new root, with ✓✓. The relay asked for a stamp on the new scope, and the miner found it in one run.
+- **The log.** A syslog capture across a both-ways exchange showed no relay URL, no `k=`, no invite text and no 64-hex
+  run from Knit, and nothing from Knit above Notice.
+- **The container.** A read-only read found no relay URL, token-shaped `k=` or `spool/v1` anywhere. `debug.spool.relays`
+  held handles, flags and the nonce's copy alone.
+- **A locked restart.** The phone stayed locked for a long while, with Pixels near, before it was unlocked and Knit
+  opened. The new process counted one dial and one session. The book's content was unchanged and no sweep ran. Its
+  bytes differed only in JSON key order, because the book is saved again after load.
+- **Upgrade installs.** Three installs over the app kept the relay, its row and the switch.
+- **Reinstall.** After deleting and reinstalling the app, the identity came back from the Keychain. The book was
+  seeded with `public-1` alone, the switch was off and the consent gone, and the spool stayed paused.
+
+Not run yet:
+
+- **The trials that need a lab relay behind TLS other than `public-1`.** These are a private relay with a token (the
+  container read, the log capture with `k=`, the first token through the shipping adapter), a relay answering 503 with
+  `Retry-After` (Control Center five times, B6's background-and-front, the flip within 60 s) and the PAC trial.
+- **The scene-flip burst and the energy log.** Both need the Mac to reach the phone through CoreDevice; that route gave
+  error 4016 during this run.
+- **The Keychain attribute check.** It needs the debug diagnostic, which does not exist yet.
+- **Replace identity with the nonce's delete refused, and a release build's log capture.**
+- **The reverse reset with a stale copy on real phones.** `SpoolSeenSetsTests` covers it.
