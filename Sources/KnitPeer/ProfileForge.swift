@@ -8,7 +8,8 @@ public import KnitWire
 /// or custody row; ADR 2026-10.r88m, "The door").
 ///
 /// The frame is what the engine would sign for a new edit of what it already published, but for the status:
-/// - its payload is our current profile frame's, read from custody, every field as the engine emitted it, with the status
+/// - its payload is our current profile frame's, read from custody, or from the frame our profile store keeps when custody's
+///   quota has evicted the row (ADR 2026-11.xfcq), every field as the engine emitted it, with the status
 ///   padded by one printable ASCII letter (no whitespace, so `TextLimits.normalizeSingleLine` on the far end keeps it) and
 ///   the version moved to `now`;
 /// - its stamp is fixed before the padding is searched: `publishedAt = max(now, own.publishedAt + 1)`, as
@@ -29,9 +30,9 @@ public enum ProfileForge {
     public enum Refusal: Error, Equatable, CustomStringConvertible {
         /// Our version is not below the wall clock, so the forge's `version = now` would not beat it.
         case versionNotBehindClock(version: Int64, now: Int64)
-        /// Custody holds no live frame under our current profile's id: there is nothing to forge from.
+        /// Neither custody nor the kept frame holds our current profile's id: there is nothing to forge from.
         case noProfileInCustody(id: String)
-        /// The frame custody holds under that id is not a profile of ours that decodes.
+        /// The frame held under that id is not a profile of ours that decodes.
         case unreadableProfile(id: String)
         /// No padding makes `signed` exactly `signedBytes` long: the shortest forge is longer, or a CBOR length header
         /// grows by a byte across it.
@@ -44,9 +45,9 @@ public enum ProfileForge {
             case .versionNotBehindClock(let version, let now):
                 "our profile's version \(version) is not below the clock \(now); try again once the clock passes it"
             case .noProfileInCustody(let id):
-                "custody no longer holds our profile \(id)"
+                "neither custody nor the kept frame holds our profile \(id)"
             case .unreadableProfile(let id):
-                "the frame custody holds as \(id) is not our profile"
+                "the frame held as \(id) is not our profile"
             case .unreachableLength(let signedBytes):
                 "no padding of our profile's status makes its signed bytes exactly \(signedBytes) long"
             case .signing:
@@ -70,21 +71,22 @@ public enum ProfileForge {
         public var signedBytes: Int { wire.signed.count }
     }
 
-    /// Our profile as `own` names it, read from `custody`, padded to exactly `signedBytes` of `signed` and signed by
-    /// `identity` at the wall clock `now`.
-    public static func forge(
-        signedBytes: Int, own: OwnProfile, custody: any CustodyStore, identity: IdentityKeys, now: Int64
+    /// Our profile as `own` names it, read from `custody`, or from `kept`, our profile store's kept frame, when custody holds
+    /// no row under its id, padded to exactly `signedBytes` of `signed` and signed by `identity` at the wall clock `now`. A
+    /// kept frame is read only under that id and only when its signature verifies against `identity`.
+    public static func forge( // swiftlint:disable:this function_parameter_count - custody and the kept frame are two inputs
+        signedBytes: Int, own: OwnProfile, custody: any CustodyStore, kept: KeptProfileFrame, identity: IdentityKeys, now: Int64
     ) throws(Refusal) -> Forged {
         guard own.version < now else {
             throw .versionNotBehindClock(version: own.version, now: now)
         }
         let sender = identity.nodeId.string
         let currentId = FrameId.profileId(sender: sender, publishedAt: own.publishedAt)
-        guard let current = custody.frame(currentId, now: now) else {
+        guard let current = custody.frame(currentId, now: now)?.envelope ?? keptEnvelope(kept, id: currentId, identity: identity) else {
             throw .noProfileInCustody(id: currentId)
         }
-        guard current.envelope.type == .profile, current.envelope.senderId.utf8.elementsEqual(sender.utf8),
-            var content = try? ProfileContent(decoding: current.envelope.payload)
+        guard current.type == .profile, current.senderId.utf8.elementsEqual(sender.utf8),
+            var content = try? ProfileContent(decoding: current.payload)
         else {
             throw .unreadableProfile(id: currentId)
         }
@@ -114,6 +116,16 @@ public enum ProfileForge {
             throw .signing
         }
         return Forged(wire: WireEnvelope(relay: true, sig: sig, signed: signed), id: forged.id, version: now, publishedAt: publishedAt)
+    }
+
+    /// The kept frame's envelope when it is the one under `id` and signed by `identity`, else `nil`.
+    private static func keptEnvelope(_ kept: KeptProfileFrame, id: String, identity: IdentityKeys) -> RelayEnvelope? {
+        guard case .kept(let wire) = kept, identity.bundle.isValidSignature(wire.sig, for: wire.signed),
+            let envelope = try? RelayEnvelope(decoding: wire.signed), ExactKey(envelope.id) == ExactKey(id)
+        else {
+            return nil
+        }
+        return envelope
     }
 
     /// The padding whose envelope is exactly `target` bytes long, or `nil` for none. The length grows with the padding,

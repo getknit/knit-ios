@@ -167,7 +167,13 @@ public actor ProfileLies {
         let made: ProfileForge.Forged
         do {
             made = try ProfileForge.forge(
-                signedBytes: signedBytes, own: stores.ownProfile.load(), custody: stores.custody, identity: identity, now: now)
+                signedBytes: signedBytes,
+                own: stores.ownProfile.load(),
+                custody: stores.custody,
+                kept: stores.ownProfile.keptFrame(),
+                identity: identity,
+                now: now
+            )
         } catch {
             log.log(.info, "lying: no padded profile of \(signedBytes) signed bytes: \(error)")
             throw .forge(error)

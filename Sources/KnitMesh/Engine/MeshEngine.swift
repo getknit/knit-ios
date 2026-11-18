@@ -73,7 +73,9 @@ public final class MeshEngine {
     /// When our last typing cue went to each thread, on the monotonic clock (``MeshEngine/noteTyping(in:)``).
     var typingCues: [ExactKey: Int64] = [:]
     var events: [MeshEvent] = []
-    /// Our profile frame for the current publish stamp, signed once and reused (ADR 2026-09.qztx in knit-next).
+    /// Our profile frame for the current publish stamp as this process last found or signed it, in front of the kept frame
+    /// (``ownProfile()``), so a store that keeps failing never makes a link-up sign again (knit-next ADR 2026-09.qztx and ADR
+    /// 2026-11.khhj; ADR 2026-11.xfcq). Gone with the process: the stamp's bytes outlive it in the kept frame.
     var signedProfile: SignedFrame?
     var timers: Timers?
 

@@ -40,7 +40,7 @@ extension MeshEngine {
         }
     }
 
-    /// The capabilities our signed profile carries for `own` (``currentProfileEnvelope()``): the switch's set beside the
+    /// The capabilities our signed profile carries for `own` (``currentProfileEnvelope(of:)``): the switch's set beside the
     /// prekey `own` names, while the switch is on and the ring still keeps it; otherwise ``Capabilities/local`` without the
     /// ratchet's three bits. What the build draws rides either way (``MeshConfiguration/drawnCapabilities``).
     func publishedCapabilities(of own: OwnProfile) -> Capabilities {

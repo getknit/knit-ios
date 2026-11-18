@@ -65,13 +65,38 @@ public protocol OwnProfileStore: AnyObject, Sendable {
 
     /// Saves the profile.
     func save(_ profile: OwnProfile)
+
+    /// The profile frame we published under our current stamp, as ``keep(_:)`` kept it: none, or a store that cannot be
+    /// read now, which is never a reason to sign the stamp again (ADR 2026-11.xfcq, after knit-next ADR 2026-11.khhj).
+    func keptFrame() -> KeptProfileFrame
+
+    /// Keeps `frame`'s signature and signed bytes, byte for byte, in place of any frame kept before, or forgets the kept
+    /// frame with `nil`. Only those two are kept: the frame reads back flooded, `ttl` 8 and `hops` 0. Answers whether the
+    /// write landed.
+    @discardableResult
+    func keep(_ frame: WireEnvelope?) -> Bool
+}
+
+/// What ``OwnProfileStore/keptFrame()`` read (ADR 2026-11.xfcq).
+///
+/// Our own profile frame is kept outside custody because custody's quotas evict our frames as they evict anyone's, and a
+/// stamp signed a second time is a second set of bytes under an id peers already hold: CryptoKit randomizes Ed25519
+/// signatures, and the profile read at a later signing can carry another prekey or device tag (knit-next ADR 2026-11.khhj).
+public enum KeptProfileFrame: Sendable, Equatable {
+    /// The frame kept, around its signature and signed bytes as they were stored.
+    case kept(WireEnvelope)
+    /// No frame is kept: a node that has signed none yet, a database from before the frame was kept, or one forgotten.
+    case absent
+    /// The store could not be read now.
+    case unreadable
 }
 
 /// An ``OwnProfileStore`` in memory.
 public final class MemoryOwnProfileStore: OwnProfileStore {
     private let profile: Lock<OwnProfile>
+    private let frame = Lock<WireEnvelope?>(nil)
 
-    /// A store holding `profile`.
+    /// A store holding `profile`, and no kept frame.
     public init(_ profile: OwnProfile = OwnProfile()) {
         self.profile = Lock(profile)
     }
@@ -88,12 +113,27 @@ public final class MemoryOwnProfileStore: OwnProfileStore {
     public func save(_ profile: OwnProfile) {
         self.profile.withLock { $0 = profile }
     }
+
+    /// The frame held: memory never fails to read.
+    public func keptFrame() -> KeptProfileFrame {
+        frame.withLock { $0 }.map(KeptProfileFrame.kept) ?? .absent
+    }
+
+    @discardableResult
+    public func keep(_ frame: WireEnvelope?) -> Bool {
+        self.frame.withLock { $0 = frame.map { WireEnvelope(sig: $0.sig, signed: $0.signed) } }
+        return true
+    }
 }
 
 extension MemoryOwnProfileStore: Checkpointing {
-    /// The profile held.
+    /// The profile held, and the kept frame.
     public func checkpoint() -> StoreCheckpoint {
         let held = load()
-        return StoreCheckpoint { [self] in save(held) }
+        let kept = frame.withLock { $0 }
+        return StoreCheckpoint { [self] in
+            save(held)
+            frame.withLock { $0 = kept }
+        }
     }
 }

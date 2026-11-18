@@ -160,8 +160,9 @@ the session's go-ahead for the phone, wake it (`input keyevent KEYCODE_WAKEUP`) 
   devices hold: at start the peer drops only links on an adapter of its own, and it only ever drops links it
   made. `.agents/rules/devices.md` says when it may be used.
 - **State** lives in `~/.local/state/knit-peer/<instance>/`: `identity` (0600) and `profile.json`, which keeps the
-  profile version and publish stamp across restarts, and `avatar.jpg`, the peer's own photo, which `profile.json`
-  names. Custody, peers, messages and every other blob live in memory.
+  profile version and publish stamp across restarts, `profile-frame` (0600), the profile frame last published, which
+  every restart serves again since custody starts empty (ADR 2026-11.xfcq), and `avatar.jpg`, the peer's own photo,
+  which `profile.json` names. Custody, peers, messages and every other blob live in memory.
 - **Control lines** are JSON objects with a `cmd`, and an optional `tag` that the reply echoes. `KnitControl`
   holds the protocol, and a debug build of the app speaks it too, over USB or Wi-Fi (ADR 2026-09.kwa8,
   ADR 2026-10.dz8d): `status` (with `avatarHash`, our photo; `files`, the FILE records received, refused and sent;

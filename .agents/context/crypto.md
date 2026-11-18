@@ -467,6 +467,13 @@ that an in-order chain would not survive. The session root never changes, and ea
     ids this build reads and prunes nothing else: an entry it cannot read is written back as it was stored, and does
     not count toward the five. Android never mints over prekeys it cannot parse (`IdentityKeyStore.kt:136-137`), and
     a `prekeys` value that is not one list is not minted over here either.
+  - **A stamp is signed once** (ADR 2026-11.xfcq, after knit-next ADR 2026-11.khhj). The frame we published under the
+    current stamp is kept beside our profile, byte for byte (`own_profile_frame`, `OwnProfileStore.keptFrame()` and
+    `keep(_:)`). `ownProfile()` answers custody's row, else `signedProfile`, this process's copy, else the kept frame
+    once it verifies as ours under this stamp, else a fresh signing. After custody's quota evicts the row, the kept
+    bytes go back into custody as they are, so a dropped prekey, a new device tag or CryptoKit's randomized signature
+    never makes a second set of bytes under the id. A read of custody, of the kept frame or of our profile's row that
+    fails answers no frame, never a fresh signing. `publishEdit` and `republish` sign the stamp they just saved through `signFreshProfile`.
   - `OwnProfile.prekeyId` names the prekey a publish carries, so one stamp is one payload. With the switch on, start
     and every heal mint a due prekey and republish as an edit when the newest differs; with it off, a profile that
     still names one is republished without it.

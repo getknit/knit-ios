@@ -30,7 +30,13 @@ import Testing
 
         func forge(_ signedBytes: Int) throws(ProfileForge.Refusal) -> ProfileForge.Forged {
             try ProfileForge.forge(
-                signedBytes: signedBytes, own: own, custody: stores.custody, identity: identity(1), now: clock.wallMilliseconds())
+                signedBytes: signedBytes,
+                own: own,
+                custody: stores.custody,
+                kept: stores.ownProfile.keptFrame(),
+                identity: identity(1),
+                now: clock.wallMilliseconds()
+            )
         }
     }
 
@@ -104,28 +110,70 @@ import Testing
         let liar = published()
         let own = liar.own
         #expect(throws: ProfileForge.Refusal.versionNotBehindClock(version: own.version, now: own.version)) {
-            try ProfileForge.forge(signedBytes: 8192, own: own, custody: liar.stores.custody, identity: keys, now: own.version)
+            try ProfileForge.forge(
+                signedBytes: 8192, own: own, custody: liar.stores.custody, kept: .absent, identity: keys, now: own.version)
         }
         #expect(throws: ProfileForge.Refusal.versionNotBehindClock(version: own.version, now: own.version - 1)) {
-            try ProfileForge.forge(signedBytes: 8192, own: own, custody: liar.stores.custody, identity: keys, now: own.version - 1)
+            try ProfileForge.forge(
+                signedBytes: 8192, own: own, custody: liar.stores.custody, kept: .absent, identity: keys, now: own.version - 1)
         }
     }
 
-    @Test func theForgeFailsLoudlyWhenCustodyLostOurProfile() throws {
+    @Test func theForgeFailsLoudlyWhenCustodyLostOurProfileAndNoneIsKept() throws {
         let liar = published()
         let own = liar.own
+        let now = liar.clock.wallMilliseconds()
         let id = FrameId.profileId(sender: keys.nodeId.string, publishedAt: own.publishedAt)
         #expect(throws: ProfileForge.Refusal.noProfileInCustody(id: id)) {
             try ProfileForge.forge(
-                signedBytes: 8192, own: own, custody: MeshStores.inMemory().custody, identity: keys, now: liar.clock.wallMilliseconds())
+                signedBytes: 8192, own: own, custody: MeshStores.inMemory().custody, kept: .absent, identity: keys, now: now)
+        }
+        #expect(throws: ProfileForge.Refusal.noProfileInCustody(id: id)) {
+            try ProfileForge.forge(
+                signedBytes: 8192, own: own, custody: MeshStores.inMemory().custody, kept: .unreadable, identity: keys, now: now)
         }
         var unpublished = own
         unpublished.publishedAt -= 1
         let other = FrameId.profileId(sender: keys.nodeId.string, publishedAt: unpublished.publishedAt)
         #expect(throws: ProfileForge.Refusal.noProfileInCustody(id: other)) {
             try ProfileForge.forge(
-                signedBytes: 8192, own: unpublished, custody: liar.stores.custody, identity: keys, now: liar.clock.wallMilliseconds())
+                signedBytes: 8192,
+                own: unpublished,
+                custody: liar.stores.custody,
+                kept: liar.stores.ownProfile.keptFrame(),
+                identity: keys,
+                now: now
+            )
         }
+        let held = try #require(liar.frame)
+        var flipped = held.reserved
+        flipped.sig[0] ^= 0x01
+        #expect(throws: ProfileForge.Refusal.noProfileInCustody(id: id), "a kept frame whose signature fails is not read") {
+            try ProfileForge.forge(
+                signedBytes: 8192, own: own, custody: MeshStores.inMemory().custody, kept: .kept(flipped), identity: keys, now: now)
+        }
+    }
+
+    /// knit-peer keeps custody in memory, so after a restart our profile is in the kept frame alone (ADR 2026-11.xfcq): the
+    /// forge reads it there, every field as the engine emitted it.
+    @Test func theForgeReadsTheKeptFrameWhenCustodyLostOurProfile() throws {
+        let liar = published()
+        let own = liar.own
+        let held = try #require(liar.frame)
+        #expect(liar.stores.ownProfile.keptFrame() == .kept(held.reserved), "the engine kept what it published")
+        let forged = try ProfileForge.forge(
+            signedBytes: 4096,
+            own: own,
+            custody: MeshStores.inMemory().custody,
+            kept: liar.stores.ownProfile.keptFrame(),
+            identity: keys,
+            now: liar.clock.wallMilliseconds()
+        )
+        var content = try ProfileContent(decoding: try RelayEnvelope(decoding: forged.wire.signed).payload)
+        let emitted = try ProfileContent(decoding: held.envelope.payload)
+        content.status = emitted.status
+        content.version = emitted.version
+        #expect(content == emitted && forged.signedBytes == 4096)
     }
 
     /// Custody holds a frame under our profile's id that is no profile of ours: one whose payload does not read, and one
@@ -143,10 +191,10 @@ import Testing
                 CarriedFrame(envelope: envelope, sig: try keys.signature(for: signed), signed: signed), origin: .own, now: now)
             #expect(stored.held, "custody holds it")
             #expect(throws: ProfileForge.Refusal.unreadableProfile(id: id)) {
-                try ProfileForge.forge(signedBytes: 8192, own: own, custody: custody, identity: keys, now: now)
+                try ProfileForge.forge(signedBytes: 8192, own: own, custody: custody, kept: .absent, identity: keys, now: now)
             }
         }
-        #expect(ProfileForge.Refusal.unreadableProfile(id: id).description == "the frame custody holds as \(id) is not our profile")
+        #expect(ProfileForge.Refusal.unreadableProfile(id: id).description == "the frame held as \(id) is not our profile")
         #expect(ProfileForge.Refusal.signing.description == "the identity refused to sign the forged profile")
     }
 

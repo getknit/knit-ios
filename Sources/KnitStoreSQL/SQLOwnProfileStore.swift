@@ -1,12 +1,14 @@
+import Foundation
 import GRDB
 public import KnitStore
-import KnitWire
+public import KnitWire
 
-/// The ``OwnProfileStore`` on SQLite: the one row of `own_profile`.
+/// The ``OwnProfileStore`` on SQLite: the one row of `own_profile`, and the one row of `own_profile_frame` beside it.
 ///
 /// If the row cannot be read, ``load()`` answers a fresh profile. Its version is 0, so no peer takes its empty
 /// name over the one it holds: presentation follows the newest version (`.agents/context/custody.md`).
-/// ``loadIfReadable()`` answers `nil` then, for a caller that must not take a failed read for a fresh profile.
+/// ``loadIfReadable()`` answers `nil` then, for a caller that must not take a failed read for a fresh profile, and
+/// ``keptFrame()`` answers ``KeptProfileFrame/unreadable``, never "none kept".
 public final class SQLOwnProfileStore: OwnProfileStore {
     private let database: KnitDatabase
 
@@ -62,6 +64,34 @@ public final class SQLOwnProfileStore: OwnProfileStore {
                     profile.publishedAt, StoredText.bytes(profile.avatarHash?.string), profile.prekeyId, profile.capabilities?.rawValue,
                 ]
             )
+        }
+    }
+
+    /// The kept frame's row, none, or ``KeptProfileFrame/unreadable`` when the read failed, which ``KnitDatabase`` has
+    /// reported. Inside a store unit the failure fails the unit too.
+    public func keptFrame() -> KeptProfileFrame {
+        database.read(or: KeptProfileFrame.unreadable) { db -> KeptProfileFrame in
+            guard let row = try Row.fetchOne(db, sql: "SELECT sig, signed FROM own_profile_frame WHERE slot = 0") else {
+                return .absent
+            }
+            return .kept(WireEnvelope(sig: try row.bytes("sig"), signed: try row.bytes("signed")))
+        }
+    }
+
+    /// Writes the kept frame's row, or deletes it for `nil`. Both columns are bound as `Data`, so every byte, a NUL
+    /// included, is stored as it came, and a `STRICT` table refuses anything bound as text.
+    @discardableResult
+    public func keep(_ frame: WireEnvelope?) -> Bool {
+        database.write(or: false) { db in
+            if let frame {
+                try db.execute(
+                    sql: "INSERT OR REPLACE INTO own_profile_frame (slot, sig, signed) VALUES (0, ?, ?)",
+                    arguments: [Data(frame.sig), Data(frame.signed)]
+                )
+            } else {
+                try db.execute(sql: "DELETE FROM own_profile_frame WHERE slot = 0")
+            }
+            return true
         }
     }
 }

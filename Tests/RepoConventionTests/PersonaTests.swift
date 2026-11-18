@@ -74,6 +74,27 @@ import Testing
         #expect(try RepoFiles.text(Self.owners).contains("`KnitAppCore/Relays`"), "\(Self.owners) names the settings' reviewer")
     }
 
+    /// Our own profile frame, signed once for each stamp, is gated for the crypto and blobs reviewers, and the schema's
+    /// migrations, at-rest storage, for the security reviewer (ADR 2026-11.xfcq).
+    @Test func theOwnProfileFramePathsAreGatedForTheirReviewers() throws {
+        let lines = try gateLines()
+        let gated = { (name: String) in lines.first { $0.name == name }?.paths ?? [] }
+        let frame = [
+            "Sources/KnitMesh/Engine/MeshEngine+OwnProfileFrame.swift", "Sources/KnitMesh/Engine/MeshEngine+Profiles.swift",
+            "Sources/KnitStore/Settings/OwnProfileStore.swift", "Sources/KnitStoreSQL/SQLOwnProfileStore.swift",
+            "Sources/KnitStoreSQL/Schema+V25.swift",
+        ]
+        for reviewer in ["crypto-reviewer", "blobs-reviewer"] {
+            for path in frame {
+                #expect(gated(reviewer).contains(path), "\(reviewer) gates \(path)")
+            }
+        }
+        for path in ["Sources/KnitStoreSQL/Schema.swift", "Sources/KnitStoreSQL/Schema+V25.swift"] {
+            #expect(gated("security-reviewer").contains(path), "security gates \(path)")
+        }
+        #expect(try RepoFiles.text(Self.owners).contains("`MeshEngine+OwnProfileFrame`"), "\(Self.owners) names the frame's reviewers")
+    }
+
     @Test func reviewersCannotEdit() throws {
         for name in try personaNames() where name.hasSuffix("-reviewer") {
             let tools = try frontmatter(of: name)["tools"] ?? ""

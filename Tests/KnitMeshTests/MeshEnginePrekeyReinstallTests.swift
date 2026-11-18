@@ -10,6 +10,7 @@ import Testing
 final class LockedOwnProfileStore: OwnProfileStore {
     private struct State {
         var profile: OwnProfile
+        var frame: WireEnvelope?
         var locked = true
         /// Whether a write is refused while locked too; a damaged row fails its reads while writes still land.
         var refusesWrites: Bool
@@ -42,6 +43,23 @@ final class LockedOwnProfileStore: OwnProfileStore {
             if !state.locked || !state.refusesWrites {
                 state.profile = profile
             }
+        }
+    }
+
+    func keptFrame() -> KeptProfileFrame {
+        state.withLock { state in
+            state.locked ? .unreadable : state.frame.map(KeptProfileFrame.kept) ?? .absent
+        }
+    }
+
+    @discardableResult
+    func keep(_ frame: WireEnvelope?) -> Bool {
+        state.withLock { state in
+            guard !state.locked || !state.refusesWrites else {
+                return false
+            }
+            state.frame = frame
+            return true
         }
     }
 }

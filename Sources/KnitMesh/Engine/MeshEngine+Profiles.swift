@@ -36,7 +36,7 @@ extension MeshEngine {
         own.version = max(now, own.version + 1)
         own.publishedAt = max(now, own.publishedAt + 1)
         savePublished(own)
-        if let frame = ownProfile() {
+        if let frame = signFreshProfile(publishedAt: own.publishedAt) {
             originate(frame)
         }
     }
@@ -59,7 +59,7 @@ extension MeshEngine {
         var own = own
         own.publishedAt = max(now, own.publishedAt + 1)
         savePublished(own)
-        _ = ownProfile()
+        _ = signFreshProfile(publishedAt: own.publishedAt)
     }
 
     /// Keeps the prekey our profile carries in step with the ring and the switch, at start and on every heal
@@ -118,32 +118,16 @@ extension MeshEngine {
         publishEdit(of: own) { $0.prekeyId = wanted }
     }
 
-    /// Our profile frame for the current publish stamp (`MeshManager.ownProfile`): the carried copy when custody holds one,
-    /// else the copy signed earlier, else a fresh signing that goes into custody now. One id, one set of bytes.
-    func ownProfile() -> SignedFrame? {
-        let envelope = currentProfileEnvelope()
-        if let held = stores.custody.frame(envelope.id, now: clock.wallMilliseconds()) {
-            return SignedFrame(wire: held.reserved, envelope: held.envelope)
-        }
-        if let signed = signedProfile, ExactKey(signed.envelope.id) == ExactKey(envelope.id) {
-            return signed
-        }
-        let frame = sign(envelope, relay: true).map { SignedFrame(wire: $0, envelope: envelope) }
-        if let frame {
-            signedProfile = frame
-            carryOwn(frame)
-        }
-        return frame
-    }
-
     /// Our profile, as an envelope (`MeshManager.currentProfileEnvelope`). The id and `sentAt` are the publish
     /// stamp; every required field is written, `status` included, or Android would never pin our key.
     ///
     /// The ratchet's bits and our prekey ride together, with the switch on and the prekey this publish names still kept
     /// (`MeshManager.kt:2963-2979`): `CAP_RATCHET` promises a published prekey, and every Android build that claims it
     /// carries one. Otherwise the profile is what it was before the ratchet but for the link-proof bit (ADR 2026-10.5sk9).
-    func currentProfileEnvelope() -> RelayEnvelope {
-        let own = stores.ownProfile.load()
+    ///
+    /// `own` is our profile as the caller just read it through `loadIfReadable()`: a failed read is no fresh profile, whose
+    /// stamp 0 was never ours to sign (``ownProfile()``).
+    func currentProfileEnvelope(of own: OwnProfile) -> RelayEnvelope {
         let prekey = publishedPrekey(of: own)
         let content = ProfileContent(
             name: TextLimits.truncated(TextLimits.normalizeSingleLine(own.name), toUTF16: TextLimits.displayName),

@@ -50,6 +50,11 @@ A node carries frames for people who are not in range yet. This is store-and-for
   for every origin, ours included. It is custody's refusal alone: delivery and relay still go through
   `GroupRoster.vet`. A pre-2.3.0 Android frame after a departure lists no `departed`, so custody refuses it while
   delivery takes it.
+- **An evicted own profile goes back as the kept bytes** (ADR 2026-11.xfcq, after knit-next ADR 2026-11.khhj). When
+  our quota has evicted our current profile's row, the next caller of `ownProfile()` (the start's seed, a link-up's push)
+  puts the bytes we kept beside our profile back through `carryOwn`. They go under the same quotas, byte cap and gate as
+  any frame of ours, so a full bucket can trim them again at once. Nothing is signed again, and no eviction is taken for
+  an edit.
 - **Our own frames count too** (ORIGIN_SELF), our profile included, under the same quotas. Android custodies each
   of its own frames before it floods it (`originateWire`, `MeshManager.kt:4016-4031`; knit-next `85baeeb9`, #141), so
   a link raised between the two learns of the frame from the digest exchange. This port's `originate` sends, then
@@ -206,7 +211,8 @@ publish it honestly.
 - **`version` is the edit clock.** An edit sets `version = max(now, previous + 1)` and a fresh stamp, then
   floods. Every 12 h the profile is republished with a fresh stamp and the same version, which keeps it
   inside the 24-hour custody window.
-- **Sign once per stamp and reuse the bytes** (ADR 2026-09.qztx).
+- **Sign once per stamp and reuse the bytes** (ADR 2026-09.qztx), across restarts too: the frame is kept outside custody
+  (knit-next ADR 2026-11.khhj; ADR 2026-11.xfcq).
 - **On receipt:**
   - pin only when the key derives to `senderId`, and never pin our own;
   - refuse a different key for a pinned id;

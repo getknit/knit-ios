@@ -53,6 +53,17 @@ public final class ForgingOwnProfileStore: OwnProfileStore, Checkpointing {
         inner.save(kept)
     }
 
+    /// The inner store's kept frame, unchanged: the frame the engine signed, which never carries the lie unless an edit
+    /// signed it while the switch was set.
+    public func keptFrame() -> KeptProfileFrame {
+        inner.keptFrame()
+    }
+
+    @discardableResult
+    public func keep(_ frame: WireEnvelope?) -> Bool {
+        inner.keep(frame)
+    }
+
     // MARK: Checkpointing
 
     public func checkpoint() -> StoreCheckpoint {

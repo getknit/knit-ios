@@ -41,6 +41,7 @@ internal enum Schema {
         ("v22", v22),
         ("v23", v23),
         ("v24", v24),
+        ("v25-own-profile-frame", v25OwnProfileFrame),
     ]
 
     /// Schema v1: custody, peers, messages, accepted conversations and our own profile.
