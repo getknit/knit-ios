@@ -7,8 +7,9 @@
     /// since a reboot, and never copied off this phone (`…AfterFirstUnlockThisDeviceOnly`). The mesh reads it while
     /// the phone sits locked; a backup or a new phone never gets it, so an identity runs on one phone only.
     ///
-    /// The item outlives the app: a reinstall finds it and carries on as the same node (ADR 2026-09.tkww). The only
-    /// file in the app that imports Security.
+    /// The item outlives the app: a reinstall finds it and carries on as the same node (ADR 2026-09.tkww). With a debug
+    /// build's ``KeychainRelayStore``, whose items sit under a service of their own, the only file in the app that imports
+    /// Security.
     internal struct KeychainSecretStore: SecretStore {
         /// The item's service, fixed for the life of the identity.
         static let service = "app.getknit.knit.identity"

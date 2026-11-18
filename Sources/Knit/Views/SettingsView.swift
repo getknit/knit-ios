@@ -2,18 +2,21 @@
     import KnitAppCore
     import SwiftUI
 
-    /// Settings: the profile row, Stop and Start, notifications, the people blocked with Report a problem and the terms, the
-    /// sample chats, About, Support Knit and Diagnostics (MVP item 10),
+    /// Settings: the profile row, Stop and Start, notifications, the people blocked with Report a problem and the terms, a
+    /// debug build's Internet relays, the sample chats, About, Support Knit and Diagnostics (MVP item 10),
     /// each row after a glyph, as Signal lists its settings (ADR 2026-10.5waw).
     internal struct SettingsView: View {
         @State private var model: SettingsModel
         private let session: AppSession
+        /// Internet relays' settings, in a debug build's live launch or under `-demoRelays` (ADR 2026-11.adrq, P6).
+        private let relays: InternetRelays?
         @Environment(\.scenePhase) private var scenePhase
         @Environment(PhotoScreening.self) private var screening: PhotoScreening?
 
-        init(session: AppSession, permission: any NotificationPermission, about: AboutInfo) {
+        init(session: AppSession, permission: any NotificationPermission, about: AboutInfo, relays: InternetRelays?) {
             _model = State(initialValue: SettingsModel(session: session, permission: permission, about: about))
             self.session = session
+            self.relays = relays
         }
 
         var body: some View {
@@ -33,6 +36,11 @@
                 if session.linkPreviews?.service != nil {
                     LinkPreviewSection(session: session)
                 }
+                #if DEBUG
+                    if let relays {
+                        InternetRelaySection(relays: relays)
+                    }
+                #endif
                 SampleSection()
                 AboutSection()
             }

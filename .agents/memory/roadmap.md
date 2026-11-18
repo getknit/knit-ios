@@ -697,7 +697,8 @@ explicit direction.** Update this file in the change that ships an item.
   - P0, the decision, the references and `spool-v1.json`: done 2026-11-16;
   - P1, the wire (`KnitWire/Spool`), then P2, the scope crypto and `RatchetSessions+Scopes`;
   - P3, the pure plane (`KnitMesh/Spool`) and a fake spool, then P4, the engine's wiring and the bridge;
-  - P5, `KnitSpoolNet` and `check.sh spool` against the reference daemon, then P6, the app;
+  - P5, `KnitSpoolNet` and `check.sh spool` against the reference daemon, then P6, the app: done 2026-11-17, the debug
+    build's relay settings, consent, invites and Keychain-held addresses;
   - P7, the device trials: an iPhone and a Pixel with Bluetooth apart, over `public-1`.
 
   Deferred, each with an amendment of its own:
@@ -711,8 +712,12 @@ explicit direction.** Update this file in the change that ships an item.
   - background refresh, without which a relay DM waits until Knit is next open;
   - the "via Internet" mark on a delivered message (knit-next ADR 2026-10.e42d);
   - pair scopes, for a contact known only from a card;
-  - the release flip: the privacy manifest, the store's answers and the changelog;
-  - whether getknit.app's association file lists `/r`, which a relay invite's https form needs.
+  - the release flip: the privacy manifest, the store's answers and the changelog, and before it the miner's window
+    buckets and found stamps kept in the database (P4b2's owed line, which P6 moved here);
+  - `/r` in getknit.app's association file. On 2026-11-17 the file, from the site and from Apple's CDN, listed `/c`
+    alone, so a tapped `https://getknit.app/r#…` opens the website, whose scripts can read the fragment and whose history
+    keeps it. `knit://r/…` opens Knit in a debug build. The site's file claiming `/r` for both bundle ids, and the app's
+    `applinks:getknit.app`, which it already carries, would let the https form open Knit too.
 
 - **DM and group forward secrecy:** on since P8, 2026-10-19 ("Forward secrecy", above).
 - **Contacts:** contact links at a distance (`docs/CONTACT_CARD.md` in knit-next), and Android's Add contact,

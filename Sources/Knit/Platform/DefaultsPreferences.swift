@@ -34,5 +34,28 @@
             get { defaults.bool(forKey: Self.linkPreviewsKey) }
             set { defaults.set(newValue, forKey: Self.linkPreviewsKey) }
         }
+
+        /// Internet relays' list as the bytes kept, in a debug build alone (ADR 2026-11.adrq, P6): a release build reads and
+        /// keeps none. Bytes that do not read as a list are left as they are (``StoredRelayBook/unreadable``), never written
+        /// over.
+        var relayBookData: Data? {
+            get {
+                #if DEBUG
+                    defaults.data(forKey: Self.relayBookKey)
+                #else
+                    nil
+                #endif
+            }
+            set {
+                #if DEBUG
+                    defaults.set(newValue, forKey: Self.relayBookKey)
+                #endif
+            }
+        }
+
+        #if DEBUG
+            // `scripts/check.sh release` fails when a release build holds this key: it would mean the relay list ships.
+            private static let relayBookKey = "debug.spool.relays"
+        #endif
     }
 #endif

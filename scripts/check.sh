@@ -350,11 +350,14 @@ check_release_app() {
 	# gate (AppEnvironment.blindAdvert), since a store build has no switch (ADR 2026-11.prsp), and the line KnitBLE logs
 	# as the bridge arms its skipped unpublish (BLERadio.skipNextUnpublish, knit/knit-ios#53), and the line the spool's
 	# socket factory logs as it is made (URLSessionSpoolSocketFactory, ADR 2026-11.adrq), since a store build has no spool
-	# plane until it is approved. Any one here means a debug path ships.
+	# plane until it is approved, with the relay settings' own: the line their composition logs (AppEnvironment.startRelays),
+	# the line a relay invite logs as it opens (Launch.open(url:)), the defaults key of the relay list (DefaultsPreferences)
+	# and the Keychain service of relay addresses (KeychainRelayStore). Any one here means a debug path ships.
 	for marker in app.getknit.knit.bridge "running the demo on seeded stores in memory" debug.launch.ratchet \
 		"voice notes are on in this debug build" "link previews are on in this debug build" debug.launch.blind \
 		"the blinded advert writer is on in this debug build" "ble will skip the next unpublish" \
-		"spool sockets are on in this debug build"; do
+		"spool sockets are on in this debug build" "internet relays are on in this debug build" \
+		"a relay invite opened in this debug build" debug.spool.relays app.getknit.knit.spool-relay; do
 		if grep -q -a -F "$marker" "$app/Knit"; then
 			echo "$app/Knit holds debug-only code: it contains \"$marker\"" >&2
 			return 1

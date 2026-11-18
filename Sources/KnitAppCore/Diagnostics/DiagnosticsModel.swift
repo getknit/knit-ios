@@ -32,8 +32,9 @@ public enum ClockSkew {
     }
 }
 
-/// Stores a minted test identity where the next launch loads it: the app's Keychain, in a debug build.
-public typealias IdentityReplacer = @Sendable (IdentityKeys) throws -> Void
+/// Stores a minted test identity where the next launch loads it: the app's Keychain, in a debug build. Diagnostics calls it
+/// on the main actor, where the relay settings void their consent first.
+public typealias IdentityReplacer = @MainActor @Sendable (IdentityKeys) throws -> Void
 
 /// A peer as Diagnostics lists it.
 public struct DiagnosticsPeer: Sendable, Equatable, Identifiable {

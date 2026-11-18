@@ -39,7 +39,10 @@ has no owner, because a trust boundary is not a plane: the plane's owner, or the
 the security reviewer runs beside the plane's reviewer in the same message when a file sits in both gates. Its gate
 is the trust boundaries: all of `KnitWire`, the router, `MeshEngine+Inbound`, the link door and what goes on air, the
 link proof and seal, the spool's scope seal and proof of work (`KnitCrypto/Scope`, which opens what a spool serves),
-the plane that reads what a spool sends (`KnitMesh/Spool`) and the relay's WebSocket (`KnitSpoolNet`), at-rest storage and the Keychain, logs, notifications and
+the plane that reads what a spool sends (`KnitMesh/Spool`), the relay's WebSocket (`KnitSpoolNet`), the relay settings, their
+consent and invites and the Keychain items that hold relay addresses (`KnitAppCore/Relays`, `KeychainRelayStore`), the paths
+that carry an opened link or the scene's phase to them and keep their list (`Launch`, `KnitApp`, `AppEnvironment+Phases`,
+`DefaultsPreferences`, `AppPreferences`), at-rest storage and the Keychain, logs, notifications and
 crash reports, the content filter,
 mentions and names, link cards, the photo and voice decoders, the share inbox, Add contact, the debug bridge's
 listener, `App/`'s plist, entitlements and project, and CI. Adopt it too for a change elsewhere that acts on what a

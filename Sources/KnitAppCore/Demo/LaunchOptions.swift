@@ -7,7 +7,8 @@ public import KnitMesh
 /// (`-demoPhoto gif`), whether the demo posts a notification to tap (`-demoNotification`), and whether every photo and
 /// every message from someone else looks explicit or abusive to the content filter (`-demoSensitive`), words the
 /// share sheet left for the room (`-demoShare "words"`), whether a crash and a hang wait in Diagnostics
-/// (`-demoCrash`), and whether the mic records a bundled clip (`-demoVoice`).
+/// (`-demoCrash`), whether the mic records a bundled clip (`-demoVoice`), and whether Settings shows Internet relays over a
+/// stand-in that opens no socket (`-demoRelays`).
 public struct LaunchOptions: Sendable, Equatable {
     /// Whether to run the demo: seeded stores in memory, a radio that goes nowhere, and a fixed identity.
     public var seedDemo = false
@@ -40,6 +41,9 @@ public struct LaunchOptions: Sendable, Equatable {
     /// Whether the composer's mic records the clip a debug build bundles, with the microphone allowed, in the demo and in
     /// a debug build's live launch: the Simulator has no microphone a UI test can speak into (``DemoVoiceCapture``).
     public var demoVoice = false
+    /// Whether the demo's Settings shows Internet relays (ADR 2026-11.adrq, P6), kept in memory over ``DemoRelays``, which opens
+    /// no socket, so the UI tests walk the switch, consent and invites. Off, the demo shows no relays, as its screenshots must.
+    public var demoRelays = false
     /// Whether a live launch turns the forward-secrecy ratchet's switch on (`MeshConfiguration.ratchet`, ADR 2026-10.5sk9):
     /// `-ratchet on|off`, or the choice an earlier launch kept, else on (``Choice``). A release build reads no choice, so
     /// it is always on.
@@ -79,6 +83,7 @@ public struct LaunchOptions: Sendable, Equatable {
         demoSensitive = arguments.contains("-demoSensitive")
         demoCrash = arguments.contains("-demoCrash")
         demoVoice = arguments.contains("-demoVoice")
+        demoRelays = arguments.contains("-demoRelays")
         demoShare = arguments.firstIndex(of: "-demoShare").flatMap { arguments.indices.contains($0 + 1) ? arguments[$0 + 1] : nil }
         ratchetChoice = Choice(after: "-ratchet", in: arguments)
         ratchet = (ratchetChoice ?? storedRatchet) != .off

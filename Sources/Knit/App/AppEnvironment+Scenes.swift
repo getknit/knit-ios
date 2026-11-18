@@ -55,7 +55,7 @@
                     notification: options.demoNotification ? DemoSeed.notification(in: stores, me: identity.nodeId) : nil
                 )
                 parts.shareInbox = options.demoShare.map(ShareContainer.demoInbox)
-                return compose(parts, ratchet: false, replace: nil) // A demo keeps no prekeys and reaches no one.
+                return demoWithRelays(parts, relays: options.demoRelays)
             }
         #endif
 

@@ -117,6 +117,8 @@ targets:
       - path: ../Sources/KnitAppCore/AccessibilityID.swift
       - path: ../Sources/KnitAppCore/AccessibilityID+Attachments.swift
       - path: ../Sources/KnitAppCore/AccessibilityID+Names.swift
+      # Internet relays' ids, for the relay walk (ADR 2026-11.adrq, P6).
+      - path: ../Sources/KnitAppCore/AccessibilityID+Relays.swift
     dependencies:
       - target: KnitApp
     settings:

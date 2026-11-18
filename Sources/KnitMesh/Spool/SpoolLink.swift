@@ -75,6 +75,13 @@ internal struct SpoolLink: Sendable {
     var failures = 0
     /// When the next dial goes, while idle and not paused.
     var nextDialAt: Int64?
+    /// The token of the last dial issued, kept after the dial ends: a refusal that lands after a pause or the open deadline
+    /// ended its dial still names the relay's `Retry-After` while no later dial was issued (P6).
+    var lastDialToken: SpoolConnectionToken?
+    /// The earliest the next dial may go by ``earlyEndFloor(now:)`` of the last session that ended on its own, which a resume
+    /// keeps (P6): a pause clears ``nextDialAt``, and a relay whose sessions keep ending early is otherwise dialled on every
+    /// front edge.
+    var earlyFloorAt: Int64?
     var openedAt: Int64?
     /// The heal's compared rounds when the session opened.
     var roundsAtOpen = 0

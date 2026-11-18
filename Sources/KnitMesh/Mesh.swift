@@ -45,8 +45,10 @@ public actor Mesh {
     var spoolRunner: (any SpoolStampRunner)?
     /// The search the runner holds, and its stop flag.
     var spoolSearch: (run: Int64, flag: SpoolStopFlag)?
-    /// Whether the spool runs while the mesh does: ``pauseSpool()`` clears it and ``resumeSpool()`` sets it.
-    var spoolWanted = true
+    /// Whether the spool runs while the mesh does: ``pauseSpool()`` clears it and ``resumeSpool()`` sets it, and a mesh made
+    /// with `spoolStartsPaused` starts with it clear. The plane's wanted state lives here alone, so a ``stop()`` and
+    /// ``start()`` (Settings' Stop and Start, the debug bridge's) keep whatever the app last asked.
+    var spoolWanted: Bool
     /// How many times the timer fired, for the tests that bound it.
     private(set) var timerFirings = 0
 
@@ -56,7 +58,9 @@ public actor Mesh {
     public private(set) var radioState: RadioState?
 
     /// A mesh node for `identity`, with the ratchet prekeys it keeps beside it, or none, on `radio`, keeping cut
-    /// attachments' prefixes in `partials`, or in memory.
+    /// attachments' prefixes in `partials`, or in memory. With `spoolStartsPaused`, the spool plane dials nothing until
+    /// ``resumeSpool()``, whatever ``start()`` does: what an app that runs its relays only at the front passes, so a launch in
+    /// the background opens no socket (ADR 2026-11.adrq, P6).
     public init(
         identity: IdentityKeys,
         prekeys: PrekeyRing? = nil,
@@ -69,7 +73,8 @@ public actor Mesh {
         linkConfiguration: LinkManager.Configuration = LinkManager.Configuration(),
         log: any KnitLog = SilentLog(),
         partials: (any PartialBlobStore)? = nil,
-        spoolSockets: (any SpoolSocketFactory)? = nil
+        spoolSockets: (any SpoolSocketFactory)? = nil,
+        spoolStartsPaused: Bool = false
     ) {
         // One store for both, so the engine asks with what the links keep. In memory unless the app hands one on disk.
         let shared = partials ?? MemoryPartialBlobStore { line in log.log(.info, "mesh \(line)") }
@@ -104,6 +109,7 @@ public actor Mesh {
         nodeId = identity.nodeId
         spool = SpoolPlane(me: identity.nodeId)
         self.spoolSockets = spoolSockets
+        spoolWanted = !spoolStartsPaused
         (events, continuation) = AsyncStream<MeshEvent>.makeStream()
     }
 

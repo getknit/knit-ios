@@ -5,8 +5,9 @@ import KnitWire
 extension SpoolPlane {
     // MARK: Relays
 
-    /// Carries `relay` from now on, dialled at `url`, and dials it at once unless paused. Refused past ``maxRelays``, and
-    /// for a handle already carried.
+    /// Carries `relay` from now on, dialled at `url`, and dials it at once unless paused, or once the `Retry-After` its
+    /// handle's last refused dial named has passed (``askedFloors``). Refused past ``maxRelays``, and for a handle already
+    /// carried.
     mutating func add(_ relay: SpoolRelayHandle, url: AcceptedSpoolURL, engine: MeshEngine) -> Bool {
         guard relays[relay] == nil, relays.count < Self.maxRelays else {
             return false
@@ -14,7 +15,9 @@ extension SpoolPlane {
         var heal = ScopeHeal(relay: relay, me: me)
         heal.adopt(table.scopes)
         var state = Relay(url: url, heal: heal)
-        state.link.nextDialAt = engine.clock.monotonicMilliseconds()
+        let now = engine.clock.monotonicMilliseconds()
+        pruneAskedFloors(now: now)
+        state.link.nextDialAt = max(now, askedFloors[relay] ?? now)
         relays[relay] = state
         markTableDirty()
         refreshTable(engine: engine)
@@ -46,13 +49,28 @@ extension SpoolPlane {
         }
     }
 
-    /// Dials every relay at once, its failure count reset, and lets the miner run again in this turn.
+    /// Out of a pause, dials every relay at once, its failure count reset, unless the relay asked for later: the
+    /// `Retry-After` of its last refused dial (``askedFloors``) or the rest of 30 s after a session that ended early
+    /// (``SpoolLink/earlyFloorAt``). Then lets the miner run again in this turn. A resume of a plane that is not paused does
+    /// nothing (P6): a second `resumeSpool()` must not zero a backoff and dial a relay deep in it at once, and the miner,
+    /// paused and resumed only with the plane, is already running.
     mutating func resume(engine: MeshEngine) {
+        guard paused else {
+            return
+        }
         paused = false
         let now = engine.clock.monotonicMilliseconds()
+        pruneAskedFloors(now: now)
         for relay in relays.keys {
+            var due = now
+            if let asked = askedFloors[relay] {
+                due = max(due, asked)
+            }
+            if let early = relays[relay]?.link.earlyFloorAt {
+                due = max(due, early)
+            }
             relays[relay]?.link.failures = 0
-            relays[relay]?.link.nextDialAt = now
+            relays[relay]?.link.nextDialAt = due
         }
         dialDue(engine: engine)
         deliver(miner.resume(now: SpoolNow(monotonic: now, wall: engine.clock.wallMilliseconds())), engine: engine)
@@ -85,17 +103,36 @@ extension SpoolPlane {
         return true
     }
 
-    /// The dial under `token` failed: a failure for the backoff, floored by the spool's `Retry-After` when it gave one.
+    /// The dial under `token` failed: a failure for the backoff, floored by the spool's `Retry-After` when it gave one, and
+    /// that floor kept for a resume and a re-add (``askedFloors``).
+    ///
+    /// A refusal that lands after a pause or the open deadline already ended its dial is no failure (the end was not the
+    /// relay's), but its `Retry-After` still stands while `token` is the last dial issued to the relay (P6): a pause between
+    /// a 503 and its post would otherwise lose it. A later dial, or a relay removed and added again, makes the token stale,
+    /// and a stale post is dropped.
     mutating func dialFailed(_ relay: SpoolRelayHandle, token: SpoolConnectionToken, _ failure: SpoolDialFailure, engine: MeshEngine) {
-        guard var link = relays[relay]?.link, case .dialing(token, _) = link.phase else {
+        guard var link = relays[relay]?.link else {
+            return
+        }
+        let now = engine.clock.monotonicMilliseconds()
+        let floor = failure.retryAfter?.milliseconds
+        guard case .dialing(token, _) = link.phase else {
+            if link.lastDialToken == token {
+                let asked = noteAskedFloor(relay, floor, now: now)
+                // Only the open deadline leaves a redial set here; a pause leaves none, and the resume reads the floor.
+                if let asked {
+                    relays[relay]?.link.nextDialAt = link.nextDialAt.map { max($0, asked) }
+                }
+            }
             return
         }
         link.phase = .idle
         link.counts.dialFailures += 1
         link.counts.unreached += 1
         link.failures += 1
-        link.nextDialAt = redialAt(failures: link.failures, floor: failure.retryAfter?.milliseconds, engine: engine)
+        link.nextDialAt = redialAt(failures: link.failures, floor: floor, engine: engine)
         relays[relay]?.link = link
+        noteAskedFloor(relay, floor, now: now)
     }
 
     /// One message off the socket under `token`, posted once the reader's last post returned. Answers what the reader does
@@ -212,6 +249,7 @@ extension SpoolPlane {
             nextToken += 1
             state.link.phase = .dialing(token, openBy: SpoolSession.later(now, by: SpoolLink.openMilliseconds))
             state.link.nextDialAt = nil
+            state.link.lastDialToken = token
             state.link.counts.dials += 1
             relays[relay] = state
             actions.append(.dial(relay, token, state.url))
@@ -298,11 +336,34 @@ extension SpoolPlane {
                 link.failures += 1
             }
             link.nextDialAt = redialAt(failures: link.failures, floor: early, engine: engine)
+            link.earlyFloorAt = early.map { SpoolSession.later(now, by: $0) }
         }
         state.link = link
         if let token {
             actions.append(.close(state.heal.relay, token, code: code))
         }
+    }
+
+    // MARK: Asked-for floors
+
+    /// Keeps `relay`'s `Retry-After` of `floor` milliseconds from `now` in ``askedFloors``, or forgets its last one when this
+    /// refusal named none: the floor is the last refusal's word, never the longest of them. Answers the floor kept. Entries
+    /// whose time has passed go first; past ``maxRelays`` entries, those of relays no longer carried go too, so the map
+    /// stays bounded however often relays are removed and added.
+    @discardableResult
+    mutating func noteAskedFloor(_ relay: SpoolRelayHandle, _ floor: Int64?, now: Int64) -> Int64? {
+        pruneAskedFloors(now: now)
+        let asked = floor.map { SpoolSession.later(now, by: $0) }
+        askedFloors[relay] = asked
+        if askedFloors.count > Self.maxRelays {
+            askedFloors = askedFloors.filter { relays[$0.key] != nil }
+        }
+        return asked
+    }
+
+    /// Drops every asked-for floor whose time has passed at `now`.
+    mutating func pruneAskedFloors(now: Int64) {
+        askedFloors = askedFloors.filter { $0.value > now }
     }
 
     /// When the next dial goes after `failures` unreached sessions in a row, floored by a `Retry-After`.

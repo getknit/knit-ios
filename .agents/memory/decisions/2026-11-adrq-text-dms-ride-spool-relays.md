@@ -245,7 +245,8 @@ protocol byte for byte and needs no Android change.
   reached once it lasted 30 s or ended a round that compared a scope against the spool's anchor; a fault of ours, an
   `unopenable` end, a write stall and a close coded 4000…4003 are never reached. A session that ends before 30 s, reached
   or not, floors the next dial at the rest of those 30 s: a relay is dialled at most once per 30 s while its sessions end
-  early. A pause is no failure, and a resume dials every relay at once with its count reset.
+  early. A pause is no failure, and a resume dials every relay at once with its count reset (P6 below: no sooner than the
+  relay's `Retry-After` floor or its early-end floor, and only out of a pause).
 - **The table before a send's end.** The end of a send reads the table first, as every input does, so a scope that left
   takes its held pushes with it before they go on.
 - **Relays and lifecycle.** At most eight relays. A pause ends every session and keeps every heal (its accounted, invalid
@@ -366,4 +367,67 @@ protocol byte for byte and needs no Android change.
 - **The daemon.** `check.sh spool` runs against knit-spool `a682524`, built from a clean worktree with its own Dockerfile,
   in containers on `127.0.0.1` alone (`.agents/context/spool.md`). `scripts/spool-daemons.sh` runs the pinned image ID,
   never pulls, and refuses a local tag whose ID is another.
+- None of it changes what a spool or a peer receives: no record, field or capability moves.
+
+**Amended 2026-11-17 (P6, the app; a draft until the maintainer accepts it):**
+
+- **Relays run only at the front.** The live mesh starts with its spool paused (`Mesh(spoolStartsPaused:)`), whatever
+  starts it: a launch, iOS's relaunch for Bluetooth restoration, the bridge's `start`. One serial stream carries the scene's
+  phases, the gate and the relays into the mesh in order. The spool runs while `gate && foreground`: `foreground` is false
+  at launch, true on `.active`, false on `.background`, and kept on `.inactive`, so Control Center and an alert keep the
+  sockets. Only the scene's own phase resumes the spool; an environment built after the scene moved (protected data
+  arriving, or Retry, at the front) hears the scene's last phase replayed, never the application's state. Leaving the front
+  takes a background task, ended once the pause has stopped the miner and issued every close, or at once if the stream has
+  ended. A resume does nothing unless the plane is paused. Otherwise it resets each relay's failure count and dials it at
+  the latest of now, the `Retry-After` floor its last refused dial named, and the 30 s early-end floor. The `Retry-After`
+  floor is kept by handle across a removal and an add, at most one per relay the mesh can carry, dropped once it has passed,
+  recorded too when the refusal lands after a pause while no later dial went, and cleared by a later refusal with none.
+  Two bounds are accepted: a pause and a resume that both land before a refused dial's answer can dial once before that
+  refusal's floor, and the early-end floor is not kept across a removal and an add, so it holds once per toggle.
+- **One gate.** `spoolEnabled` is a debug build (the compile-time flag, never an argument or a defaults key), the list
+  read, and the switch on under the current consent sheet, bound by this install's consent nonce. With the gate closed the
+  mesh carries no relay, and the list stays.
+- **The consent nonce** is 128 random bits, kept in a relay-service Keychain item (account `consent`, not synchronised,
+  `AfterFirstUnlockThisDeviceOnly`), with a copy in the list. Consent holds only while the two match. It binds the consent
+  to this device's install; it is no secret, and nothing in the preferences is derived from the node id. A nonce that is
+  gone or differs (a backup restored onto another phone, a reinstall, a replaced identity) voids the consent. A read that
+  fails gives no consent and dials nothing until a read succeeds, and voids nothing. Replacing the identity, Diagnostics'
+  one way to, first voids the consent in the kept list, then deletes the item, then replaces the identity, so no consent
+  outlives the identity it was given beside, whatever the delete does.
+- **Where a relay is kept.** The preferences keep handles and flags alone: whether a relay is seeded, private or parked,
+  the seeded marker, the switch, its consent with the nonce's copy, and the deletes owed. Every address but the seeded house
+  relay's, which is rebuilt from `SpoolURL.house`, is one Keychain item under the same service, never synchronised, set
+  `AfterFirstUnlockThisDeviceOnly` on add and update, and it leaves the item only as an `AcceptedSpoolURL`. That is
+  stricter than "Relays" above, which kept a public relay's URL in the preferences.
+  - Only a list never kept removes every item under the service before it seeds `public-1`, and removing `public-1` never
+    brings it back.
+  - A kept list that does not read is left as it is: nothing is swept, seeded, written or dialled, the settings say the
+    list cannot be read, the case is logged by kind alone, and the list is read again at each return to the front. A field
+    missing from a kept list or entry reads from the rest: the next handle is past every handle listed or owed a delete,
+    and a list that lists or owes anything was seeded. Only an entry with no handle leaves the list unread.
+  - A failed delete is retried at each return to the front, and handles are never reused. The list holds at most eight
+    relays, the mesh's cap.
+  - A read that fails leaves the relay listed and undialled until a read succeeds. A text the factory refuses is kept,
+    shown as unusable and never dialled. An address another listed relay is already ready under is a duplicate: shown,
+    undialled and removable, and ready again once that relay goes.
+  - The list is read after the identity: preferences read before the first unlock can come back empty.
+- **Consent names what is dialled.** The switch's sheet names every relay that can join under it: by host, or by number
+  while its address cannot be read, which joins once it reads. A switch sheet whose list no longer matches what its tap
+  would carry is shown again as it now stands instead of applied. An invite's sheet names the one address the invite came
+  to, and its Add applies that address. A new invite replaces a sheet that is up, and one accepted with the switch off
+  joins the list and dials nothing. What is shown is the accepted address's own `host[:port]`, and only `SpoolURL.house`
+  exactly is called Knit's relay. The access-key mark says only that an address carries a `k` key, not that a relay without
+  one holds no secret. The sheet says what a relay learns: a code for each conversation with the person's contacts, when
+  messages move, when Knit is open, and the phone's IP address.
+- **Invites.** An opened link is an invite only when it starts with `https://getknit.app/r#` or `knit://r/`, and pasted
+  text is searched anywhere. Neither takes `ws://` in any build: `allowCleartext` is false for every invite and paste, and
+  `ws://` stays a test socket's. A pending invite waits in memory until onboarding and the terms are done. A refusal names
+  its reason and no part of the link. getknit.app's association file lists `/c` alone (checked 2026-11-17), so the `https`
+  form opens the website and `knit://r/` opens Knit (`.agents/memory/roadmap.md`).
+- **The release boundary.** `KnitSpoolNet` joins the `Knit` target and stays in no product. Its import, the composition
+  line, the invite branch in `Launch.open(url:)` and the settings section compile into a debug build alone, and `check.sh
+  release` fails a store build that holds any of their markers. A Keychain failure logs its bare status alone.
+- **The miner's spend stays in memory.** The window's buckets and found stamps live in memory, so a cold launch starts
+  them again. Persisting them in the database is owed before the release flip, and the plane does not ship in a store build
+  before then. The DM phases keep the schema as it is.
 - None of it changes what a spool or a peer receives: no record, field or capability moves.

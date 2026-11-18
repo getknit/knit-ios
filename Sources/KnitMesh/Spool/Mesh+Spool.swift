@@ -59,7 +59,9 @@ extension Mesh {
         settle()
     }
 
-    /// Dials every relay at once, failure counts reset, while the mesh runs.
+    /// Out of a pause, dials every relay at once, failure counts reset, while the mesh runs: a relay whose last refused dial
+    /// named a `Retry-After`, or whose last session ended before 30 s, is dialled no sooner than that asked. A resume while
+    /// the spool already runs changes nothing.
     public func resumeSpool() {
         spoolWanted = true
         if isRunning {

@@ -96,4 +96,19 @@ import Testing
         #expect("\(url)" == "relay.example.org:8443")
         #expect(Mirror(reflecting: url).children.isEmpty)
     }
+
+    /// What a relay list marks private: a `k` key in either case, or any key holding a `%`, the reading the cleartext rule
+    /// refuses a token by; a key that only ends in `k`, a bare `k` with no value and a path alone are no token.
+    @Test func aTokenIsAKeyKInEitherCaseOrAKeyHoldingAPercent() throws {
+        let tokens = ["?k=secret", "?K=secret", "?a=1&k=2", "?%6b=secret", "?k="]
+        for query in tokens {
+            let url = try #require(AcceptedSpoolURL("wss://relay.example.org/spool/v1" + query, allowCleartext: false))
+            #expect(url.carriesToken, "\(query) carries a token")
+        }
+        let plain = ["", "?token=secret", "?kk=1", "?k", "/private"]
+        for rest in plain {
+            let url = try #require(AcceptedSpoolURL("wss://relay.example.org/spool/v1" + rest, allowCleartext: false))
+            #expect(!url.carriesToken, "\(rest) carries none")
+        }
+    }
 }

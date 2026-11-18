@@ -1,3 +1,4 @@
+public import Foundation
 import KnitSync
 
 /// The app's own settings, which outlive a launch: UserDefaults in the app, memory in tests and `-seedDemo`.
@@ -11,6 +12,16 @@ public protocol AppPreferences: AnyObject, Sendable {
     /// Whether the composer fetches a card for a link it holds: off until it is turned on (ADR 2026-11.hcvg). Only a
     /// build with link previews offers it.
     var linkPreviews: Bool { get set }
+    /// Internet relays' list and switch as the bytes kept, `nil` until the list is first written (ADR 2026-11.adrq, P6):
+    /// handles, flags and the consent nonce's copy, never an address. Only a debug build reads or keeps them.
+    var relayBookData: Data? { get set }
+}
+
+extension AppPreferences {
+    /// The relay list the kept bytes hold: none yet, a list, or bytes that do not read as one, which are left as they are.
+    public var relayBook: StoredRelayBook {
+        RelayBook.read(relayBookData)
+    }
 }
 
 /// ``AppPreferences`` in memory.
@@ -19,6 +30,7 @@ public final class MemoryPreferences: AppPreferences {
     private let filters: Lock<Bool>
     private let terms: Lock<Int>
     private let previews: Lock<Bool>
+    private let relays = Lock<Data?>(nil)
 
     /// Preferences starting from `hasOnboarded`, `filtersContent`, `acceptedTerms` and `linkPreviews`.
     public init(hasOnboarded: Bool = false, filtersContent: Bool = true, acceptedTerms: Int = 0, linkPreviews: Bool = false) {
@@ -46,6 +58,11 @@ public final class MemoryPreferences: AppPreferences {
     public var linkPreviews: Bool {
         get { previews.withLock { $0 } }
         set { previews.withLock { $0 = newValue } }
+    }
+
+    public var relayBookData: Data? {
+        get { relays.withLock { $0 } }
+        set { relays.withLock { $0 = newValue } }
     }
 }
 

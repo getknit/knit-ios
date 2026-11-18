@@ -86,7 +86,8 @@ let package = Package(
 
         // A relay's WebSocket (ADR 2026-11.adrq, P5): URLSessionWebSocketTask behind the spool plane's socket contract, a debug
         // build's alone and on Apple platforms alone, with the dial's address check, which builds and tests everywhere. No
-        // product, and no target the app links names it before P6: `SpoolNetIsolationTests` checks.
+        // product: the app reaches it through `Knit` alone, every file of it is `#if DEBUG`, and so is the one import and the
+        // one composition line (P6). `SpoolNetIsolationTests` checks.
         .target(name: "KnitSpoolNet", dependencies: ["KnitSync", "KnitMesh", "KnitWire"], swiftSettings: pure),
 
         // Apple: the CoreBluetooth radio and the SwiftUI app. Both compile to empty modules elsewhere.
@@ -94,7 +95,8 @@ let package = Package(
         .target(
             name: "Knit",
             dependencies: [
-                "KnitAppCore", "KnitBLE", "KnitStoreSQL", "KnitControl", "KnitWebP", "KnitMesh", "KnitCrypto", "KnitStore", "KnitWire",
+                "KnitAppCore", "KnitBLE", "KnitStoreSQL", "KnitControl", "KnitWebP", "KnitSpoolNet", "KnitMesh", "KnitCrypto", "KnitStore",
+                "KnitWire",
             ],
             swiftSettings: strict,
             // The app links every target as a static archive, and the linker keeps only the members something names.

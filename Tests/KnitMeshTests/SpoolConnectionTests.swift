@@ -28,6 +28,8 @@ import Testing
         #expect(heal.mining.isEmpty && heal.state(scope.id)?.stamp != nil, "the heal took the stamp with no session")
         #expect(lab.link(1)?.counts.stampsAnsweredOffline == 1)
         lab.forgetSent(1)
+        // The session ended early, so the redial waits out the rest of its 30 s: a resume of the running plane is no dial.
+        lab.advance(lab.waited(1))
         lab.connect(1)
         lab.run(2)
         let first = lab.sent[1].first { if case .sub = $0 { true } else { false } }
@@ -175,7 +177,8 @@ import Testing
         lab.advance(SpoolLink.openMilliseconds)
         #expect(lab.link(1)?.counts.dialTimeouts == 1 && lab.link(1)?.failures == failures + 1)
 
-        // A resume dials at once, its count reset.
+        // A resume out of a pause dials at once, its count reset: the last refusal named no floor.
+        lab.planes[1].pause(engine: engine)
         lab.planes[1].resume(engine: engine)
         lab.takeActions(1)
         #expect(lab.link(1)?.failures == 0 && lab.pendingDials[1] != nil, "an immediate dial")

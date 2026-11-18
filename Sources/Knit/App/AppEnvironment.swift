@@ -36,7 +36,7 @@
         let demoPhoto: Data?
         /// What `-demoNotification` posts each time Knit goes to the background, since nothing reaches the demo that
         /// would: a UI test taps it to open its thread.
-        private let demoNotification: LocalNotification?
+        let demoNotification: LocalNotification?
         let about: AboutInfo
         /// The share sheet's side of the App Group (ADR 2026-10.z7a8), or `nil` when Knit has no container to share.
         let shares: ShareHost?
@@ -51,9 +51,12 @@
         private let radio: BLERadio?
         /// The mesh, which hears whether Knit is in the background so its links seek peers there (ADR 2026-10.mueg).
         private let mesh: Mesh
-        /// Knit going to the background and coming back, in order: one task hands each to the mesh, so a quick toggle
-        /// cannot overtake the one before it.
-        private let phases = AsyncStream<Bool>.makeStream()
+        /// The one serial stream into the mesh: Knit going to the background and coming back, and the relays' gate and list,
+        /// in order, so a quick toggle cannot overtake the one before it (ADR 2026-11.adrq, P6).
+        let phases: MeshPhases
+        /// Internet relays' settings, in a debug build's live launch, or a demo's under `-demoRelays`; `nil` everywhere else,
+        /// a store build's always (ADR 2026-11.adrq, P6).
+        var relays: InternetRelays?
         private var listening: Task<Void, Never>?
         /// The mesh's first start, which ``close()`` waits for: a stop that overtook it would leave the mesh running.
         private var starting: Task<Void, Never>?
@@ -67,6 +70,7 @@
         private init(
             session: AppSession,
             mesh: Mesh,
+            phases: MeshPhases,
             radio: BLERadio?,
             preferences: any AppPreferences,
             notifier: LocalNotifier,
@@ -80,6 +84,7 @@
         ) {
             self.session = session
             self.mesh = mesh
+            self.phases = phases
             self.radio = radio
             self.preferences = preferences
             self.notifier = notifier
@@ -109,15 +114,9 @@
             }
             let running = session
             listening = Task { await running.listen() }
-            let node = mesh
-            let changes = phases.stream
-            Task {
-                for await background in changes {
-                    await node.setInBackground(background)
-                }
-            }
-            // A relaunch to restore Bluetooth runs in the background, with no scene to say so.
-            phases.continuation.yield(UIApplication.shared.applicationState == .background)
+            // A relaunch to restore Bluetooth runs in the background, with no scene to say so. The links hear it; the spool
+            // waits for the scene's own `.active` (``SpoolLifecycle``).
+            phases.send(.launched(background: UIApplication.shared.applicationState == .background))
             #if DEBUG
                 bridge?.start()
             #endif
@@ -210,7 +209,9 @@
                 // The device tests pick a demo photo too: the system's picker is out of their reach.
                 parts.demoPhoto = options.demoPhoto ? DemoPictures.picked(moving: options.demoPhotoMoves) : nil
                 parts.demoVoice = options.demoVoice ? DemoVoice.reply() : nil
-                return compose(parts, ratchet: options.ratchet) { keys in try keyStore.write(keys.storedForm) }
+                // The live environment alone dials relays (ADR 2026-11.adrq, P6), and reads their list here, after the identity.
+                return liveWithRelays(parts, ratchet: options.ratchet, preferences: defaults) { keys in try keyStore.write(keys.storedForm)
+                }
             #else
                 return compose(parts, ratchet: options.ratchet, replace: nil)
             #endif
@@ -250,6 +251,10 @@
             /// Whether this is the sample chats, which run beside the live environment (ADR 2026-11.pydf): they take no
             /// device tag, post no notification, set no badge and open no debug bridge, each of which is the live one's.
             var isSample = false
+            /// What opens relays' sockets: a debug build's live launch alone has one (ADR 2026-11.adrq, P6).
+            var spoolSockets: (any SpoolSocketFactory)?
+            /// Whether relays run over ``DemoRelays``, which opens nothing, under `-demoRelays`.
+            var demoRelays = false
             #if DEBUG
                 /// What the debug bridge's `storage` reply reads, which only a live launch has.
                 var storage: StorageReport?
@@ -260,32 +265,7 @@
             let clock = SystemClock()
             // The session draws cards only where the profile promises it, so one switch sets both.
             let previews = linkPreviews(log: parts.log)
-            let node = Mesh(
-                identity: parts.identity,
-                prekeys: parts.prekeys,
-                deviceTag: parts.isSample ? nil : DeviceTag.derive(UIDevice.current.identifierForVendor?.uuidString),
-                stores: parts.stores,
-                radio: parts.radio,
-                clock: clock,
-                random: SystemRandomNumberGenerator(),
-                // Every build queries a blob's holders before it asks, as Android's does since its `BLOB_QUERY` shipped
-                // on in release (knit-next `713b29d6`, ADR 2026-10.m9uq's amendment); the ratchet too, unless a debug `-ratchet off`.
-                // A quote rebuilt from its original names a GIF, a file or a voice note as the composer does
-                // (knit-next ADR 2026-10.gpa3).
-                // Our presence keys go to our contacts in every build, their dated trail logged in debug alone (ADR 2026-11.prsp).
-                configuration: MeshConfiguration(
-                    queriesBlobHolders: true,
-                    ratchet: ratchet,
-                    linkPreviews: previews != nil,
-                    sendsOwnPresenceKeys: true,
-                    logsPresenceKeyTrail: logsPresenceKeyTrail
-                ) { attachment in
-                    AttachmentKind.quoteLabel(of: attachment)
-                },
-                linkConfiguration: parts.links,
-                log: parts.log,
-                partials: parts.partials
-            )
+            let node = mesh(parts, ratchet: ratchet, linkPreviews: previews != nil, clock: clock)
             let alerts = LocalNotifier()
             let shows = !parts.staging.isEmpty || parts.director != nil
             let shown = shows ? DemoMesh(node, staging: parts.staging, director: parts.director) : nil
@@ -295,6 +275,7 @@
             let environment = AppEnvironment(
                 session: app,
                 mesh: node,
+                phases: MeshPhases(target: parts.demoRelays ? DemoRelays(over: node) : node),
                 radio: parts.radio as? BLERadio,
                 preferences: parts.preferences,
                 notifier: alerts,
@@ -361,37 +342,11 @@
             let started = starting
             let running = session
             listening?.cancel()
-            phases.continuation.finish()
+            phases.finish()
             demoMesh?.end()
             Task {
                 await started?.value
                 await running.stop()
-            }
-        }
-
-        /// Knit went to the background, where iOS may suspend it, or came back. Control Center or an alert over Knit is
-        /// neither: Knit is still on screen, and Android still finds it. Going posts `-demoNotification`'s notification.
-        func setInBackground(_ background: Bool) {
-            phases.continuation.yield(background)
-            if background, let model {
-                Task { await model.release() }
-            }
-            if let textModel {
-                Task { await textModel.setInBackground(background) }
-            }
-            if background, let demoNotification {
-                let alerts = notifier
-                Task { await alerts.post(demoNotification) }
-            }
-        }
-
-        /// Lets the filter's models go: memory runs low. The next photo or message screened loads its model again.
-        func releaseModel() {
-            if let model {
-                Task { await model.release() }
-            }
-            if let textModel {
-                Task { await textModel.release() }
             }
         }
     }

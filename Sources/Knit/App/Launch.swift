@@ -56,8 +56,14 @@
         var requestedRequests = false
         /// A contact link opened from outside Knit, until Add contact takes it (ADR 2026-10.tpr5).
         var requestedContactLink: String?
+        /// A relay invite opened from outside Knit or tapped in a message, held in memory alone until the live screens,
+        /// after onboarding and the terms, hand it to the relay settings (ADR 2026-11.adrq, P6). Only a debug build sets it.
+        var requestedRelayInvite: String?
 
         @ObservationIgnored private var history = History(startedAt: SystemClock().wallMilliseconds())
+        /// The scene's last phase, which an environment built after it hears at once: a launch that waited for protected data
+        /// or Retry at the front would otherwise miss the `.active` that runs its relays.
+        @ObservationIgnored private var phase: AppPhase?
         /// The saved crash and hang reports, which the app delegate's collector fills before any environment exists.
         @ObservationIgnored private let crashes: CrashStore
 
@@ -107,6 +113,10 @@
                 #if DEBUG
                     environment.offerSample(self)
                 #endif
+                // The scene's own phase, never the application's state, so only a scene at the front runs the relays.
+                if trigger != .foreground, let phase {
+                    environment.scene(phase)
+                }
             } catch {
                 history.waited = history.waited ?? "\(error)"
                 stage = .waiting("\(error)")
@@ -146,21 +156,36 @@
         /// A URL that opened Knit, a `knit://` link or a tapped `https://getknit.app/c#…` one, which SwiftUI hands over
         /// as a universal link: Add contact takes a contact link, and anything else is ignored, as Android's inbox
         /// stages only what reads as a card (`ContactCardInbox.offer`).
+        ///
+        /// In a debug build a relay invite, `https://getknit.app/r#…` or `knit://r/…` at the very start of the address, closes
+        /// the sample chats too and waits for the relay settings' consent sheet (ADR 2026-11.adrq, P6). A store build has no
+        /// relays, and ignores one as it ignores any other address.
         func open(url: URL) {
             let text = url.absoluteString
             if AddContactModel.isContactLink(text) {
                 closeSample()
                 requestedContactLink = text
-            }
-        }
-
-        /// Knit went to the background, where iOS may suspend it, or came back. A launch still waiting reads the state
-        /// itself once it is ready.
-        func setInBackground(_ background: Bool) {
-            guard case .ready(let environment) = stage else {
                 return
             }
-            environment.setInBackground(background)
+            #if DEBUG
+                if RelayIntake.isInviteLink(text) {
+                    // `scripts/check.sh release` fails when a release build holds this line: it would mean relay invites open.
+                    UnifiedLog(clock: SystemClock()).log(.info, "a relay invite opened in this debug build")
+                    closeSample()
+                    requestedRelayInvite = text
+                }
+            #endif
+        }
+
+        /// Whether a link tapped in a message opens here rather than where iOS sends it: a contact link, and in a debug build a
+        /// relay invite, so a tapped invite reaches the same consent sheet as one opened from outside Knit.
+        static func opensHere(_ url: URL) -> Bool {
+            let text = url.absoluteString
+            #if DEBUG
+                return AddContactModel.isContactLink(text) || RelayIntake.isInviteLink(text)
+            #else
+                return AddContactModel.isContactLink(text)
+            #endif
         }
 
         /// iOS warned that memory runs low: the content filter's models let go, to load again for the next photo or message.
@@ -170,15 +195,21 @@
             }
         }
 
-        /// The app came to the front or left it. At the front the phone is unlocked, so a launch still waiting starts
-        /// then: iOS may have suspended a launch it made before the first unlock by the time protected data arrived.
-        func setActive(_ active: Bool) {
+        /// The scene moved to `phase`: the one call the app's scene makes. At the front the phone is unlocked, so a launch still
+        /// waiting starts then: iOS may have suspended a launch it made before the first unlock by the time protected data
+        /// arrived. The live environment hears every phase, in order, and so does its mesh, through one stream: the links
+        /// seek peers in the background, and the relays run only at the front (``SpoolLifecycle``). Inactive, under Control
+        /// Center or an alert, is still on screen.
+        func scene(_ phase: AppPhase) {
+            self.phase = phase
+            let active = phase == .active
             if active {
                 begin(.foreground)
             }
             guard case .ready(let environment) = stage else {
                 return
             }
+            environment.scene(phase)
             let session = environment.session
             Task { await session.setActive(active) }
             // The sample's session hears it too, so an answer that lands behind Knit counts as unread. Its mesh hears nothing

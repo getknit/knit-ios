@@ -195,6 +195,11 @@
                     launch.requestedRequests = false
                 }
             }
+            #if DEBUG
+                // A relay invite, once onboarding and the terms are behind, opens its consent sheet over whatever is on
+                // screen, New message closed first, as a contact link closes it (ADR 2026-11.adrq, P6).
+                .relayPrompts(environment.relays, launch: launch, takesRequests: takesRequests) { composing = false }
+            #endif
         }
 
         @ViewBuilder
@@ -233,7 +238,8 @@
                     demoPhoto: environment.demoPhoto
                 )
             case .settings:
-                SettingsView(session: environment.session, permission: environment.notifier, about: environment.about)
+                SettingsView(
+                    session: environment.session, permission: environment.notifier, about: environment.about, relays: environment.relays)
             case .blocked:
                 BlockedView(session: environment.session)
             case .about:

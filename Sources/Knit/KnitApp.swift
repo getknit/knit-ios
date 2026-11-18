@@ -17,11 +17,12 @@
                     .tint(Palette.accent)
                     .onOpenURL { url in delegate.launch.open(url: url) }
                     // A contact link tapped in a message opens Add contact here, as one tapped in Messages does, rather
-                    // than Safari; every other address goes where iOS sends it (ADR 2026-11.w5ew).
+                    // than Safari, and in a debug build a relay invite opens its consent sheet; every other address goes where
+                    // iOS sends it (ADR 2026-11.w5ew, ADR 2026-11.adrq).
                     .environment(
                         \.openURL,
                         OpenURLAction { [launch = delegate.launch] url in
-                            guard AddContactModel.isContactLink(url.absoluteString) else {
+                            guard Launch.opensHere(url) else {
                                 return .systemAction
                             }
                             launch.open(url: url)
@@ -29,10 +30,24 @@
                         }
                     )
             }
+            // Inactive, under Control Center or an alert, is still on screen: only the background seeks peers and pauses
+            // the relays.
             .onChange(of: scenePhase) { _, phase in
-                delegate.launch.setActive(phase == .active)
-                // Inactive, under Control Center or an alert, is still on screen: only the background seeks peers.
-                delegate.launch.setInBackground(phase == .background)
+                delegate.launch.scene(AppPhase(phase))
+            }
+        }
+    }
+
+    extension AppPhase {
+        /// SwiftUI's phase: a phase this build does not know keeps things as they are, as `.inactive` does.
+        init(_ phase: ScenePhase) {
+            switch phase {
+            case .active:
+                self = .active
+            case .background:
+                self = .background
+            default:
+                self = .inactive
             }
         }
     }

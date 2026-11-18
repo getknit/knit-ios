@@ -114,7 +114,7 @@ commons, attachments, TURN, tickets, casts and signals stay out.
 | `MeshManager.kt:1185` (`handleInbound(…, "spool:<url>")`) | `MeshEngine.receiveFromSpool` (`Spool/MeshEngine+Spool.swift`), a `.spool` source on `RatchetInbound.Route`; `InboundFrame` stays link-only | blobs, crypto, security |
 | `ScopeSync.kt` `stampFor` (`:3300`), `POW_BUDGET` | `Sources/KnitMesh/Spool/SpoolMiner.swift` (with `SpoolMinerCache`, `SpoolMinerBudget`, `SpoolStampRunner`), this port's own engine-wide miner (P4b2) | blobs, security |
 | `OkHttpSpoolDialer.kt` | `Sources/KnitSpoolNet/` (`URLSessionWebSocketTask` on Apple platforms; Linux builds it and opens nothing) | security |
-| `InternetRelayScreen.kt`, `RelayInviteApplier.kt`, `SettingsStore` keys | `Sources/KnitAppCore/` and `Sources/Knit/`, `AppPreferences` | security |
+| `InternetRelayScreen.kt`, `RelayInviteApplier.kt`, `SettingsStore` keys | `Sources/KnitAppCore/Relays/` (`InternetRelays`, `RelayBook`, `RelayIntake`, `SpoolLifecycle`, `MeshPhases`), `Sources/Knit/` (`InternetRelaySection`, `KeychainRelayStore`, `AppEnvironment+Relays`), `AppPreferences` | security |
 | `FakeSpool.kt`, `LabInternet.kt` | `Tests/KnitMeshTests/FakeSpool.swift` (the text subset), `LabInternet` in P4 | — |
 
 The Kotlin suites to port, each with a doc naming the cases left to groups or Knit Anywhere: `ScopeVectorTest`,
@@ -143,7 +143,7 @@ The Kotlin suites to port, each with a doc naming the cases left to groups or Kn
 | P4b1 | the dialled address (`AcceptedSpoolURL`), the socket contract (`SpoolSocket`), the session's life in the plane (`SpoolLink`, tokens), inbound and outbound bounds, the upload budget and memo, `Retry-After`, backoff, relays, pause and resume, the spool's own seen set, counts, logs, `status`'s `spool` key, `FuzzSpoolSession` | done 2026-11-17 |
 | P4b2 | the stamp miner (`SpoolMiner`): serials, one search per value, the runner off the actor, the engine cache, the budget and its shares, pause, counts | done 2026-11-17 |
 | P5 | `KnitSpoolNet` (the address check, the URLSession adapter), the stub server and the test socket, `check.sh spool` against the daemon | done 2026-11-17 |
-| P6 | the app: settings, consent, invites, the release gate | |
+| P6 | the app: the live mesh's factory and start paused, the scene's phases through one stream, the relay list, its Keychain items, the switch and consent, invites, the debug-only settings, the release markers | done 2026-11-17 |
 | P7 | device trials | |
 
 ### The connection as P3a left it (2026-11-16)
@@ -319,14 +319,15 @@ any set. What P4 wires:
   charged to the bytes alone, never to the count. This bounds P3a's rule that a dropped record leaves the connection
   standing: below the bound it still does.
 - **Early ends.** A session that ends before 30 s floors the next dial at the rest of those 30 s, reached or not, so a
-  relay is dialled at most once per 30 s while its sessions end early.
+  relay is dialled at most once per 30 s while its sessions end early, and a pause and resume keeps that floor
+  (`SpoolLink.earlyFloorAt`).
 - **Bounds.** `SpoolInboundBudget` (64 records, 1 MiB, refilled over a second) parks the reader; 1 MiB queued holds the
   heal's pushes (`ScopeHeal.outboundFull`, `.held`, `outboundDrained`); 30 s of queued bytes with no send done ends the
   session; `SpoolUpload` holds pushes to 16 MiB an hour and keeps a blob the relay stored out of the next pushes for the
   hour within one session: a scope's first `digest` in each session, and any `digest` of no blob, forget its entries.
 - **`Mesh+Spool`** (under `Spool/`): `addSpoolRelay(_:url:)` (at most eight; refused on a mesh with no socket factory),
   `removeSpoolRelay`, `pauseSpool`, `resumeSpool`, `spoolStatus`. One task a dial reads the socket; one task a send writes.
-  `Mesh.stop` pauses the plane and `start` resumes it. `.mine` requests waited in `spoolMiningQueue` until P4b2 replaced it
+  `Mesh.stop` pauses the plane and `start` resumes it unless the app paused it. `.mine` requests waited in `spoolMiningQueue` until P4b2 replaced it
   with the plane's `SpoolMiner`; `spoolStampMined` is the runner's entry, and `SpoolPlane.stampMined` reaches the heal with
   no session.
 - **The router** keeps a seen set of the spool's own (`spoolSeen`); both doors check both sets.
@@ -354,10 +355,10 @@ any set. What P4 wires:
     empty), a redirect to loopback, a 128 KiB message sent slowly, a server that never reads, an upgrade that never
     finishes and a socket whose `receive` never ends. Oracle: `spoolTasks.running` empties within the 20 s open deadline
     plus one tick, `dialTimeouts` counts it, and the next dial follows the curve.
-- **P6.** The scene phase calls `pauseSpool`/`resumeSpool`; the master switch off or consent withdrawn removes every relay;
-  a private relay's address, token included, goes to the Keychain through `socketURLText` and comes back through the
-  factory; the miner's budget and found stamps are persisted across launches (P4b2's owed list); a relay-URL command on
-  the debug bridge, if a trial needs one, is USB-only.
+- **P6** (met: "The app as P6 left it"). The scene phase calls `pauseSpool`/`resumeSpool`; the master switch off or
+  consent withdrawn removes every relay; a private relay's address, token included, goes to the Keychain through
+  `socketURLText` and comes back through the factory. P6 adds no bridge command: P7 adds its lab relay by opening the
+  invite. The miner's persistence moved to before the release flip (P4b2's owed list, below).
 - **P7.**
   - An `idevicesyslog` capture on a release build, and on a debug build with a private relay (a `k=` token and URL user
     info), grepped for `wss://`, `k=`, 64-hex runs, node ids and frame-id lines at warning level: none found. The debug
@@ -410,9 +411,10 @@ The rules are ADR 2026-11.adrq's P4b2 amendment; this is where each lives.
 - **P5** (met: `SpoolDaemonHeavyTests`, six scopes at 24 bits, 108 s on one core on 2026-11-17). `check.sh spool` at
   `SPOOL_POW_BITS=24` with many scopes. Oracle: the `status` counts show at most one search per (scope, day, bits) and
   `minerSpent` at most 2^29 in 24 h.
-- **P6.** Persist the budget's hourly buckets and the cache's found entries (scope, day, counter, bits) in the database,
-  never `UserDefaults`; the plane does not ship in a store build before then. This replaces P4b1's "the daily stamp spend is
-  persisted across launches".
+- **Before the release flip (G6)**, moved from P6 by its amendment: persist the budget's hourly buckets and the cache's
+  found entries (scope, day, counter, bits) in the database, never `UserDefaults`; the plane does not ship in a store build
+  before then. Until then the window's buckets and found stamps live in memory, so a cold launch starts them again. This
+  replaces P4b1's "the daily stamp spend is persisted across launches".
 - **P7.** An energy log over an hour against a lab spool at 24 bits, Knit in the background half the time. Pass: no hashing
   while paused, and no termination for CPU use.
 
@@ -461,8 +463,9 @@ The rules are ADR 2026-11.adrq's P5 amendment; this is where each lives and what
   `URLSessionDaemonTests` runs the shipping adapter against the daemon when `KNIT_SPOOL_URL` names one on the Mac's
   loopback: `hello` both ways, a stamped `sub`, a push pulled back byte for byte, and a socket quiet past the daemon's
   30 s ping (2026-11-17, skuld's daemon reached through `ssh -R` to the Mac's loopback).
-- **The boundary.** `SpoolNetIsolationTests` checks that the app's dependency closure has no `KnitSpoolNet`, no product
-  exports it, every file is `#if DEBUG`, the release gate greps for the factory's marker, and nothing under `Sources/`
+- **The boundary** (as P5 left it; P6 links it into `Knit` under `#if DEBUG`, "The app as P6 left it").
+  `SpoolNetIsolationTests` checked that the app's dependency closure had no `KnitSpoolNet`, that no product exports it,
+  that every file is `#if DEBUG`, that the release gate greps for the factory's marker, and that nothing under `Sources/`
   names the test socket or the stub. `seam_url_loading` reads `URLSession…`, `URLRequest` and `webSocketTask`, and
   excludes link previews, `KnitSpoolNet` and its tests. The composition root's one use, link previews' transport, is
   disabled on its line.
@@ -474,8 +477,10 @@ The rules are ADR 2026-11.adrq's P5 amendment; this is where each lives and what
     `seam_url_loading` disable on that line as link previews' has. `SpoolNetIsolationTests.theAppLinksNoSpoolSocketYet`
     then gives way to a check that only a debug build reaches the factory, and the marker stays in `check_release_app`.
   - A private relay's address leaves the Keychain only as an `AcceptedSpoolURL`, which the dial checks again.
-  - `RelayInvite.parse(_:allowCleartext:)` takes `allowCleartext` from the build's compile-time flag, never from anything
-    the invite carries.
+  - `RelayInvite.parse(_:allowCleartext:)` and `AcceptedSpoolURL` take `allowCleartext: false` for every invite and paste,
+    in every build, never anything the invite carries: `ws://` stays a test socket's.
+
+  All three met in P6 ("The app as P6 left it").
 - **P7.**
   - The first TLS relay and the first token through the shipping adapter: `public-1`, and a lab spool behind TLS with
     `SPOOL_TOKEN`. The stub and the daemon are cleartext loopback, so neither has exercised the system's trust, a
@@ -484,6 +489,130 @@ The rules are ADR 2026-11.adrq's P5 amendment; this is where each lives and what
   - The PAC trial: the iPhone on a lab Wi-Fi set to Configure Proxy: Automatic, with a PAC script that logs the `url` it
     is handed, dials `wss://<lab relay>/spool/v1?k=<marker>`. Pass: the marker is in no line of the PAC log. If it is,
     an address carrying `k=` dials with `connectionProxyDictionary = [:]`, and the P5 amendment records it.
+
+### The app as P6 left it (2026-11-17)
+
+The rules are ADR 2026-11.adrq's P6 amendment; this is where each lives.
+
+- **Composition.** A debug build's live launch alone makes the factory: `AppEnvironment.liveWithRelays` hands
+  `Mesh(spoolSockets:)` one `URLSessionSpoolSocketFactory` from `AppEnvironment.spoolSockets(log:)`, on a line with a
+  `seam_url_loading` disable, in `AppEnvironment+Relays.swift`, whose `import KnitSpoolNet` and helpers sit inside
+  `#if DEBUG`. The demo and the sample chats get none. `Package.swift`'s `Knit` target now depends on `KnitSpoolNet`, which
+  still has no product.
+- **Start paused.** Every environment's mesh is made with `spoolStartsPaused: true`, which sets `Mesh.spoolWanted` to
+  false, so `start()`, the bridge's `stop`/`start` and Settings' Stop and Start dial nothing until `resumeSpool()`. Relays
+  read at launch are added before the mesh starts and dial nothing. A resume does nothing unless the plane is paused.
+  Otherwise it resets each relay's failure count and dials it at the latest of now, its `Retry-After` floor and its 30 s
+  early-end floor (`SpoolLink.earlyFloorAt`, with `lastDialToken`). The `Retry-After` floor lives in
+  `SpoolPlane.askedFloors: [SpoolRelayHandle: Int64]`: kept by handle across a removal and an add, capped at the relay cap,
+  pruned once it has passed, recorded too when the refusal lands after a pause while no later dial was issued, and cleared
+  by a later refusal with no `Retry-After`. Two bounds are accepted: a pause and a resume that both land before a refused
+  dial's answer can dial once before that refusal's floor, and the early-end floor is not kept across a removal and an add,
+  so it holds once per toggle.
+- **One stream.** `MeshPhases` (`KnitAppCore/Relays`) is the one serial stream into the mesh: the launch's own reading of
+  the background (links alone), the scene's phases, the gate, and the relays added and removed, applied in order by one
+  task. `SpoolLifecycle` decides: `wanted = gate && foreground`, `foreground` false at launch, true on `.active`, false on
+  `.background`, kept on `.inactive`; a resume or pause only on an edge. `KnitApp`'s `onChange(of: scenePhase)` makes one
+  call, `Launch.scene(_:)`; `AppEnvironment.scene(_:)` takes a `PauseTask` (`beginBackgroundTask`, its expiration handler
+  holding it strongly) on `.background`, ended by the stream's `done` once the mesh has paused, or at once when the stream
+  has ended (`MeshPhases.send` reads the `yield` result). `begin` resumes only by replaying the scene's own last phase into
+  an environment built after it (protected data, Retry), never from the application's state.
+- **The list.** `InternetRelays` reads `AppPreferences.relayBookData` through `RelayBook.read` (`StoredRelayBook`: absent,
+  stored or unreadable) inside `AppEnvironment.live`, after the identity. The book holds handles, flags, the seeded marker,
+  the switch, its consent with the nonce's copy, and the deletes owed.
+  - Only an absent list sweeps every item under the relay service, then seeds `public-1` as handle 1, rebuilt from
+    `SpoolURL.house`.
+  - An unreadable one is left byte for byte: nothing is swept, seeded, saved or dialled, `isLoaded` stays false, the section
+    says the list can't be read (`Copy.Relays.listUnreadable`), one log line names the kind alone, and `load()` runs again at
+    each `.active`.
+  - `RelayBook` and `RelayEntry` decode tolerantly: a missing `seeded` is `!entries.isEmpty || nextHandle > 1 ||
+    !pendingDeletes.isEmpty`, `next_handle` is at least one past every handle listed or owed, a flag missing from an entry is
+    off, a field this build doesn't know is ignored, and only an entry with no handle leaves the list unread.
+  - Every other address is one Keychain item (`KeychainRelayStore`: service `app.getknit.knit.spool-relay`, the handle as
+    the account, not synchronised, `AfterFirstUnlockThisDeviceOnly` on add and update), written as `socketURLText` and read
+    back only through `AcceptedSpoolURL(_, allowCleartext: false)`. A failure logs its bare `OSStatus` alone.
+  - A read that throws is "can't read", undialled, read again at each `.active`; no item is "add its invite again"; a text
+    the factory refuses is kept, shown unusable, never dialled; an address another listed relay is ready under is a
+    duplicate, shown, undialled, refused as an invite, removable, and ready again once the other goes. A delete that fails
+    stays in `pendingDeletes`, retried at each `.active`. Handles only rise. At most eight relays, the mesh's cap.
+  - The defaults key is `debug.spool.relays`, read and written in a debug build alone.
+- **The gate.** `spoolEnabled` is the build flag the composition root passes (`true` only under `#if DEBUG`), the list
+  read, and the switch on under `RelayBook.consentVersion`, bound by the install's consent nonce.
+  - The nonce is 128 random bits (`RelayBook.freshNonce`), kept in the relay service's `consent` item and copied into the
+    book; consent holds only while the two match. It binds the consent to this device's install and is no secret: nothing
+    in the preferences derives from the node id.
+  - A nonce that is gone or differs voids the consent at load. One that fails to read keeps the gate shut, voids nothing, and
+    is read again at each `.active`.
+  - The fresh-install sweep removes the item, so a reinstall or another device starts with no consent. Diagnostics' Replace
+    identity, the app's one identity reset, first voids the consent in the kept list (`InternetRelays.forgetConsent`: switch
+    off, nonce copy cleared, saved, every relay out of the mesh), then deletes the item, then replaces the identity, so a
+    delete that fails leaves nothing to match.
+  - Closed, every relay leaves the mesh and the list stays; open, every unparked relay whose address reads joins it.
+- **Consent.** The switch's sheet (`RelaySheet.Kind.turnOn([RelayJoin])`) names every unparked relay that can join under it:
+  its host, or "Relay 3" with "Joins once Knit can read its address" while it does not read. `confirm(_:)` compares what the
+  sheet showed with the relays that would join now and presents a fresh sheet when they differ. An invite's sheet names its
+  one address (`.add(AcceptedSpoolURL)`), and `confirm(_:)` applies the sheet it is handed. A new invite replaces a sheet that
+  is up. An invite accepted with the switch off joins the list and dials nothing. What is shown is `RelayHost`:
+  `AcceptedSpoolURL.description`, "Knit's relay" only for `SpoolURL.house` exactly, and the "Access key in link" mark from
+  `AcceptedSpoolURL.carriesToken`, which says only that the address carries a `k` key. The words are `Copy.Relays` and
+  `Copy.RelayConsent`.
+- **Invites.** `Launch.open(url:)`, under `#if DEBUG`, takes an address that starts with `RelayInvite.urlPrefix` or
+  `schemePrefix` (`RelayIntake.isInviteLink`), closes the sample chats and holds it in memory until the live `MainView`,
+  after onboarding and the terms, hands it to `InternetRelays.offer(opened:)`. A tapped invite in a message goes the same
+  way (`Launch.opensHere`). Settings' Paste is a `PasteButton`, searched anywhere (`offer(pasted:)`). Both read
+  `allowCleartext: false`; a refusal is one line naming its reason, never the link. The share extension stages contact
+  cards alone, so it never routes an invite.
+- **Settings.** `InternetRelaySection`, in a debug build alone, after link previews: the switch, each relay's host, marks
+  and status word (connected, connecting, waiting to try again, paused, not in use, off, listed twice, and the three address
+  states), Stop using and Remove, and Paste, every control named by handle (`AccessibilityID+Relays`). The status comes from
+  `Mesh.relayStatus()` each second while Settings is up. `-demoRelays` runs the same section over `DemoRelays`, which
+  opens no socket, for the Simulator's walk.
+- **The release gate.** `check_release_app` fails a store build that holds any of the factory's line, `internet relays are
+  on in this debug build` (`startRelays`), `a relay invite opened in this debug build` (`Launch.open(url:)`),
+  `debug.spool.relays` or `app.getknit.knit.spool-relay`. `SpoolNetIsolationTests` checks that only `Knit` and its own
+  tests link `KnitSpoolNet`, that the import and the composition line, and every relay path in `Sources/Knit`, sit inside
+  `#if DEBUG`, and that each marker lives in its one file. On the Mac each marker was in the Debug `Knit.debug.dylib` and
+  none in the Release `Knit`.
+- **AASA.** On 2026-11-17 getknit.app's association file, from the site and from Apple's CDN, listed `/c` alone, so a
+  tapped `https://getknit.app/r#…` opens the website and `knit://r/…` opens Knit (`roadmap.md`).
+- **Tests.** `MeshSpoolLifecycleTests` (start paused, a bridge-style stop and start, `Retry-After` kept), `SpoolLifecycleTests`
+  and `MeshPhasesTests` (ordered phases into a real mesh and a counting factory), `InternetRelaysTests` with its `+Rows` and
+  `+Kept` extensions (the list, the Keychain, the switch, park, a list that does not read, tolerant reads, the nonce, a relay
+  listed twice, the stream's end), `RelayInviteSheetTests` and `RelaySheetMeshTests` (consent and invites, a stale switch
+  sheet, a relay that joins once it reads), `SpoolNetIsolationTests`, `CopyCatalogTests+Relays`, and the Simulator's
+  `KnitUITests.testTheRelaySwitchAndAPastedInviteGoThroughConsent`.
+
+### What P7 owes from P6 (2026-11-17)
+
+- A restoration relaunch dials nothing until Knit comes to the front; before the first unlock, no relay connection until
+  Knit is at the front.
+- The replay's positive case: a launch held before the first unlock, or one Retry built at the front, connects with no
+  background-then-front in between.
+- Background with a 24-bit search running and a Pixel's doorbell waking Knit: the miner's `stopped` count rises by one, the
+  relay sees the close within 5 s, no connection opens during any wake, iOS ends nothing for CPU use, and at the front the
+  search resumes.
+- Control Center five times against a relay answering 503 with `Retry-After: 60`: nothing is dialled before 60 s, and a
+  healthy relay keeps one connection. Ten flips in 5 s end in the state the last one says.
+- A background and foreground flip within 60 s of a 503 with `Retry-After: 60` dials nothing before the 60 s are up.
+- B6's trial: against a relay answering 503 with `Retry-After: 60`, Knit at the front for one refused dial, sent to the
+  background within 10 s and brought back within 30 s. Exactly one dial before the refusal plus 60 s and one after it, while
+  a healthy relay beside it reconnects within about 1 s of the return.
+- A read-only container read after adding a private lab relay: no relay URL, no `getknit.app/r#`, no `knit://r/` and no
+  invite text outside the Keychain, and `debug.spool.relays` holds handles, flags and the nonce's copy alone.
+- The Keychain items' attributes: accessibility `ak` (`AfterFirstUnlockThisDeviceOnly`), not synchronised. This needs a
+  debug-only diagnostic that returns attributes and never data, which P7 builds.
+- After a reinstall, the relay service's items are swept before `public-1` is seeded, and the consent is void. An upgrade
+  install keeps the relay, its row and the switch.
+- A locked restoration relaunch: the kept list is byte for byte the same after it, and no sweep ran. Open question for this
+  trial (crypto's): whether an empty read of the defaults before the first unlock can outlast the unlock. If the trial shows
+  it can, a marker key that only a real write sets is the fix, and the list is read only once the marker reads.
+- An `idevicesyslog` capture across a `devicectl --payload-url` open of the lab invite: no `getknit.app/r#`, `knit://r/`,
+  the invite's compact text, a relay URL or `k=` in any line, iOS's own processes' included. The lab relay's invite and
+  `SPOOL_TOKEN` stay in `.private/`.
+- In the Simulator, `xcrun simctl openurl` with a `knit://r/…` invite while the switch is off opens nothing, and the switch's
+  sheet names exactly the hosts the factory later opens; a second invite while a sheet is up applies the shown one.
+- Replace identity with the switch on and the consent item's delete refused: after the relaunch `status` shows the spool
+  off, no relay socket opens, and the switch reads off and asks for consent again.
 
 ### What later phases owe from P3a's reviews (2026-11-16)
 
@@ -530,7 +659,7 @@ limits in `SpoolLimits.clamped()`. The rest of Kotlin's bounds sit in the connec
 - A search stops only when no request is left for it or the plane pauses (P3b, P4b2), and `SpoolPow.mine` looks at its
   stop every 65,536 counters.
 
-P6 owes two more:
+P6 owes two more (met in P6: `RelayHost` is the accepted address's own description, and `Copy.RelayConsent.learns`):
 
 - the consent sheet names the host the dialer will use, from the same parse, never `SpoolURL.host`;
 - it says what an added relay learns: the scope ids it is given, timings and the phone's IP address.

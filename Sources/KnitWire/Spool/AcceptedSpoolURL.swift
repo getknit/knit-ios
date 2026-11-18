@@ -62,6 +62,11 @@ public struct AcceptedSpoolURL: Hashable, Sendable, CustomStringConvertible, Cus
     /// The text the socket factory dials. The one way out for it: grep for this name to find every reader.
     public var socketURLText: String { text }
 
+    /// Whether the address may carry a token (a query key `k` in either case, or any key holding a `%`): what a relay list
+    /// marks as carrying an access key. The mark says only what the address carries: a relay whose address has no `k` key
+    /// may still need a secret of its own. A `ws://` address never carries one, since the factory refuses one with a token.
+    public var carriesToken: Bool { Self.carriesToken(Array(text.utf8)) }
+
     /// The host and port alone.
     public var description: String { SpoolURL.host(text) }
 

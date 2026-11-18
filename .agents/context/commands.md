@@ -287,6 +287,9 @@ Launch arguments, set in the scheme on the Mac (P7):
   `-demoSensitive` the room refuses them, and the room's composer takes them back.
 - `-demoCrash` (with `-seedDemo`) gives Diagnostics a saved crash and hang (`DemoCrash`) in a folder of the demo's own,
   so the UI tests reach a report's screen without crashing Knit (ADR 2026-10.qhsv).
+- `-demoRelays` (with `-seedDemo`) shows Settings' Internet relays, kept in memory over a stand-in that opens no socket, so
+  the UI tests walk the switch, consent and a pasted invite (ADR 2026-11.adrq, P6). Without it the demo shows no relays, as
+  the store's screenshots must. A debug build's live launch always shows them.
 - `-demoScene edge-cases|fresh|marketing` (with `-seedDemo`) picks what is seeded. `fresh` seeds nothing, so the chat
   list shows its first-run card. `edge-cases`, the default, is the
   cast above: two people with one name, one with none, and nobody linked. `marketing` is for store screenshots

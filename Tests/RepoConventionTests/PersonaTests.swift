@@ -56,14 +56,22 @@ import Testing
     }
 
     /// The spool plane's paths sit under the reviewers `.agents/context/spool.md` names for them: the plane's core under
-    /// the blobs and security reviewers, the relay's socket under security (ADR 2026-11.adrq).
+    /// the blobs and security reviewers, the relay's socket and the relay settings under security (ADR 2026-11.adrq).
     @Test func theSpoolPathsAreGatedForTheirReviewers() throws {
         let lines = try gateLines()
         let gated = { (name: String) in lines.first { $0.name == name }?.paths ?? [] }
         #expect(gated("blobs-reviewer").contains("Sources/KnitMesh/Spool"))
-        #expect(gated("security-reviewer").contains("Sources/KnitMesh/Spool"))
-        #expect(gated("security-reviewer").contains("Sources/KnitSpoolNet"))
+        for path in [
+            "Sources/KnitMesh/Spool", "Sources/KnitSpoolNet", "Sources/KnitAppCore/Relays", "Sources/Knit/App/AppEnvironment+Relays.swift",
+            "Sources/Knit/Platform/KeychainRelayStore.swift", "Sources/Knit/Views/InternetRelaySection.swift",
+            "Sources/Knit/App/Launch.swift",
+            "Sources/Knit/KnitApp.swift", "Sources/Knit/App/AppEnvironment+Phases.swift", "Sources/Knit/Platform/DefaultsPreferences.swift",
+            "Sources/KnitAppCore/Settings/AppPreferences.swift",
+        ] {
+            #expect(gated("security-reviewer").contains(path), "security gates \(path)")
+        }
         #expect(try RepoFiles.text(Self.owners).contains("`KnitSpoolNet`"), "\(Self.owners) names the socket's reviewer")
+        #expect(try RepoFiles.text(Self.owners).contains("`KnitAppCore/Relays`"), "\(Self.owners) names the settings' reviewer")
     }
 
     @Test func reviewersCannotEdit() throws {

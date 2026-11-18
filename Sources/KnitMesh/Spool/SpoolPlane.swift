@@ -101,6 +101,11 @@ internal struct SpoolPlane: CustomStringConvertible, CustomReflectable {
     let me: NodeId
     var table = ScopeTable()
     var relays: [SpoolRelayHandle: Relay] = [:]
+    /// The earliest each relay may be dialled by the `Retry-After` its last refused dial named, by handle and with no
+    /// address, beside ``relays`` rather than in its ``SpoolLink`` (P6): the switch, consent and park each remove a relay
+    /// and add it again, and none of them is a reason to dial sooner than it asked. An entry goes once its time has passed,
+    /// and the map holds at most ``maxRelays`` (``noteAskedFloor(_:_:now:)``).
+    var askedFloors: [SpoolRelayHandle: Int64] = [:]
     /// The one seal cache, lent to each heal for the input it runs (P3b's "one seal cache per engine").
     private var seals = ScopeSealCache()
     var tableDirty = true
