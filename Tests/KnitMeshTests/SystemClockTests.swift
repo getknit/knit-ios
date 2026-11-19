@@ -1,6 +1,7 @@
 import Foundation
-import KnitMesh
 import Testing
+
+@testable import KnitMesh
 
 /// The real clocks behind ``MeshClock``, which the app and knit-peer run on.
 @Suite struct SystemClockTests {
@@ -14,13 +15,19 @@ import Testing
     }
 
     /// A heal round with no step reports `.min` as its deadline, "due now": the clock wakes at once rather than trapping.
+    /// The bound is pinned in its arithmetic, not timed: the whole suite in parallel, under ThreadSanitizer, starved the
+    /// task pool for 46 s around these wake-ups, where one alone takes about 1 ms.
     @Test func aDeadlineAtOrBeforeTheOriginIsDueAtOnce() async throws {
-        let clock = SystemClock()
-        let start = clock.monotonicMilliseconds()
-        for deadline in [Int64.min, -1, 0, 999] {
-            try await clock.sleep(untilMonotonic: deadline)
+        let start = SystemClock().monotonicMilliseconds()
+        for deadline in [Int64.min, -1, 0, 999, 1000] {
+            #expect(SystemClock.offset(untilMonotonic: deadline) == 0, "\(deadline) is due at the origin")
         }
-        #expect(clock.monotonicMilliseconds() - start < 1000)
+        #expect(SystemClock.offset(untilMonotonic: 1005) == 5)
+        #expect(SystemClock.offset(untilMonotonic: .max) == SystemClock.offset(untilMonotonic: SystemClock.farthest))
+        #expect(SystemClock.offset(untilMonotonic: SystemClock.farthest) > 0)
+        for deadline in [Int64.min, start - 1] {
+            try await SystemClock().sleep(untilMonotonic: deadline)
+        }
     }
 
     /// A deadline saturated at `Int64.max`, "never", sleeps until it is cancelled rather than trapping.

@@ -28,8 +28,13 @@ public struct SystemClock: MeshClock {
     /// for "never", so a deadline at or before the origin returns at once, and one past ``farthest`` wakes there and
     /// the caller arms its timer again.
     public func sleep(untilMonotonic deadline: Int64) async throws {
-        let bounded = min(max(deadline, Self.base), Self.farthest)
-        try await Task.sleep(until: origin.advanced(by: .milliseconds(bounded - Self.base)), clock: .continuous)
+        try await Task.sleep(until: origin.advanced(by: .milliseconds(Self.offset(untilMonotonic: deadline))), clock: .continuous)
+    }
+
+    /// How far past the origin `deadline` falls once bounded: 0 for one at or before the origin, ``farthest``'s offset for
+    /// one past it.
+    static func offset(untilMonotonic deadline: Int64) -> Int64 {
+        min(max(deadline, base), farthest) - base
     }
 
     /// A hundred years past the origin: far enough that no timer meets it, near enough that its instant stays inside

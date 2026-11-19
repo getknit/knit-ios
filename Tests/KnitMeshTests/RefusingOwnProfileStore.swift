@@ -43,8 +43,9 @@ extension WireEnvelope {
 /// the unit checkpoints.
 final class RefusingOwnProfileStore: OwnProfileStore, Checkpointing, @unchecked Sendable {
     let held: MemoryOwnProfileStore
-    /// The unit a failing read fails. Set once the stores are bundled, before the engine runs.
-    var transactor: MemoryTransactor?
+    /// The unit a failing read fails. Set once the stores are bundled, before the engine runs. Weak, since the transactor
+    /// keeps this store among those it checkpoints, and a strong reference back would leak both.
+    weak var transactor: MemoryTransactor?
     /// Whether the kept frame's read fails. Read on the engine's one thread only, as the stores are.
     var failsKeptReads = false
     /// Whether the kept frame's write is refused.

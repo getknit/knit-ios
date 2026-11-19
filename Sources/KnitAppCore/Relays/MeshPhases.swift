@@ -97,6 +97,12 @@ public final class MeshPhases: Sendable {
         continuation.finish()
     }
 
+    /// Ends the stream once nothing can send into it: what was sent still reaches the mesh, and the task then ends,
+    /// so it never waits on a stream no one holds, keeping the mesh it tells alive.
+    deinit {
+        continuation.finish()
+    }
+
     private static func perform(_ step: SpoolLifecycle.Step, on target: any PhaseTarget) async {
         switch step {
         case .background(let background):
