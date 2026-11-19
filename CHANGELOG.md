@@ -160,6 +160,9 @@ document:
 
 - Knit refused to send a Nearby post with a lone "x" in it, like "2 x 3" or a kiss at the end, and hid one
   that someone else sent. Those posts now go through.
+- Editing your name or photo while your iPhone briefly couldn't read your saved profile could send everyone a
+  profile with no name. Knit now skips that edit instead, so people keep seeing your name, and you can make
+  the change again.
 
 ## About this file
 
