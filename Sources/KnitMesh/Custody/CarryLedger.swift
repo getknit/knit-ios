@@ -29,6 +29,13 @@ public struct CarryLedger: Sendable {
     /// How long before a digest a release must be for that digest to judge it on Bluetooth (`JUDGE_AFTER_MS`): a digest that
     /// crossed the release in flight would otherwise judge it wrongly.
     public static let judgeAfterMilliseconds: Int64 = 20_000
+
+    /// Whether a digest arriving at `now` can speak to a release made at `releasedAt`: at least ``judgeAfterMilliseconds``
+    /// before it, so it did not cross the release in flight. The one test both the memo's judging and an answer's forgetting
+    /// of its releases read (the contract, §2 and §6).
+    public static func digestSpeaks(to releasedAt: Int64, at now: Int64) -> Bool {
+        now - releasedAt >= judgeAfterMilliseconds
+    }
     /// How long a not-kept mark withholds an id from its peer, and how long an id stays pending unjudged
     /// (`NOT_KEPT_LAPSE_MS`).
     public static let notKeptLapseMilliseconds: Int64 = 600_000
@@ -222,7 +229,7 @@ public struct CarryLedger: Sendable {
                 memo.pending[id] = nil
                 continue
             }
-            guard now - released >= Self.judgeAfterMilliseconds else {
+            guard Self.digestSpeaks(to: released, at: now) else {
                 continue
             }
             memo.pending[id] = nil

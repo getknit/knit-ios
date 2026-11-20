@@ -157,15 +157,18 @@ A node carries frames for people who are not in range yet. This is store-and-for
   4. everything else, newest received first.
 
   It leaves out the digest's ids, what this answer already released, what arrived from the peer since its digest, the
-  memo's ids and whatever crossed the link either way. An answer keeps the peer's latest digest (only the ids we hold)
-  and ends when nothing is left, at link-down, or 120 s after that digest. A newer digest replaces the kept one and
+  memo's ids and whatever crossed the link either way. A release is remembered until a digest at least 20 s after it,
+  which forgets it, so a frame lost with the link still up is owed again. An answer keeps the peer's latest digest
+  (only the ids we hold) and ends when nothing is left, at link-down, or 120 s after that digest. A newer digest replaces the kept one and
   never brings a round forward. A peer's digests are still metered, a burst of 2 and then one per 30 s. While the link
   still holds 128 KiB unwritten, a due round waits and is looked at again every 5 s. A newcomer below the cap fills in
   within one answer: 1,000 frames of about 600 bytes take about 75 s.
 - **The not-kept memo,** on a proven link only (ADR 2026-11.hpmt). An id released to a peer is pending, and not
   released again, until a digest at least 20 s after the release judges it, the link ends, or 600 s pass. A digest that
   lacks it marks it not kept, and it isn't released to that peer for 600 s. A frame addressed to the peer is never
-  pending or marked. The memo goes at link-down, at most 64 peers are kept, and a linked peer's is never the one
+  pending or marked: the answer offers it again at each digest that lacks it, once 20 s have passed since its last
+  release, and on a link `LinkCrossings` lets it cross at most once in 10 minutes, unless 1,024 other frames were
+  written to that link since. The memo goes at link-down, at most 64 peers are kept, and a linked peer's is never the one
   evicted. On a link that proved nothing, `LinkCrossings` alone keeps a frame from crossing twice in 10 minutes.
 - **Custody is pushed only in answer to a DIGEST.** A node that sends none gets no back-fill. A node whose digest
   under-reports gets the missing frames again once per 600 s lapse on a proven link, and otherwise once per 10 minutes

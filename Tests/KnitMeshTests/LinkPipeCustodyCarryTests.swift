@@ -103,7 +103,7 @@ import Testing
         let answer = try #require(holder.engine.custodyAnswers.answer(for: newcomer.nodeId))
         pipe.cut()
         let crossed = Set(pipe.frames.filter { $0.from == holder.nodeId && ids.contains($0.id) }.map(\.id))
-        let released = Set(answer.released.compactMap { key in ids.first { ExactKey($0) == key } })
+        let released = Set(answer.released.keys.compactMap { key in ids.first { ExactKey($0) == key } })
         let lost = released.subtracting(crossed)
         #expect(crossed.isSubset(of: released))
         #expect(!lost.isEmpty, "a round was in flight")

@@ -45,7 +45,10 @@ the wire. The numbers are shared law with Android (the contract in `knit-pair`'s
    (rule 5). A newer digest replaces the kept one and restarts the answer's 120 s age, but never brings a round forward.
    An answer ends when nothing is left, at link-down, or at its age. The answer keeps only the digest ids we hold,
    and what it released, the keys it sent and what arrived since the digest are trimmed to the ids we still hold at
-   every cut, since a peer that sends a digest a minute keeps one answer alive for hours.
+   every cut, since a peer that sends a digest a minute keeps one answer alive for hours. A release is remembered only
+   until a digest can speak to it: a digest from the peer makes the answer forget every id it released at least
+   20,000 ms before, and then the digest and the memo decide. Without that, an answer kept alive by digests would
+   withhold a frame lost with the link still up for as long as the link lasted.
    `HeldDigests.lineBytes`, 131,072 bytes unwritten, still delays a round and never enlarges one.
 3. **The carry ledger** (`CarryLedger`). Per live frame, up to 8 peers believed to hold it (`CustodyLimits.spreadMax`):
    a digest that lists it, the peer it arrived from, and a release credited 2,000 ms later if its link stayed up. A
@@ -63,7 +66,8 @@ the wire. The numbers are shared law with Android (the contract in `knit-pair`'s
 5. **The not-kept memo** (`CarryLedger`). On a proven link, an id released to a peer is pending, and not released again,
    until a digest at least 20,000 ms after the release judges it. Listed means kept. Lacking means not kept: the id isn't
    released to that peer for 600 s, and the peer leaves its holders. A frame addressed to the peer is never pending or
-   marked, so a recipient's own mail is never withheld on a memo's word. The memo goes at link-down. At most 64 peers are
+   marked, so a recipient's own mail is never withheld on a memo's word: it goes whenever the peer's digest lacks it and
+   the answer remembers no release of it. The memo goes at link-down. At most 64 peers are
    kept, and a linked peer's is never the one evicted.
 6. **The re-offer backs off** (`ReofferBackoff`, `MeshEngine+Passes.swift`). The periodic custody digest to a neighbour
    waits 60 s, doubling to 600 s while our offers draw nothing from it. A frame kept from that neighbour resets it to
@@ -100,6 +104,10 @@ What we chose against:
   frame, which is close to what holding the frame already shows.
 - **A build without the link proof gets no memo and adds no holder.** It is answered at the pace, and `LinkCrossings`
   still keeps a frame from crossing one link twice in 10 minutes.
+- **A frame addressed to the peer that its digest keeps lacking is released again at each digest,** once the judging
+  delay has passed since its last release. No memo holds it. The pace bounds it, and `LinkCrossings` keeps it to one
+  write per link in 10 minutes while fewer than 1,024 other frames have been written to that link since; a link at
+  full pace writes that many in about 80 s, so a busy link can carry it about once per metered digest.
 - **A frame released without its sender's key can arrive late.** When we hold no key to send ahead, the peer parks
   the frame outside custody, its next digest lacks it, and the memo marks it not kept for 10 minutes. If the key
   reaches the peer from elsewhere after its park lost the frame, we serve it only after the lapse. It is bounded and
