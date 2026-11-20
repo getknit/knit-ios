@@ -169,7 +169,12 @@ A node carries frames for people who are not in range yet. This is store-and-for
   pending or marked: the answer offers it again at each digest that lacks it, once 20 s have passed since its last
   release, and on a link `LinkCrossings` lets it cross at most once in 10 minutes, unless 1,024 other frames were
   written to that link since. The memo goes at link-down, at most 64 peers are kept, and a linked peer's is never the one
-  evicted. On a link that proved nothing, `LinkCrossings` alone keeps a frame from crossing twice in 10 minutes.
+  evicted. On a link that proved nothing, `LinkCrossings` alone keeps a frame from crossing twice in 10 minutes, while it
+  remembers the frame: it holds 1,024 writes a link, which a link at the full pace makes in about 80 s, so the pace is
+  the bound that always holds. This port's round asks it when the round is cut, so a frame it remembers is never
+  released; Android's link drops such a frame after the round released it. Two full stores linked to each other stop
+  swapping without end, down to one crossing a frame a lapse; a frame that crosses again at a lapse is
+  sometimes kept, which sends that neighbour's re-offer back to 60 s (ADR 2026-11.3jry).
 - **Custody is pushed only in answer to a DIGEST.** A node that sends none gets no back-fill. A node whose digest
   under-reports gets the missing frames again once per 600 s lapse on a proven link, and otherwise once per 10 minutes
   of `LinkCrossings` while the link lasts. An Android build from before ADR 2026-11.3jry still pushes the whole

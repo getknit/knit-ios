@@ -10,11 +10,11 @@ import Testing
 /// §1 to §7): two engines and their link managers joined by a ``LinkPipe``. `LinkPipe` models no byte rate, and each pump
 /// carries every frame a round released at once, so each test reads the rounds from when they crossed.
 @Suite struct LinkPipeCustodyCarryTests {
-    private static let senders = (0..<5).map { TestPeer(seed: 500 + $0) }
+    static let senders = (0..<5).map { TestPeer(seed: 500 + $0) }
     private static let neighbour = TestPeer(seed: 900)
 
     /// Pins every key in `peers` on `node`, as a node that met them before would hold them.
-    private static func pin(_ peers: [TestPeer], on node: PipeNode) {
+    static func pin(_ peers: [TestPeer], on node: PipeNode) {
         for peer in peers {
             node.stores.peers.upsert(
                 PeerRecord(nodeId: peer.nodeId, name: "", status: "", publicKey: peer.keys.bundle.encoded, updatedAt: 1))
@@ -22,19 +22,19 @@ import Testing
     }
 
     /// Hands `node` each of `frames` as a neighbour's flood that is not linked: verified and carried, with no source.
-    private static func seed(_ node: PipeNode, with frames: [TestFrame]) {
+    static func seed(_ node: PipeNode, with frames: [TestFrame]) {
         for frame in frames {
             node.engine.receive(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: neighbour.nodeId))
         }
     }
 
     /// Lets the seeds' relays fall due while nobody is linked, so only the rounds carry them.
-    private static func settle(_ lab: PipeLab) {
+    static func settle(_ lab: PipeLab) {
         lab.run(step: 100, limit: 1000) { false }
     }
 
     /// `count` DMs from the senders in turn to `recipient`, `body` bytes each, sent `sentAt` onward a millisecond apart.
-    private static func dms(_ count: Int, to recipient: TestPeer, label: String, sentAt: Int64, body: Int = 400) throws -> [TestFrame] {
+    static func dms(_ count: Int, to recipient: TestPeer, label: String, sentAt: Int64, body: Int = 400) throws -> [TestFrame] {
         try (0..<count).map { index in
             try senders[index % senders.count].directMessage(
                 String(repeating: "d", count: body), to: recipient, id: frameIdOf("\(label)-\(index)"), sentAt: sentAt + Int64(index))

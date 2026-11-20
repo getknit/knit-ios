@@ -288,7 +288,7 @@ extension MeshEngineCustodyAnswerTests {
     /// Alice's node with Carol and Dave pinned, linked to Bob, `target` in custody, then `seconds` of an answer to Bob kept
     /// open: Carol brings fresh mail each second and Bob sends a digest every 60 s, listing none of it. Answers when
     /// `target` was written to Bob by a round, in seconds from the first digest.
-    private func keptOpen(_ fixture: EngineFixture, target: TestFrame, seconds: Int) -> [Int] {
+    private func keptOpen(_ fixture: EngineFixture, target: TestFrame, seconds: Int, each observe: ((Int) -> Void)? = nil) -> [Int] {
         let wall = fixture.clock.wallMilliseconds()
         fixture.stores.custody.store(
             CarriedFrame(envelope: target.envelope, sig: target.wire.sig, signed: target.wire.signed), origin: .relayed, now: wall)
@@ -309,6 +309,7 @@ extension MeshEngineCustodyAnswerTests {
                 times.append(second)
             }
             #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId) != nil, "the answer stays open at \(second) s")
+            observe?(second)
         }
         return times
     }
@@ -351,10 +352,20 @@ extension MeshEngineCustodyAnswerTests {
         let fixture = try openFixture(proven: true)
         let other = try dave.directMessage(
             "for zed", to: TestPeer(seed: 9), id: frameIdOf("marked"), sentAt: fixture.clock.wallMilliseconds())
-        let times = keptOpen(fixture, target: other, seconds: 700)
+        // The target itself, not another frame, is marked: withheld and no longer pending, from the 60 s digest to the lapse.
+        let key = ExactKey(other.envelope.id)
+        var marked: [Int] = []
+        let times = keptOpen(fixture, target: other, seconds: 700) { second in
+            let ledger = fixture.engine.custody.ledger
+            let now = fixture.clock.monotonicMilliseconds()
+            if ledger.withholds(key, from: bob.nodeId, now: now), !ledger.isPending(key, for: bob.nodeId, now: now) {
+                marked.append(second)
+            }
+        }
         // Released at once and marked not kept by the digest at 60 s, which lacks it; the mark lapses ten minutes on and the
         // open answer, having forgotten the release, serves it in its next round.
         #expect(fixture.engine.custodyRoundCounts.custodyNotKept >= 1)
+        #expect(marked.first == 60 && marked.count >= 590, "marked from \(marked.first ?? -1) s for \(marked.count) s")
         #expect(times.first == 0 && times.count == 2, "\(times)")
         #expect(times.last.map { (659...664).contains($0) } == true, "\(times)")
     }

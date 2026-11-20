@@ -61,8 +61,9 @@ the wire. The numbers are shared law with Android (the contract in `knit-pair`'s
    ascending; id ascending by its bytes. The frame being written counts the peer it came from among its holders in its
    own write, since that peer holds it whether or not we keep it. Without that, two full stores linked to each other swap
    a frame per exchange for good: a re-served frame arrives held by nobody and outranks every shared row. With it, the
-   re-served frame ties with the shared rows and evicts itself by `(sentAt, id)`, as under the old rule. With no holders
-   recorded, the order is the old one exactly.
+   re-served frame ties with the shared rows and evicts itself by `(sentAt, id)`, as under the old rule, the peer's memo
+   marks it not kept, and an offer that draws nothing backs off. What is left is one crossing a frame a lapse, and a
+   frame that crosses again at a lapse is sometimes kept. With no holders recorded, the order is the old one exactly.
 5. **The not-kept memo** (`CarryLedger`). On a proven link, an id released to a peer is pending, and not released again,
    until a digest at least 20,000 ms after the release judges it. Listed means kept. Lacking means not kept: the id isn't
    released to that peer for 600 s, and the peer leaves its holders. A frame addressed to the peer is never pending or
@@ -103,11 +104,21 @@ What we chose against:
 - **What eviction reads, a peer can read back.** Holder counts show little: whether this phone saw another carrier of a
   frame, which is close to what holding the frame already shows.
 - **A build without the link proof gets no memo and adds no holder.** It is answered at the pace, and `LinkCrossings`
-  still keeps a frame from crossing one link twice in 10 minutes.
+  still keeps a frame from crossing one link twice in 10 minutes while it remembers the frame.
+- **That duplicate skip is a bounded memory, and a busy link outruns it.** It remembers 1,024 writes a link, which a
+  link at the full pace makes in about 80 s. A frame the skip has forgotten can cross again at the next digest that
+  still lacks it. The pace is the bound that always holds. Here a round asks the skip when it is cut, so a frame the
+  skip remembers is never released, pending or marked; Android's link drops such a frame after the round released it,
+  so there it is pending and then marked. The contract leaves each skip where it is.
 - **A frame addressed to the peer that its digest keeps lacking is released again at each digest,** once the judging
-  delay has passed since its last release. No memo holds it. The pace bounds it, and `LinkCrossings` keeps it to one
-  write per link in 10 minutes while fewer than 1,024 other frames have been written to that link since; a link at
-  full pace writes that many in about 80 s, so a busy link can carry it about once per metered digest.
+  delay has passed since its last release. No memo holds it. The pace bounds it, and on Bluetooth the link's own
+  duplicate skip holds it to one crossing in 10 minutes while that skip still remembers it.
+- **A full pair's offers don't always reach the longest gap.** When a mark lapses the frame crosses once more, and the
+  peer sometimes keeps it then, because its store has changed since the mark. That is a kept frame, so the interval goes
+  back to 60 s and climbs again. Android's lab saw it in 1 schedule of 20: gaps of 60, 120, 240 and 480 s, then 60 s
+  again, three times in 50 minutes, with 1 to 3 frames kept at each lapse and no frame crossing twice inside one. An
+  offer that draws a kept frame was worth making, so the back-off doesn't change. The cost is a few more digests than a
+  settled pair sends, and never more than the one a minute every pair sent before.
 - **A frame released without its sender's key can arrive late.** When we hold no key to send ahead, the peer parks
   the frame outside custody, its next digest lacks it, and the memo marks it not kept for 10 minutes. If the key
   reaches the peer from elsewhere after its park lost the frame, we serve it only after the lapse. It is bounded and
@@ -134,5 +145,8 @@ What we chose against:
   - `CustodyCarryConstantsTests`, for every constant, beside `CarryLedgerHolderTests`, `CarryLedgerMemoTests`,
     `CustodyAnswersTests` and `ReofferBackoffTests` (the contract's worked cases);
   - `LinkPipeCustodyCarryTests`, two engines, for the pace on the pipe, a cut mid-answer that credits nothing, two full
-    stores that serve each other's mail first and then settle to the lapse bound with digests 600 s apart, and the
-    back-off.
+    stores that serve each other's mail first and then stop swapping, and the back-off;
+  - `LinkPipeCustodyFullStoresTests`, two full stores linked for 50 minutes over several schedules: no frame crosses
+    twice inside a lapse, no later lapse marks more than the first, and the re-offer follows the back-off's ladder,
+    back to 60 s only after a kept frame;
+  - `EngineLabCustodyCrossingsTests`, a lost DM for the peer that every digest lacks crosses once in 10 minutes.
