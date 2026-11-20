@@ -308,7 +308,7 @@ extension MeshEngine {
         // Last, so the replayed frames verify against the key just pinned. Replay skips the router: each was
         // admitted, and its relay scheduled, when it first arrived.
         for parked in pendingInbound.release(sender) {
-            deliver(parked.frame)
+            deliver(parked.frame, from: nil)
         }
     }
 

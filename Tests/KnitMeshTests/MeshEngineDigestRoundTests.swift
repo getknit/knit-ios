@@ -4,41 +4,7 @@ import KnitTestSupport
 import KnitWire
 import Testing
 
-/// A digest's reply round waits on its link, not on the peer (ADR 2026-10.f5zs): ``HeldDigests`` and its engine wiring.
-@Suite struct HeldDigestsTests {
-    private let bob = fixtureNodeId(2)
-    private let carol = fixtureNodeId(3)
-
-    @Test func aNewerDigestTakesTheHeldOnesPlaceAndKeepsTheLook() {
-        var holds = HeldDigests()
-        holds.hold(["a"], from: bob, now: 1000)
-        holds.hold(["b"], from: carol, now: 2000)
-        holds.hold(["c"], from: bob, now: 3000)
-        #expect(holds.digests == [HeldDigests.Held(neighbor: bob, ids: ["c"]), HeldDigests.Held(neighbor: carol, ids: ["b"])])
-        #expect(holds.nextCheck == 1000 + HeldDigests.recheckMilliseconds, "a peer that sends often cannot put the look off")
-    }
-
-    @Test func theHeldDigestsAreTakenOnlyOnceTheLookIsDue() {
-        var holds = HeldDigests()
-        holds.hold(["a"], from: bob, now: 1000)
-        #expect(holds.takeDue(now: 5999).isEmpty)
-        #expect(holds.takeDue(now: 6000) == [HeldDigests.Held(neighbor: bob, ids: ["a"])])
-        #expect(holds.digests.isEmpty)
-        #expect(holds.nextCheck == nil)
-    }
-
-    @Test func aLinkGoingClearsItsDigest() {
-        var holds = HeldDigests()
-        holds.hold(["a"], from: bob, now: 1000)
-        holds.hold(["b"], from: carol, now: 1000)
-        holds.drop(bob)
-        #expect(holds.digests.map(\.neighbor) == [carol])
-        #expect(holds.nextCheck != nil)
-        holds.drop(carol)
-        #expect(holds.nextCheck == nil)
-    }
-}
-
+/// A digest's paced answer waits on its link, not on the peer (ADR 2026-10.f5zs, the `custody-carry-policy` contract, §2).
 @Suite struct MeshEngineDigestRoundTests {
     private let alice = TestPeer(seed: 1)
     private let bob = TestPeer(seed: 2)
@@ -98,18 +64,20 @@ import Testing
         #expect(served(fixture, to: bob) == [posts[1]], "one round, against the newer digest")
     }
 
-    @Test func aDigestAnsweredAtOnceClearsTheOneHeld() throws {
-        // The held one is older: answering it at the next look would serve a round against a stale picture.
+    @Test func aNewerDigestDoesNotBringAWaitingRoundForward() throws {
+        // A peer cannot raise the pace by sending digests: the answer takes the newer one and keeps its due time.
         let (fixture, posts) = try fixture(bob)
         fixture.transport.unwritten[bob.nodeId] = HeldDigests.lineBytes
         fixture.engine.receiveDigest([], from: bob.nodeId)
         fixture.transport.unwritten[bob.nodeId] = 0
         fixture.advance(1000)
         fixture.engine.receiveDigest([], from: bob.nodeId)
+        #expect(fixture.transport.written.isEmpty, "the round waits for its look")
+        fixture.advance(HeldDigests.recheckMilliseconds - 1000)
         #expect(Set(served(fixture, to: bob)).isSuperset(of: posts))
         fixture.transport.clear()
         fixture.advance(HeldDigests.recheckMilliseconds)
-        #expect(fixture.transport.written.isEmpty, "nothing held is left to answer")
+        #expect(fixture.transport.written.isEmpty, "nothing left to answer")
     }
 
     @Test func aHeldRoundLogsItsWaitOnce() throws {
@@ -124,8 +92,9 @@ import Testing
         #expect(fixture.transport.written.isEmpty)
     }
 
-    @Test func theLineIsHalfARound() {
-        #expect(HeldDigests.lineBytes == CustodySync.roundBytes / 2)
+    @Test func theLineIsALocalGuardOf128KiB() {
+        #expect(HeldDigests.lineBytes == 131_072)
+        #expect(HeldDigests.recheckMilliseconds == 5000)
     }
 
     @Test func aLinkGoingDropsItsHeldDigest() throws {

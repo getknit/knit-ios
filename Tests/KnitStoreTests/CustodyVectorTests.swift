@@ -5,7 +5,9 @@ import Testing
 
 /// knit-next's custody contract (`vectors/custody-v1.json`, knit-next ADR 2026-10.7mqm and 2026-10.mqzv), replayed as
 /// `CustodyVectorTest` replays it through Android's store: every step in order through one store of each kind. A step
-/// this port answers differently is a frame an iPhone and a Pixel hold differently, so their digests never agree.
+/// this port answers differently is a frame an iPhone and a Pixel hold differently, so their digests never agree. A step's
+/// `carry` feeds the rig's holders, which the global cap's spread key reads (the `custody-carry-policy` contract, §5); a
+/// file without any replays with every spread 0, the order before it.
 @Suite struct CustodyVectorTests {
     private static let file = CustodyVectors.file
 
@@ -20,8 +22,33 @@ import Testing
             maxPerGroup: stated.maxPerGroup,
             maxRoomChat: stated.maxBroadcast,
             maxSignedBytes: stated.maxSignedBytes,
-            maxProfileSignedBytes: stated.maxProfileSignedBytes
+            maxProfileSignedBytes: stated.maxProfileSignedBytes,
+            spreadMax: stated.spreadMax ?? CustodyLimits().spreadMax
         )
+    }
+
+    /// The rig's carry (the `custody-carry-policy` contract, "Vectors"): each id's holders as the steps set them, its spread
+    /// their distinct count, which the rule caps at `spreadMax`.
+    private final class RigCarry: CustodyCarry {
+        var holders: [ExactKey: Set<ExactKey>] = [:]
+
+        func holders(of id: String) -> Int {
+            holders[ExactKey(id)]?.count ?? 0
+        }
+
+        /// Applies a step's `carry`, before its frame is stored.
+        func apply(_ carry: CustodyVectors.Carry?) {
+            for (id, peers) in carry?.holders ?? [:] {
+                holders[ExactKey(id)] = peers.isEmpty ? nil : Set(peers.map(ExactKey.init))
+            }
+        }
+
+        /// Forgets the holders of `ids`, which the step evicted or refused: they die with their row.
+        func forget(_ ids: [String]) {
+            for id in ids {
+                holders[ExactKey(id)] = nil
+            }
+        }
     }
 
     /// The step's frame as `CustodyVectorTest.frameOf` builds it: of its type, a chat payload whose body is `bodyLength` "x"s
@@ -44,12 +71,13 @@ import Testing
 
     @Test func theFileStatesTheSameFutureWindow() {
         #expect(Self.file.limits.maxFutureSkewMs == WireProtocol.maxFutureSkewMilliseconds)
-        #expect(Self.file.steps.count == 33)
+        #expect(Self.file.steps.count == 46)
     }
 
     @Test(arguments: CustodyStoreKind.allCases)
     func everyStepIsReproduced(kind: CustodyStoreKind) throws {
         let store = try kind.make(Self.limits)
+        let carry = RigCarry()
         for (index, step) in Self.file.steps.enumerated() {
             let label = Comment(rawValue: "step \(index + 1) (\(step.note))")
             let frame = Self.carried(step.frame)
@@ -58,13 +86,15 @@ import Testing
             #expect(frame.envelope.isRoomPost == step.isRoomChat, label)
             #expect(CustodyRules.expiresAt(of: frame.envelope, limits: Self.limits) == step.expiresAt, label)
             let before = store.liveIds(now: step.now)
-            let answer = store.store(frame, origin: .relayed, now: step.now)
+            carry.apply(step.carry)
+            let answer = store.store(frame, origin: .relayed, now: step.now, carry: carry)
             let after = store.liveIds(now: step.now)
             let afterKeys = Set(after.map(ExactKey.init))
             #expect(answer.held == step.kept, label)
             let evicted = before.filter { !afterKeys.contains(ExactKey($0)) }
             #expect(Self.sorted(evicted) == step.evicted, label)
             #expect(Self.sorted(after) == step.held, label)
+            carry.forget(evicted + (answer.held ? [] : [step.frame.id]))
         }
     }
 

@@ -42,8 +42,8 @@ final class SpoolLab {
     private(set) var cancelledMining: [SpoolMiningRequest] = []
 
     /// A lab over `fixtures`, none linked by radio and none connected to the spool yet; each plane carries the relay.
-    init(_ fixtures: [EngineFixture], spool: FakeSpool? = nil) {
-        radio = EngineLab(fixtures)
+    init(_ fixtures: [EngineFixture], spool: FakeSpool? = nil, crossings: Bool = false) {
+        radio = EngineLab(fixtures, crossings: crossings)
         self.spool = spool ?? FakeSpool(now: fixtures.first?.clock.wallMilliseconds() ?? 0)
         planes = fixtures.map { SpoolPlane(me: $0.me.nodeId) }
         connections = Array(repeating: nil, count: fixtures.count)

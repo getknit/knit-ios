@@ -76,8 +76,15 @@ final class LinkPipe {
     private(set) var asks: [Ask] = []
     /// Every FRAME record it carried, either way, its envelope decoded.
     private(set) var frames: [Frame] = []
-    /// Every DIGEST record it carried, either way: who sent it and how many ids it listed.
-    private(set) var digests: [(from: NodeId, ids: Int)] = []
+    /// A DIGEST record that crossed: who sent it, how many ids it listed, and when.
+    struct Digest: Equatable {
+        var from: NodeId
+        var ids: Int
+        var at: Int64
+    }
+
+    /// Every DIGEST record it carried, either way.
+    private(set) var digests: [Digest] = []
     /// When set, what this node writes waits on its radio, unread, as on a link whose air is slow: nothing it writes
     /// crosses, and no FILE record it writes is reported written, until this is cleared.
     var holding: PipeNode?
@@ -194,7 +201,7 @@ final class LinkPipe {
         let receiver = sides[1 - index]
         let now = clock.monotonicMilliseconds()
         if record.tag == .digest {
-            digests.append((sender.node.nodeId, LinkJSON.digestIds(from: record.payload)?.count ?? 0))
+            digests.append(Digest(from: sender.node.nodeId, ids: LinkJSON.digestIds(from: record.payload)?.count ?? 0, at: now))
         }
         if record.tag == .fileHeader, let header = LinkJSON.fileHeader(from: record.payload), let hash = BlobHash(header.key) {
             serves.append(Serve(from: sender.node.nodeId, to: receiver.node.nodeId, hash: hash, offset: header.offset, at: now))

@@ -153,21 +153,33 @@ public enum CustodyRules {
     }
 
     /// The ids to evict once `inserted` has joined `live`, the live entries including it (`insertAndTrim`,
-    /// `ForwardRepository.kt` at knit-next `e0cbb842a`).
+    /// `ForwardRepository.kt` at knit-next `e0cbb842a`), with no holder known for any of them: the old global key.
+    public static func evictions(after inserted: Entry, among live: [Entry], limits: CustodyLimits) -> [String] {
+        evictions(after: inserted, among: live, limits: limits, carry: NoCustodyCarry())
+    }
+
+    /// The ids to evict once `inserted` has joined `live`, the live entries including it (`insertAndTrim`,
+    /// `ForwardRepository.kt` at knit-next `e0cbb842a`, and the `custody-carry-policy` contract, §5).
     ///
     /// Each over-quota sender, group and room bucket keeps its newest N by `(sentAt, id)`, in that fixed order, and each
-    /// count sees the evictions before it. A frame older than its bucket's newest N is evicted the moment it arrives,
-    /// which is right: every node converges on the same newest N whatever order frames arrive in.
+    /// count sees the evictions before it. A frame older than its bucket's newest N is evicted the moment it arrives. The
+    /// three trims never read `carry`: they are functions of the live entries alone, so every node converges on the same
+    /// newest N whatever order frames arrive in, and a fair or carry-aware room trim would split an old node from a new one
+    /// for good at a busy room's quota.
     ///
-    /// Then, while the entries left exceed the cap, the global trim evicts one at a time from the sender holding the
-    /// most (`fairlyEvictsBefore`), recounting after each, as `ForwardDao.evictFairest` run `count -
-    /// maxRows` times does (knit-next ADR 2026-10.7mqm). The old global trim took the globally oldest frame, so five free
-    /// identities stamping a thousand frames just inside the future window evicted every honest frame on every node at
-    /// once. Now a flood displaces only the largest buckets, which are its own. The sender, group and room trims stay
-    /// newest-N on purpose: every shipped build trims them that way, and a fair room trim would split an old node from a
-    /// new one for good at a busy room's quota. Like the old rule it is a function of the live entries alone, so two
-    /// nodes holding the same frames keep the same ones.
-    public static func evictions(after inserted: Entry, among live: [Entry], limits: CustodyLimits) -> [String] {
+    /// Then, while the entries left exceed the cap, the global trim evicts one at a time, recounting after each, as
+    /// `ForwardDao.evictFairest` run `count - maxRows` times does (knit-next ADR 2026-10.7mqm): the frame of the sender
+    /// holding the most first, then the one `carry` believes most widely held (its holders capped at
+    /// ``CustodyLimits/spreadMax``), then the oldest by `(sentAt, id)` (`fairlyEvictsBefore`). The old global
+    /// trim took the globally oldest frame, so five free identities stamping a thousand frames just inside the future window
+    /// evicted every honest frame on every node at once; key 1 still comes first, so a flood displaces only the largest
+    /// buckets, which are its own, and whichever row the later keys pick, one of the largest buckets loses exactly one row.
+    ///
+    /// Below the cap this is the same function of the live entries on every node. At the cap only the global trim's choice
+    /// of row reads this node's carry, which is read once per entry when the cap first binds in this write, a snapshot the
+    /// later evictions of the same write reuse. The newcomer is a candidate like any row, so a frame can still be evicted by
+    /// its own write. No tie depends on arrival order: the keys end on the id's bytes, which are unique.
+    public static func evictions(after inserted: Entry, among live: [Entry], limits: CustodyLimits, carry: some CustodyCarry) -> [String] {
         var remaining = live
         var evicted: [String] = []
         func trim(to quota: Int, _ inBucket: (Entry) -> Bool) {
@@ -191,16 +203,25 @@ public enum CustodyRules {
         }
         // `!remaining.isEmpty` holds whenever `maxFrames` is not negative; it is here so the first entry below always
         // exists, and a negative cap still evicts everything, as it did.
+        guard !remaining.isEmpty, remaining.count > limits.maxFrames else {
+            return evicted
+        }
+        // Read once per entry per write, beside the senders' counts, and removed with its entry.
+        var spreads = remaining.map { min(max(carry.holders(of: $0.id), 0), max(limits.spreadMax, 0)) }
         while !remaining.isEmpty, remaining.count > limits.maxFrames {
             // Counted by bytes, as SQLite's `GROUP BY senderId` groups BINARY text: two senders Swift calls equal are two
             // buckets on Android. Each entry's count sits beside it, so no lookup can miss.
             let held = senderCounts(of: remaining)
             var victim = remaining.startIndex
             for index in remaining.indices.dropFirst()
-            where fairlyEvictsBefore(remaining[index], held[index], remaining[victim], held[victim]) {
-                // Strictly before, so a tie keeps the earlier entry, as `min(by:)` did.
+            where fairlyEvictsBefore(
+                Ranked(entry: remaining[index], count: held[index], spread: spreads[index]),
+                Ranked(entry: remaining[victim], count: held[victim], spread: spreads[victim])
+            ) {
+                // Strictly before, so a tie keeps the earlier entry; the id's bytes leave no tie between two entries.
                 victim = index
             }
+            spreads.remove(at: victim)
             evicted.append(remaining.remove(at: victim).id)
         }
         return evicted
@@ -218,14 +239,25 @@ public enum CustodyRules {
         return counts
     }
 
-    /// Whether the global trim takes `lhs` before `rhs`, given each one's sender's live count: the frame of the sender
-    /// holding more first, then ``evictsBefore(_:_:)``. That is `ORDER BY b.n DESC, f.sentAt ASC, f.id ASC`
-    /// (`ForwardDao.evictFairest`), so on a tie for most the sender whose oldest frame is oldest loses it.
-    private static func fairlyEvictsBefore(_ lhs: Entry, _ lhsCount: Int, _ rhs: Entry, _ rhsCount: Int) -> Bool {
-        guard lhsCount == rhsCount else {
-            return lhsCount > rhsCount
+    /// An entry as the global trim ranks it: its sender's live count and its spread, both read for this write.
+    private struct Ranked {
+        var entry: Entry
+        var count: Int
+        var spread: Int
+    }
+
+    /// Whether the global trim takes `lhs` before `rhs`: the frame of the sender holding more first, then the frame held by
+    /// more peers, then ``evictsBefore(_:_:)``. That is `ORDER BY b.n DESC, spread DESC, f.sentAt ASC, f.id ASC`
+    /// (`ForwardDao.evictFairest` with the `custody-carry-policy` contract's key 2), so on a tie for most and for spread
+    /// the sender whose oldest frame is oldest loses it.
+    private static func fairlyEvictsBefore(_ lhs: Ranked, _ rhs: Ranked) -> Bool {
+        guard lhs.count == rhs.count else {
+            return lhs.count > rhs.count
         }
-        return evictsBefore(lhs, rhs)
+        guard lhs.spread == rhs.spread else {
+            return lhs.spread > rhs.spread
+        }
+        return evictsBefore(lhs.entry, rhs.entry)
     }
 }
 

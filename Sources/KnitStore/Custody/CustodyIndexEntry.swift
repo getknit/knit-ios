@@ -10,22 +10,32 @@ public struct CustodyIndexEntry: Sendable, Equatable {
     public var id: String
     /// Its sender's id, as the envelope names it.
     public var senderId: String
+    /// Its recipient's id, or `nil` for a frame addressed to nobody: a round serves a frame addressed to the asking peer in
+    /// its second tier (the `custody-carry-policy` contract, §1).
+    public var recipientId: String?
     /// Its type.
     public var type: FrameType
-    /// Its group's id, or `nil` for a DM or a room frame. The round no longer reads it: a group frame goes to any peer that
-    /// lacks it (knit-next ADR 2026-10.hr9f), so no roster is loaded to pick one.
+    /// Its group's id, or `nil` for a DM or a room frame. A group frame goes to any peer that lacks it (knit-next ADR
+    /// 2026-10.hr9f); its roster, which orders it in a round's third tier, is the engine's memo, never loaded to pick one.
     public var groupId: String?
+    /// The originator's clock: the order of a round's second and third tiers, the same on every node.
+    public var sentAt: Int64
     /// The key a link remembers it by (``FrameKey/ofSigned(_:)``), or `nil` for an unsigned row.
     public var frameKey: String?
     /// The bytes its re-serve encodes to (``CarriedFrame/reserved``'s `encoded`), as `LinkManager.send` writes it.
     public var reservedBytes: Int
 
     /// Makes an entry.
-    public init(id: String, senderId: String, type: FrameType, groupId: String?, frameKey: String?, reservedBytes: Int) {
+    public init(
+        id: String, senderId: String, recipientId: String?, type: FrameType, groupId: String?, sentAt: Int64, frameKey: String?,
+        reservedBytes: Int
+    ) {
         self.id = id
         self.senderId = senderId
+        self.recipientId = recipientId
         self.type = type
         self.groupId = groupId
+        self.sentAt = sentAt
         self.frameKey = frameKey
         self.reservedBytes = reservedBytes
     }
@@ -35,8 +45,10 @@ public struct CustodyIndexEntry: Sendable, Equatable {
         self.init(
             id: frame.envelope.id,
             senderId: frame.envelope.senderId,
+            recipientId: frame.envelope.recipientId,
             type: frame.envelope.type,
             groupId: frame.envelope.group?.id,
+            sentAt: frame.envelope.sentAt,
             frameKey: Self.frameKey(sigHead: frame.sig),
             reservedBytes: Self.reservedBytes(sig: frame.sig.count, signed: frame.signed.count)
         )

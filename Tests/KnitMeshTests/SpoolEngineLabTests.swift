@@ -17,12 +17,14 @@ import Testing
 
     /// Alice (0) and Bob (1), ratcheting, linked by radio until a DM each way and its receipts confirmed the session, then
     /// apart; Carol (2), when asked for, pinned by Bob alone and never linked. Every node carries the spool's relay.
-    static func greeted(withCarol: Bool = false, spool: FakeSpool? = nil, bobStores: MeshStores = .inMemory()) throws -> SpoolLab {
+    static func greeted(
+        withCarol: Bool = false, spool: FakeSpool? = nil, bobStores: MeshStores = .inMemory(), crossings: Bool = false
+    ) throws -> SpoolLab {
         var fixtures = [try EngineFixture.ratcheting(alice, seed: 11), try EngineFixture.ratcheting(bob, stores: bobStores, seed: 12)]
         if withCarol {
             fixtures.append(try EngineFixture.ratcheting(carol, seed: 13))
         }
-        let lab = SpoolLab(fixtures, spool: spool)
+        let lab = SpoolLab(fixtures, spool: spool, crossings: crossings)
         lab.radio.link(0, 1)
         try send(lab, 0, 1, "hello")
         try send(lab, 1, 0, "hi")
@@ -113,7 +115,10 @@ import Testing
     /// Radio and spool both carry one DM, in `spoolFirst`'s order: Bob keeps one row and one event, and Carol, behind Bob
     /// on the radio, gets exactly one copy.
     private func bothCarry(spoolFirst: Bool) throws {
-        let lab = try Self.greeted(withCarol: true)
+        // The links skip what crossed them, as `LinkManager` does: a round of Bob's answer to Carol, cut fresh, may serve the
+        // DM before the router's relay goes, and the link then carries one of the two (the `custody-carry-policy` contract,
+        // §2).
+        let lab = try Self.greeted(withCarol: true, crossings: true)
         Self.online(lab, [0])
         lab.radio.link(1, 2)
         lab.radio.link(0, 1, holding: [(from: 0, to: 1)])
@@ -139,7 +144,7 @@ import Testing
         }
         #expect(received == 1, "one event")
         #expect(lab.radio.thread(1, with: 0).count { $0.hasPrefix(id) } == 1, "one row")
-        let toCarol = lab[1].transport.written.count { $0.to == Self.carol.nodeId && ExactKey($0.envelope.id) == ExactKey(id) }
+        let toCarol = lab.radio.delivered(of: id, from: 1, to: 2, since: 0)
         #expect(toCarol == 1, "carol heard exactly one copy")
         #expect(lab.heal(1)?.counts.quarantined == 0 && lab.heal(1)?.counts.accounted == 0, "delivered and kept")
     }

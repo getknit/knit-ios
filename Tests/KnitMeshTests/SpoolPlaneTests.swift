@@ -123,6 +123,25 @@ import Testing
         #expect(lab.scopes(1).isEmpty && lab.operations(1, on: scope.id) == 0, "a read that succeeds decides: still blocked")
     }
 
+    @Test func aHealRoundWhoseCustodyReadFailsIsSkipped() throws {
+        let failable = FailableStores()
+        let fixtures = [
+            try EngineFixture.ratcheting(SpoolEngineLabTests.alice, seed: 11),
+            try EngineFixture.ratcheting(SpoolEngineLabTests.bob, stores: failable.stores, seed: 12),
+        ]
+        let lab = SpoolLab(fixtures, spool: FakeSpool(powBits: 8, now: EngineFixture.start))
+        lab.radio.link(0, 1)
+        try SpoolEngineLabTests.send(lab, 0, 1, "hello")
+        try SpoolEngineLabTests.send(lab, 1, 0, "hi")
+        lab.advance(SpoolEngineLabTests.minute)
+        lab.radio.unlink(0, 1)
+        lab.connect(1)
+        failable.custody.failsReads = true
+        lab.run(6)
+        failable.custody.failsReads = false
+        #expect((lab.heal(1)?.counts.unreadableRounds ?? 0) > 0, "the round read custody and found it unreadable")
+    }
+
     @Test func theTableIsReadAgainOnAGenerationBumpAlone() throws {
         let failable = FailableStores()
         let fixture = EngineFixture(SpoolEngineLabTests.bob, stores: failable.stores)

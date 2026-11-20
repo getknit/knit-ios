@@ -259,6 +259,8 @@ import Testing
         #expect(fixture.transport.written.isEmpty, "nothing on the air now")
         let added = Set(fixture.stores.custody.liveIds(now: now).map(ExactKey.init)).subtracting(carried)
         #expect(added.count == 1, "the joined seal's frame stands in our custody")
+        // A digest comes over a link, and its answer goes only while the link stands (the `custody-carry-policy` contract, §2).
+        fixture.link(bob)
         fixture.engine.receiveDigest([], from: bob.nodeId)
         let served = fixture.transport.written(.chat).first { added.contains(ExactKey($0.envelope.id)) && $0.to == bob.nodeId }
         let frame = try #require(served, "the next exchange serves it")

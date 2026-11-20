@@ -93,11 +93,10 @@ extension MeshEngine {
         // `fresh`: this turn's admission marked the id. `firstSight`: it may be marked and bridged once it delivers.
         let fresh = pulled == .new
         let firstSight = fresh || pulled == .reopened
+        // A spool relay is no link peer: the frame has no source the ledger could count.
         let carry = custody.carrying(frame.carried, in: stores.custody, now: wall) { true }
-        if carry.changed {
-            noteCustodyChanged()
-        }
-        guard carry.stored?.refusal != CustodyRefusal.writeFailed, case let delivered = deliverPulled(frame),
+        noteCustodyWrite(carry, of: frame.envelope, from: nil)
+        guard carry?.refusal != CustodyRefusal.writeFailed, case let delivered = deliverPulled(frame),
             let keptLive = custodyHolds(id, now: wall)
         else {
             // Only an insert this turn made is taken back.
@@ -107,7 +106,7 @@ extension MeshEngine {
             return .notTaken
         }
         settleMark(frame, pulled, delivered: delivered, heldBefore: heldBefore, now: now)
-        let newlyCarried = firstSight && delivered && !heldBefore && carry.changed && keptLive
+        let newlyCarried = firstSight && delivered && !heldBefore && carry?.changed == true && keptLive
         if newlyCarried, frame.bridges, router.relaysPulled(frame.wire), spoolInbound.takesBridgeToken(now: now) {
             _ = router.relayPulled(frame.wire, id: id, jitter: drawJitter(), now: now)
         }

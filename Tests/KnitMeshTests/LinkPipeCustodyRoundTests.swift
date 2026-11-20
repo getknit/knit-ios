@@ -110,9 +110,9 @@ import Testing
         }
         let converged = lab.run(step: 1000, limit: 900_000, until: caughtUp)
         #expect(converged)
+        // Paced rounds answer a digest without another: the link-up digest's answer, and the few its age lets lapse.
         let rounds = Self.digests(at: holder, from: newcomer)
-        let bound = (missing + CustodySync.roundFrames - 1) / CustodySync.roundFrames + 1
-        #expect(rounds <= bound, "\(rounds) digests for \(missing) frames")
+        #expect(rounds <= 1 + missing / 100, "\(rounds) digests for \(missing) frames")
         // Every group frame it is not in crossed, as any frame it lacked does (knit-next ADR 2026-10.hr9f), and every round
         // stayed within its budget plus its one first pick.
         let served = pipe.frames.filter { $0.from == holder.nodeId }
@@ -270,7 +270,9 @@ import Testing
         #expect(copies.values.allSatisfy { $0 == 1 }, "\(copies.filter { $0.value != 1 })")
         #expect(theirs.values.allSatisfy { $0 == 1 }, "\(theirs.filter { $0.value != 1 })")
         #expect(Set(held) == Set(far.stores.custody.liveIds(now: now)))
-        #expect(Self.digests(at: holder, from: far) >= 4, "the link-up digest and three more")
+        // The link-up digest, and the far side's offers at 60 and 180 s as its back-off spaces them (the
+        // `custody-carry-policy` contract, §7).
+        #expect(Self.digests(at: holder, from: far) >= 3, "the link-up digest and two more")
     }
 
     @Test func aJunkFloodDoesNotLetARefusedFrameCrossAgain() throws {
@@ -302,12 +304,10 @@ import Testing
 
 /// The default row cap binding on both sides while the rounds run (knit-next ADR 2026-10.hr9f).
 extension LinkPipeCustodyRoundTests {
-    @Test func aNonMemberNewcomerFacingAFullCustodyConvergesUnderTheDefaultCap() throws {
-        // The common case since knit-next ADR 2026-10.hr9f: a newcomer outside every group meets a carrier at the default row
-        // cap. It is owed every frame, group frames included, and custodies the 204 keys served ahead of them besides, so its
-        // cap trims while the rounds run, and the holder's does again once those keys come back to it. The fair trim decides
-        // the same on both sides (knit-next ADR 2026-10.7mqm), so the two agree once each frame a trim took has been offered
-        // again past its crossing. Observed: 13 holder-side digests and no id served more than twice.
+    @Test func aNonMemberNewcomerFacingAFullCustodyFillsToTheCapAndSettlesToTheLapseBound() throws {
+        // A newcomer outside every group meets a carrier at the default row cap (knit-next ADR 2026-10.hr9f). At the cap the
+        // global trim reads each node's own carry ledger, so the two need not end equal (the `custody-carry-policy` contract,
+        // "What still converges"): what is bounded is what crosses.
         let lab = PipeLab()
         let wall = lab.clock.wallMilliseconds()
         let holder = lab.node(1, custodyLimits: Self.limits)
@@ -316,29 +316,29 @@ extension LinkPipeCustodyRoundTests {
         #expect(filled.count == CustodyLimits().maxFrames)
         let newcomer = lab.node(2, custodyLimits: Self.limits)
         let pipe = lab.link(holder, newcomer)
-        let agree = Self.onceFramesCross(pipe) {
-            let now = lab.clock.wallMilliseconds()
-            return Set(holder.stores.custody.liveIds(now: now)) == Set(newcomer.stores.custody.liveIds(now: now))
+        let minute: Int64 = 60_000
+        lab.run(step: 1000, limit: 60 * minute) { false }
+        #expect(newcomer.stores.custody.liveIds(now: lab.clock.wallMilliseconds()).count == CustodyLimits().maxFrames)
+        // Past the first answers, each id crosses at most once a lapse.
+        let settled = (pipe.frames.first?.at ?? 0) + 5 * 60_000
+        var last: [String: Int64] = [:]
+        for frame in pipe.frames where frame.from == holder.nodeId && frame.at >= settled {
+            if let before = last[frame.id] {
+                #expect(frame.at - before >= CarryLedger.notKeptLapseMilliseconds, "\(frame.id) again after \(frame.at - before) ms")
+            }
+            last[frame.id] = frame.at
         }
-        let converged = lab.run(step: 1000, limit: 3 * SeenSet.defaultWindowMilliseconds, until: agree)
-        #expect(converged, "the same live ids on both nodes")
-        // 13 observed, with two rounds' margin.
-        let rounds = Self.digests(at: holder, from: newcomer)
-        #expect(rounds <= 15, "\(rounds) digests")
-        // A frame either trim took is offered again once its crossing lapses, and then kept: never a third time.
-        var copies: [String: Int] = [:]
-        for frame in pipe.frames where frame.from == holder.nodeId {
-            copies[frame.id, default: 0] += 1
-        }
-        let repeated = copies.filter { $0.value > 2 }
-        #expect(repeated.isEmpty, "\(repeated.count) ids served more than twice")
-        // Each key served ahead, a profile from the pin store that custody did not hold, is custodied on both sides or
-        // trimmed on both.
-        let servedKeys = Set(
-            pipe.frames.filter { $0.from == holder.nodeId && $0.type == .profile && !filled.contains(ExactKey($0.id)) }.map(\.id))
+        let servedKeys = pipe.frames.filter { $0.from == holder.nodeId && $0.type == .profile && !filled.contains(ExactKey($0.id)) }
         #expect(!servedKeys.isEmpty, "keys went ahead of their senders' backlogs")
-        let split = servedKeys.filter { holder.stores.custody.contains($0) != newcomer.stores.custody.contains($0) }
-        #expect(split.isEmpty, "\(split.count) keys held on one side only")
+        let start = pipe.frames.first?.at ?? 0
+        let late = pipe.frames.filter { $0.at >= start + 50 * minute && $0.type == .chat }
+        // Only the lapse's churn still crosses (72 observed), and both sides' offers reach the most.
+        #expect(late.count <= CustodyLimits().maxFrames / 5, "\(late.count) chat frames in the last ten minutes")
+        for node in [holder, newcomer] {
+            let times = pipe.digests.filter { $0.from == node.nodeId }.map(\.at)
+            let gaps = zip(times.dropFirst(), times).map { $0 - $1 }
+            #expect(gaps.contains(ReofferBackoff.maxMilliseconds), "\(gaps)")
+        }
     }
 }
 

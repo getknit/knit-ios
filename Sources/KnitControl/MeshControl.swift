@@ -334,6 +334,7 @@ public actor MeshControl {
             "typing": ControlLines.typing(await mesh.typing),
         ]) { _, own in own }
         fields.merge(await linkCounters()) { _, own in own }
+        fields.merge(ControlLines.fields(of: await mesh.custodyRoundCounts)) { _, own in own }
         return fields
     }
 }

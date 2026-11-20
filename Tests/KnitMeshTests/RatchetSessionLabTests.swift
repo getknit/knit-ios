@@ -145,7 +145,7 @@ import Testing
         let reset = try aliceResets(lab)
 
         lab.link(0, 1, holding: [(from: 0, to: 1), (from: 1, to: 0)])
-        // Bob's serve walks custody newest first, so his DMs go oldest first: the first derives under the kept root.
+        // Bob's DMs go last, oldest first, whatever order his serve wrote them in: the first derives under the kept root.
         lab.release(from: 1, to: 0) { items in
             items.filter { $0.id.map { !apart.contains($0) } ?? true } + apart.flatMap { id in items.filter { $0.id == id } }
         }
@@ -241,27 +241,6 @@ extension RatchetSessionLabTests {
         var ids: [Int: String] = [:]
     }
 
-    /// How the two resets of ``bothResetWithinASecondAndEachAnswersTheOthersFlaggedInit(_:)`` meet.
-    struct Meeting: Sendable, CustomTestStringConvertible {
-        /// Apart, then meeting: the first reset comes by back-fill, and the second, written just before, crosses the new
-        /// link live (``EngineLab/link(_:_:holding:)`` carries what is undrained). Linked, every frame is in flight in order.
-        let apart: Bool
-        /// The smaller id resets first.
-        let smallerFirst: Bool
-        /// The larger id's frames to the smaller are held at the meeting, then released with its reset last (#89's order).
-        let largerResetLast: Bool
-
-        var testDescription: String {
-            let held = largerResetLast ? ", the larger id's reset last" : ""
-            return "\(apart ? "apart" : "linked"), the \(smallerFirst ? "smaller" : "larger") id first\(held)"
-        }
-
-        /// The four plain meetings, then #89's.
-        static let all =
-            [true, false].flatMap { apart in [true, false].map { Self(apart: apart, smallerFirst: $0, largerResetLast: false) } }
-            + [Self(apart: true, smallerFirst: true, largerResetLast: true)]
-    }
-
     /// Both reset re-rooted, `order[0]` first and `order[1]` half a second after it, and what each reset left.
     private func bothReset(_ lab: EngineLab, in order: [Int]) throws -> Resets {
         var resets = Resets()
@@ -284,7 +263,13 @@ extension RatchetSessionLabTests {
 
     /// The two meet as `meeting` says, after both reset in `order`; `largerReset` is the larger id's reset's frame id.
     private func meet(_ lab: EngineLab, _ meeting: Meeting, order: [Int], large: Int, largerReset: String?) throws {
-        if meeting.largerResetLast {
+        if meeting.largerResetLast, meeting.olderCarrier {
+            let last = try #require(largerReset)
+            // #89's order: each back-fill as an older carrier serves it (`custody-carry-policy` §9), the larger id's reset last.
+            lab.link(0, 1, holding: [(from: large, to: 1 - large), (from: 1 - large, to: large)])
+            lab.releaseAsAnOlderCarrier(from: 1 - large, to: large)
+            lab.releaseAsAnOlderCarrier(from: large, to: 1 - large, last: last)
+        } else if meeting.largerResetLast {
             let last = try #require(largerReset)
             lab.link(0, 1, holding: [(from: large, to: 1 - large)])
             lab.release(from: large, to: 1 - large) { items in items.filter { $0.id != last } + items.filter { $0.id == last } }
@@ -350,8 +335,10 @@ extension RatchetSessionLabTests {
     /// its unacked DMs on the other's reset. Pass: one root, the smaller id's reset's; each side's `lastResetSentAt` stamped
     /// by its own reset and never again; no third reset; each side's unacked DMs read once. Two meetings fail it, both
     /// knit-next #89's and pinned as known issues: apart with the larger id first, the smaller id's DMs are lost
-    /// (``twoResetsApart``), and with the larger id's reset released last, the pair splits (``defection``) until the larger
-    /// id reclaims its reset by the hour's check (knit-next ADR 2026-10.4mjm). Both back-fill meetings converge either way.
+    /// (``twoResetsApart``), and with the larger id's reset released last behind an older carrier's back-fill, the pair splits
+    /// (``defection``) until the larger id reclaims its reset by the hour's check (knit-next ADR 2026-10.4mjm). The same reset
+    /// released last behind this port's own back-fill, a recipient's own DMs oldest first, converges. A meeting where both
+    /// resets come by back-fill converges in both orders.
     @Test(arguments: Meeting.all)
     func bothResetWithinASecondAndEachAnswersTheOthersFlaggedInit(_ meeting: Meeting) throws {
         let lab = try greeted()
@@ -367,7 +354,7 @@ extension RatchetSessionLabTests {
         let order = meeting.smallerFirst ? [small, large] : [large, small]
         let reset = try bothReset(lab, in: order)
         try meet(lab, meeting, order: order, large: large, largerReset: reset.ids[large])
-        let split = meeting.largerResetLast
+        let split = meeting.largerResetLast && meeting.olderCarrier
         let lost = meeting.apart && !meeting.smallerFirst
         let known = split ? Self.defection : lost ? Self.twoResetsApart : nil
         try turnaround(lab, "after both resets")

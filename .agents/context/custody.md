@@ -1,9 +1,11 @@
 # Routing, custody and sync
 
-How knit-next floods, deduplicates, carries and back-fills frames at the pinned commit. The numbers here
-are cross-platform law, not tuning knobs: if the iPhone bounds its carried set differently from Android,
-the two never agree on what each is missing, and every 60-second exchange re-sends frames forever. The
-`blobs-owner` reads it before it writes and the `blobs-reviewer` before it judges (`.agents/rules/owners.md`).
+How knit-next floods, deduplicates, carries and back-fills frames at the pinned commit, and the paired change
+mirrored ahead of it (ADR 2026-11.3jry). The numbers here are cross-platform law, not tuning knobs. Below the row cap,
+if the iPhone bounds its carried set differently from Android, the two never agree on what each is missing. At the
+cap stores differ by design, and the shared pace, memo and back-off are what keep that from re-sending frames at every
+exchange. The `blobs-owner` reads it before it writes and the `blobs-reviewer` before it judges
+(`.agents/rules/owners.md`).
 
 ## Flooding
 
@@ -90,9 +92,16 @@ A node carries frames for people who are not in range yet. This is store-and-for
   - 200 for the room
   - 1000 overall
 - **Eviction order:** the sender, group and room quotas each keep their newest N by `(sentAt ASC, id ASC)`, with
-  the ids compared as SQLite BINARY (byte order). The 1000 overall evicts one frame at a time from the largest
-  sender: the oldest `(sentAt, id)` frame of the sender holding the most live frames, recounted after each
-  (`ForwardDao.evictFairest`, knit-next ADR 2026-10.7mqm, ADR 2026-10.9e7g). Senders count by their bytes too.
+  the ids compared as SQLite BINARY (byte order), and never read the holders below. The 1000 overall evicts one frame
+  at a time from the largest sender bucket, recounted after each (`ForwardDao.evictFairest`, knit-next ADR 2026-10.7mqm,
+  ADR 2026-10.9e7g): the first by the sender's live count descending, then the frame's holders (capped at
+  `spreadMax`, 8) descending, then `sentAt` ascending, then the id's bytes (ADR 2026-11.3jry). Senders count by their
+  bytes too. The holders are this node's own carry ledger, read once per write. The frame being written counts the
+  peer it came from among its holders, so a frame a full peer serves back ties with the rows the two share and
+  evicts itself by `(sentAt, id)`, as it did before. With no holders recorded the order is the old one exactly, and
+  two stores below the cap that hold the same frames keep the same ones.
+  - **What eviction reads, a peer can read back,** since a digest lists what a store keeps. So nothing in custody
+    reads a contact, a sighting or a meeting, and no key joins the order without a security pass (ADR 2026-11.3jry).
   Before `e0cbb842a` the cap took the oldest frame in custody, so five free identities flooding just inside the
   future window evicted every honest frame on every node. A phone on a build from before it still runs that rule, so
   a mixed fleet keeps different sets while the cap binds.
@@ -118,32 +127,50 @@ A node carries frames for people who are not in range yet. This is store-and-for
   acker)` for the tombstone's 24 h, in a set of at most 4096 (`earlyAcks`). A DM that arrives later, whatever its
   origin, is refused and tombstoned if its cleartext `recipientId` is that acker, before it is authenticated. The
   memo is keyed on the acker, so a receipt from anyone else keeps nothing out. It lives in memory, like the
-  tombstones. Two things make this order common. Back-fill serves newest-received first, so a receipt goes ahead
-  of an older DM. And a DM's recipient relays it onward like any frame, after the jitter, but sends its receipt
-  at once, so its other neighbours hear the receipt first. Before the memo, such a DM was carried to its expiry
+  tombstones. Two things make this order common. Back-fill serves a third party's mail newest-received first, so a
+  receipt goes ahead of an older DM that is not for the asking peer. And a DM's recipient relays it onward like any
+  frame, after the jitter, but sends its receipt at once, so its other neighbours hear the receipt first. Before the memo, such a DM was carried to its expiry
   and offered at every exchange to neighbours that refused it: in `iphone-soak` on 2026-09-28 each order left one
   DM behind, and custody never matched (`.agents/context/linux-peer.md`, "What the iPhone's soak showed").
 
 ## Sync over a link
 
-- At link-up and every 60 s, each side sends a `DIGEST` record listing every live custody id.
-- On receiving the peer's `DIGEST`, Android pushes every live frame the list omits (`ForwardSync.kt:136-163`). Each
+- At link-up, and on the 60 s re-offer, each side sends a `DIGEST` record listing every live custody id. The re-offer
+  backs off per neighbour: 60 s, doubling to 600 s while our offers draw nothing from it, back to 60 s the moment
+  custody keeps a frame from it. A neighbour is due once `now − last offer ≥ interval − 30 s`. The link-up digest is
+  never held and counts as an offer. Only the custody digest waits, and the ticks, seeds, key asks and blob steps on the
+  same tick keep their own rules (ADR 2026-11.3jry).
+- On receiving the peer's `DIGEST`, a node serves the live frames the list omits: at the pin, Android pushes every one
+  at once (`ForwardSync.kt:136-163`); after ADR 2026-11.3jry both sides serve them in paced rounds, below. Each
   goes out as a fresh `WireEnvelope` with `ttl = 8` and `hops = 0`, with `sig` and `signed` copied verbatim. Group
   frames go to any peer that lacks them, member or not, as room posts do (knit-next ADR 2026-10.hr9f, `9f53dc34f`).
   A non-member that is never back-filled keeps a smaller bucket for each member, so it holds frames the members
   evicted and serves them back at every exchange.
-- **This port answers in capped rounds** (ADR 2026-10.f5zs), its own rule and not a custody constant. A peer's
-  digests are metered, a burst of 2 and then one per 30 s, and the rest are dropped. A round picks from
-  `CustodyStore.liveIndex`, which decodes nothing: profiles first, then newest received first, minus the digest's ids
-  and whatever already crossed the link either way. It sends up to 200 frames or 256 KiB as encoded, keys ahead
-  counted in the bytes. The first pick always goes, and the round stops at the first pick that would pass the budget.
-  A group frame takes a slot like any other, member or not. While the link still holds 128 KiB unwritten, the newest
-  digest waits in one slot per link. Each 60 s digest answers the next slice, so a newcomer facing a full custody
-  fills in about five exchanges, newest first.
-- **Android pushes custody only in answer to a DIGEST.** A node that sends none gets no back-fill. A node
-  whose digest under-reports gets the missing frames re-pushed at each exchange, though on a Bluetooth link
-  `LinkCrossings` lets one frame cross only once in 10 minutes, so the repeat comes that often while the link
-  lasts.
+- **Both answer in paced rounds** (ADR 2026-11.3jry, after ADR 2026-10.f5zs). On Bluetooth a round is 16,384 bytes as
+  encoded, keys ahead counted, released at most every 2,000 ms: 8 KiB/s. The first pick always goes, and the round
+  stops at the first pick that would pass the budget; the next is due `max(2000, bytes × 2000 / 16384)` ms later. Each
+  round is cut fresh from `CustodyStore.liveIndex`, which decodes nothing, in four tiers:
+  1. profiles, newest received first;
+  2. frames whose `recipientId` is the asking peer, oldest `(sentAt, id)` first;
+  3. group frames whose own cleartext roster lists the peer, oldest first, read from the roster custody remembered
+     when it stored the row (at most 8 members; a larger roster, or a row not classified since a restart, goes to 4);
+  4. everything else, newest received first.
+
+  It leaves out the digest's ids, what this answer already released, what arrived from the peer since its digest, the
+  memo's ids and whatever crossed the link either way. An answer keeps the peer's latest digest (only the ids we hold)
+  and ends when nothing is left, at link-down, or 120 s after that digest. A newer digest replaces the kept one and
+  never brings a round forward. A peer's digests are still metered, a burst of 2 and then one per 30 s. While the link
+  still holds 128 KiB unwritten, a due round waits and is looked at again every 5 s. A newcomer below the cap fills in
+  within one answer: 1,000 frames of about 600 bytes take about 75 s.
+- **The not-kept memo,** on a proven link only (ADR 2026-11.hpmt). An id released to a peer is pending, and not
+  released again, until a digest at least 20 s after the release judges it, the link ends, or 600 s pass. A digest that
+  lacks it marks it not kept, and it isn't released to that peer for 600 s. A frame addressed to the peer is never
+  pending or marked. The memo goes at link-down, at most 64 peers are kept, and a linked peer's is never the one
+  evicted. On a link that proved nothing, `LinkCrossings` alone keeps a frame from crossing twice in 10 minutes.
+- **Custody is pushed only in answer to a DIGEST.** A node that sends none gets no back-fill. A node whose digest
+  under-reports gets the missing frames again once per 600 s lapse on a proven link, and otherwise once per 10 minutes
+  of `LinkCrossings` while the link lasts. An Android build from before ADR 2026-11.3jry still pushes the whole
+  difference at once and re-offers every 60 s.
 - **A link's writer is first in, first out, on both platforms, but holds at most one digest not yet written**
   (ADR 2026-09.3ch7, knit-next's ADR 2026-09.tjfb). Android queues a back-fill whole; this port queues one round at
   a time. A digest made while an older one still waits takes that one's place, so a slow link writes one current
@@ -183,8 +210,9 @@ publish it honestly.
 - **Parking:** a frame from a sender whose key we lack is parked for 2 minutes, at most 512 frames and 4 MiB
   in all, and a carrier's custody quota (200) per sender, so a stranger's whole served backlog parks
   (`PendingInbound.kt`, knit-next ADR 2026-09.9xuu).
-- **Serving order:** a digest is answered profiles first, then everything else newest-received first, so a
-  newcomer pins each sender's key before that sender's chat arrives (`ForwardSync.onDigest`, the same ADR).
+- **Serving order:** a digest is answered profiles first, so a newcomer pins each sender's key before that sender's
+  chat arrives (`ForwardSync.onDigest`, the same ADR), then the peer's own mail and its groups' frames, then
+  everything else newest-received first (ADR 2026-11.3jry).
 - **The key ahead of a backlog:** when custody holds no live profile of a sender whose frames the reply
   serves, the reply sends that sender's key first, from the pin store and `relay = false`
   (`ForwardSync.keylessSenders`, knit-next ADR 2026-09.g64k). No key goes to the sender itself, or to a peer
@@ -222,9 +250,12 @@ publish it honestly.
 ## In this port
 
 - **Where it lives:** the router is `KnitMesh/Router/Router.swift`, and the custody rules are
-  `KnitStore/Custody/CustodyRules.swift`, which every store applies. `KnitMesh/Custody/CustodySync.swift`
-  decides what to carry and serve, and `KnitMesh/Receipts/` owes the room and group ticks: `AckSync` and its
-  holds, its seams in `TickSealing`, and the engine's wiring in `MeshEngine+Ticks.swift`. The seams' seals and the
+  `KnitStore/Custody/CustodyRules.swift`, which every store applies, with the holders it reads at the cap passed in
+  as a `CustodyCarry`. `KnitMesh/Custody/CustodySync.swift` decides what to carry, and `CustodySync+Rounds.swift`
+  what each round serves. `CarryLedger` keeps the holders, the rosters and the not-kept memo, `CustodyAnswers` each
+  peer's answer, and `ReofferBackoff` each neighbour's re-offer, all in memory (ADR 2026-11.3jry). `KnitMesh/Receipts/`
+  owes the room and group ticks: `AckSync` and its holds, its seams in `TickSealing`, and the engine's wiring in
+  `MeshEngine+Ticks.swift`. The seams' seals and the
   sealed DM receipt are the ratchet's, in `KnitMesh/Ratchet/MeshEngine+RatchetReceipts.swift`. `KnitMesh/Recovery/`
   holds key requests and parked frames (ADR 2026-09.p6nb).
 - **Two stores apply them:** `MemoryCustodyStore` for the Linux peer and the tests, and `SQLCustodyStore`

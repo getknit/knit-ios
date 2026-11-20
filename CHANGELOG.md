@@ -24,6 +24,9 @@ document:
 - Your iPhone now sends far less repeat traffic, which saves airtime and battery on every phone nearby.
   Outside a busy group, it stops resending the members old messages their phones had dropped, and it no longer
   answers a message you already have with a fresh delivery tick every ten minutes.
+- When your iPhone passes another phone for a few seconds, it now sends that phone's own messages first, a
+  little at a time, so a short meeting still delivers them. An iPhone carrying all it can for others also
+  stops resending messages the other phone turned down.
 
 ### Fixed
 

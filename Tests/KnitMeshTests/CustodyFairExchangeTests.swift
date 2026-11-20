@@ -8,9 +8,11 @@ import Testing
 
 /// Custody's fair global trim (knit-next ADR 2026-10.7mqm) across nodes: stores whose quotas bind together still converge
 /// by exchanging what each lacks, and a Sybil flood leaves every honest frame on every node. First at the store level,
-/// as Android's `ForwardRepositoryTest` plays it, then between two engines over a ``LinkPipe``, through this port's own
-/// back-fill: capped rounds from ``CustodySync/missing(from:for:in:now:crossed:key:)``, with the link's crossings and the
-/// router's seen window, which Android's store-level exchange has neither of (ADR 2026-10.f5zs).
+/// as Android's `ForwardRepositoryTest` plays it, with no carry, then between two engines over a ``LinkPipe``, through this
+/// port's own back-fill: paced rounds (the `custody-carry-policy` contract, §2), with the link's crossings and the router's
+/// seen window, which Android's store-level exchange has neither of (ADR 2026-10.f5zs). Between engines the global cap
+/// reads each node's own carry ledger, so two engines converge while the cap does not bind (the contract, "What still
+/// converges"); at the cap they may differ for good, and `LinkPipeCustodyCarryTests` pins what that costs.
 @Suite struct CustodyFairExchangeTests {
     /// The bound on convergence: three of the router's seen windows. Android's design pass settled within about two.
     private static let bound = 3 * SeenSet.defaultWindowMilliseconds
@@ -18,6 +20,8 @@ import Testing
     private static let round: Int64 = 60_000
     /// The room, a group, a sender and the global cap all bind at once.
     private static let binding = CustodyLimits(maxFrames: 14, maxPerSender: 8, maxPerGroup: 6, maxRoomChat: 5)
+    /// The room, a group and a sender bind, and the global cap, past the thirty frames, never does.
+    private static let quotasBinding = CustodyLimits(maxFrames: 30, maxPerSender: 8, maxPerGroup: 6, maxRoomChat: 5)
 
     /// A carried chat from `sender`: a room post, a group's under `group`, or a DM to `peer`.
     private static func frame(
@@ -142,11 +146,11 @@ import Testing
     }
 
     @Test(arguments: UInt64(1)...3)
-    func twoEnginesWhoseQuotasBindConvergeThroughTheirDigestRounds(seed: UInt64) throws {
+    func twoEnginesWhoseQuotasBindBelowTheCapConvergeThroughTheirDigestRounds(seed: UInt64) throws {
         let lab = PipeLab()
         let wall = lab.clock.wallMilliseconds()
-        let first = lab.node(1, custodyLimits: Self.binding)
-        let second = lab.node(2, custodyLimits: Self.binding)
+        let first = lab.node(1, custodyLimits: Self.quotasBinding)
+        let second = lab.node(2, custodyLimits: Self.quotasBinding)
         let phones = [first, second]
         for node in phones {
             Self.pin(Self.senders + [Self.recipient], on: node)
@@ -164,6 +168,10 @@ import Testing
         // Past the seen and crossing windows every frame either side lacks is offered again: the sets must stay equal.
         lab.run(step: 1000, limit: 11 * 60_000) { false }
         #expect(Self.agree(phones, at: lab.clock.wallMilliseconds()), "seed \(seed): apart again past the windows")
+        for node in phones {
+            let held = node.stores.custody.liveIds(now: lab.clock.wallMilliseconds()).count
+            #expect(held < Self.quotasBinding.maxFrames, "the cap never bound: \(held) held")
+        }
     }
 
     @Test func aSybilFloodAtTheWindowsEdgeLeavesEveryHonestFrameOnBothEngines() throws {

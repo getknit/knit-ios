@@ -107,10 +107,12 @@ private struct SplitMix: RandomNumberGenerator {
             #expect(store.store(dm("f\(index)", sender: "peer", sentAt: 10 + Int64(index)), origin: .relayed, now: 0).held)
         }
         let late = store.store(dm("late", sender: "peer", sentAt: 1), origin: .relayed, now: 0)
-        #expect(late == CustodyStoreResult(held: false, changed: true), "older than the newest five: kept nowhere")
+        #expect(late == CustodyStoreResult(held: false, changed: true, evicted: ["late"]), "older than the newest five: kept nowhere")
         #expect(!store.contains("late"))
         let newer = dm("new", sender: "peer", sentAt: 99)
-        #expect(store.store(newer, origin: .relayed, now: 0) == CustodyStoreResult(held: true, changed: true), "displaces the oldest")
+        #expect(
+            store.store(newer, origin: .relayed, now: 0) == CustodyStoreResult(held: true, changed: true, evicted: ["f1"]),
+            "displaces the oldest")
         #expect(!store.contains("f1"))
         #expect(store.store(newer, origin: .relayed, now: 0) == .alreadyHeld, "already held reads as held and unchanged")
     }

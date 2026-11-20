@@ -265,7 +265,7 @@ private func liveSet(_ store: some CustodyStore, now: Int64) -> [String] {
         #expect(liveSet(store, now: 0) == ["x1", "x3"])
         // Now each sender holds one: the tie goes to the oldest frame, which is the one just written.
         let late = store.store(carried("x0", sender: "C", sentAt: 0), origin: .relayed, now: 0)
-        #expect(late == CustodyStoreResult(held: false, changed: true), "evicted by its own write")
+        #expect(late == CustodyStoreResult(held: false, changed: true, evicted: ["x0"]), "evicted by its own write")
         #expect(liveSet(store, now: 0) == ["x1", "x3"])
     }
 

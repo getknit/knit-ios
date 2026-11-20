@@ -11,7 +11,11 @@ extension MeshEngine {
     /// and the resets our floor refused whose floor has ended.
     /// A Bluetooth link stays up, so this is what reconciles custody that drifts after link-up, and what opens a blob's next
     /// cycle, which moves it one hop nearer.
-    func reoffer() {
+    ///
+    /// Only the digest backs off (the `custody-carry-policy` contract, §7, ``ReofferBackoff``): a neighbour whose last offers
+    /// drew nothing is offered at gaps of 60, 120, 240, 480, then 600 s, judged on this tick's `now`, and each tick that holds
+    /// one back is counted. Its ticks, seeds and key asks still go on every tick.
+    func reoffer(now: Int64) {
         // First, and whoever is linked: a reset's second re-seal is due by the clock, not by a link (knit-next
         // `MeshManager.kt:2815-2818` at `4f3cd995`, ADR 2026-10.dmgw).
         resealSecondPass()
@@ -24,7 +28,12 @@ extension MeshEngine {
         askForMissingKeys(to: neighbors)
         let ids = stores.custody.liveIds(now: clock.wallMilliseconds())
         for peer in neighbors {
-            transport.sendDigest(ids, to: peer)
+            if reoffers.isDue(peer, now: now) {
+                transport.sendDigest(ids, to: peer)
+                reoffers.offered(peer, now: now)
+            } else {
+                custodyRounds.custodyReoffersHeld += 1
+            }
             sendOwedTicks(to: peer)
             // The group seeds it never acknowledged, floored, with the switch on (`MeshManager.kt:2467`, phase P6b).
             flushPendingGroupKeys(for: peer, force: false)
@@ -40,6 +49,8 @@ extension MeshEngine {
         let now = clock.monotonicMilliseconds()
         if stores.custody.sweepExpired(now: clock.wallMilliseconds()) > 0 {
             noteCustodyChanged()
+            // The swept rows' ledger entries die with them.
+            pruneCarryLedger()
         }
         // A proof of key a build without the profile cap kept; the pin stays (ADR 2026-10.r88m).
         stores.peers.deleteProfileFrames(longerThan: stores.custody.limits.maxProfileSignedBytes)

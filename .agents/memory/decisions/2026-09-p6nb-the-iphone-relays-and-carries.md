@@ -101,3 +101,10 @@ smaller bucket for each member, held DMs the members' quotas had evicted, and se
 us draws a new sealed receipt only under a new session root, once our last one has left our custody, or past its
 re-arm floor, 15 min doubling to 4 h. A DM our quota evicted is no longer re-acked in every router window, and a
 back-fill fed by two holders buys no second receipt inside the floor. `SealedReceiptLabTests` pins the new counts.
+
+**Amended 2026-11-20, by ADR 2026-11.3jry (knit-next #352, #349, #276, #64):** custody carries for delivery, and stores
+agree only below the row cap. The quotas, TTLs and refusals above are unchanged, and two stores under 1,000 rows that
+hold the same frames still keep the same ones. At the cap the global trim takes, from a largest sender bucket, the
+frame the most peers are believed to hold, then the oldest `(sentAt, id)`. A digest answer serves the asking peer's own
+mail and its groups' frames first, in 16 KiB rounds every 2 s. The 60 s re-offer backs off to 600 s toward a neighbour
+whose offers draw nothing.

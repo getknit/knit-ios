@@ -187,13 +187,15 @@ import Testing
 
     /// The blobs review's parity pin (`InboundPipeline.kt:946-955`, whose comment names a copy our quotas evicted): our
     /// digest lists a delivered DM only while our custody holds it. Alice keeps two of Bob's frames and Carol and Bob four,
-    /// so Bob's two room posts evict his DM from Alice's custody while every other node keeps it. Carol then serves it at
-    /// each exchange, and Alice's router lets one copy through per ten-minute window. Her exists-gate answers them by the
-    /// re-arm floor (ADR 2026-10.8hn6), never by the window: her receipt stays in her custody under the root she holds, so
-    /// the copy at about 10 minutes is inside the 15-minute floor and skipped, the one at about 20 is past it and re-seals
-    /// (the floor doubles to 30), and the one at about 30 is 10 minutes past that re-seal and skipped. Where Kotlin's gate
-    /// before the floor sealed one per window (2, 3, 4), this is 1, 2, 2. Once two more posts evict the DM from Carol's
-    /// custody and Bob's too, nobody serves it, and Alice sends nothing more.
+    /// so Bob's two room posts evict his DM from Alice's custody while every other node keeps it. Carol then serves it again,
+    /// though no longer at each exchange. The DM is addressed to Alice, so it is in her answers' second tier and is never
+    /// pending or marked in Carol's memo (the `custody-carry-policy` contract, §6): what spaces the copies is Alice's own
+    /// re-offer, which backs off while her offers draw nothing (§7), her own write evicting each copy again, and the link's
+    /// crossings. Her exists-gate answers each copy by the re-arm floor (ADR 2026-10.8hn6), never by the window: her receipt
+    /// stays in her custody under the root she holds, so no copy reaches her in the first window, the one in the second is past
+    /// the 15-minute floor and re-seals (the floor doubles to 30), and the one in the third is inside that and skipped: 1, 2, 2
+    /// sealed and 0, 0, 1 skipped, where a copy at every exchange made it 1, 2, 2 and 1, 1, 2. Once two more posts evict the DM
+    /// from Carol's custody and Bob's too, nobody serves it, and Alice sends nothing more.
     @Test func aDMOurQuotaEvictedIsReAckedOncePerFloorUntilEveryCustodyEvictsIt() throws {
         let lab = EngineLab([
             try EngineFixture.ratcheting(bob, stores: .inMemory(custodyLimits: CustodyLimits(maxPerSender: 4)), seed: 21),
@@ -215,8 +217,8 @@ import Testing
         #expect(lab[1].stores.custody.contains(dm.id) && lab[0].stores.custody.contains(dm.id), "Carol and Bob keep it")
 
         let reoffer = lab[0].engine.configuration.reofferMilliseconds
-        // Receipts in all and copies skipped after each window: skip, re-seal past 15 minutes, skip inside 30.
-        let schedule = [(sealed: 1, skipped: 1), (sealed: 2, skipped: 1), (sealed: 2, skipped: 2)]
+        // Receipts in all and copies skipped after each window: none, re-seal past 15 minutes, skip inside 30.
+        let schedule = [(sealed: 1, skipped: 0), (sealed: 2, skipped: 0), (sealed: 2, skipped: 1)]
         for (window, expected) in schedule.enumerated() {
             for _ in 0..<(SeenSetWindow.milliseconds / reoffer) {
                 lab.advance(reoffer)

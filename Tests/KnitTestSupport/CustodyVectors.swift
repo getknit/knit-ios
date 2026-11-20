@@ -33,12 +33,23 @@ public enum CustodyVectors {
         public let maxSignedBytes: Int
         /// The cap on a profile's `signed` (knit-next ADR 2026-10.jgeg, ADR 2026-10.r88m).
         public let maxProfileSignedBytes: Int
+        /// The most holders the global cap counts for a frame (the `custody-carry-policy` contract, §5), absent in a file
+        /// from before it, which means production's.
+        public let spreadMax: Int?
+    }
+
+    /// What a step tells the rig's carry before its frame is stored (the `custody-carry-policy` contract, "Vectors").
+    public struct Carry: Decodable, Sendable {
+        /// The holders of each id it names, replacing what the rig held for it; an empty list clears one.
+        public let holders: [String: [String]]?
     }
 
     /// One store and what it must answer.
     public struct Step: Decodable, Sendable {
         /// Why the step is there.
         public let note: String
+        /// The rig's carry for this step and the later ones, absent when nothing changes.
+        public let carry: Carry?
         /// The store's clock for this step.
         public let now: Int64
         /// The frame stored.

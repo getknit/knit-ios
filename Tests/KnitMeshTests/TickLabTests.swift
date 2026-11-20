@@ -81,6 +81,9 @@ import Testing
         lab.link(1, 2)
         lab.link(0, 2)
         lab.unlink(0, 2)
+        // Until the answers to the link-up digests have found nothing more (the `custody-carry-policy` contract, §2): this lab
+        // models no link crossings, so a round still due would serve what the router floods.
+        lab.advance(2 * CustodySync.roundMilliseconds)
         let group = try #require(lab[0].engine.createGroup(with: [alice.nodeId]))
         let first = try #require(lab[0].engine.sendGroupMessage("Hi", to: group.id))
         let second = try #require(lab[0].engine.sendGroupMessage("Still there?", to: group.id))

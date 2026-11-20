@@ -5,9 +5,10 @@ import KnitWire
 
 /// The ``CustodyStore`` on SQLite: the `forward_store` table (`ForwardDao.kt` in knit-next).
 ///
-/// It applies ``CustodyRules`` exactly as ``MemoryCustodyStore`` does, and both run the same contract tests, so
-/// the iPhone carries the same newest-N set as every other node. The rules run in Swift over the live rows, not
-/// as SQL of their own, so there is one copy of the law to keep in step with Android's.
+/// It applies ``CustodyRules`` exactly as ``MemoryCustodyStore`` does, and both run the same contract tests, so below the
+/// row cap the iPhone carries the same newest-N set as every other node, and at the cap the global trim reads the carry the
+/// engine hands each write (``CustodyCarry``). The rules run in Swift over the live rows, not as SQL of their own, so there
+/// is one copy of the law to keep in step with Android's.
 ///
 /// Only the originator's bytes and the columns the rules and queries read are stored. The envelope is decoded
 /// from ``CarriedFrame/signed`` on the way out, as knit-next does, so a stored frame can never disagree with
@@ -26,7 +27,7 @@ public final class SQLCustodyStore: CustodyStore {
     /// A database error answers ``CustodyRefusal/writeFailed``, with the unit rolled back, so nothing follows on a frame
     /// that was not kept and no roster refusal is counted for it.
     @discardableResult
-    public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult {
+    public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64, carry: some CustodyCarry) -> CustodyStoreResult {
         let expiresAt: Int64
         switch CustodyRules.admission(of: frame, now: now, limits: limits) {
         case .refused(let reason):
@@ -59,7 +60,7 @@ public final class SQLCustodyStore: CustodyStore {
                 sql: "SELECT id, senderId, groupId, isRoomChat, sentAt, expiresAt FROM forward_store WHERE expiresAt >= ?",
                 arguments: [now]
             ).map(Self.entry)
-            let evicted = CustodyRules.evictions(after: entry, among: live, limits: limits)
+            let evicted = CustodyRules.evictions(after: entry, among: live, limits: limits, carry: carry)
             for id in evicted {
                 try db.execute(sql: "DELETE FROM forward_store WHERE id = ?", arguments: [StoredText.bytes(id)])
             }
@@ -85,8 +86,8 @@ public final class SQLCustodyStore: CustodyStore {
             try Row.fetchAll(
                 db,
                 sql: """
-                    SELECT id, senderId, type, groupId, substr(sig, 1, ?) AS sigHead, length(sig) AS sigLength,
-                        length(signed) AS signedLength
+                    SELECT id, senderId, recipientId, type, groupId, sentAt, substr(sig, 1, ?) AS sigHead,
+                        length(sig) AS sigLength, length(signed) AS signedLength
                     FROM forward_store WHERE expiresAt >= ? ORDER BY receivedAt DESC, seq DESC
                     """,
                 arguments: [Self.frameKeyBytes, now]
@@ -159,8 +160,10 @@ public final class SQLCustodyStore: CustodyStore {
         CustodyIndexEntry(
             id: try row.text("id"),
             senderId: try row.text("senderId"),
+            recipientId: try row.optionalText("recipientId"),
             type: FrameType(rawValue: try row.text("type")),
             groupId: try row.optionalText("groupId"),
+            sentAt: try row.decode(Int64.self, forColumn: "sentAt"),
             frameKey: CustodyIndexEntry.frameKey(sigHead: try row.optionalBytes("sigHead") ?? []),
             reservedBytes: CustodyIndexEntry.reservedBytes(
                 sig: try row.decode(Int.self, forColumn: "sigLength"), signed: try row.decode(Int.self, forColumn: "signedLength"))

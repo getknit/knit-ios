@@ -15,11 +15,14 @@ Everything this repo puts on the air must match what Knit for Android does. Thes
   silently, and our key is never pinned (`.agents/context/wire-format.md` has the table). Every emitted
   type has an encoder test against its golden value.
 - **Custody constants are cross-platform law.** TTLs, quotas, eviction order, the group gate, `isCustodial`
-  membership and the digest fold match `.agents/context/custody.md` exactly, or digests never agree.
+  membership, the digest fold, the round's pace and the memo's and back-off's numbers match
+  `.agents/context/custody.md` exactly. Below the row cap that is what keeps digests in agreement. At the cap stores
+  differ by design (ADR 2026-11.3jry), and the shared numbers are what bound the cost.
 - **An envelope id has the shape its type is minted with,** or `Router.admit` refuses it unseen, as Android does
   (`FrameId.admits`, ADR 2026-10.h7xw). The table is cross-platform law like `isCustodial`: a new frame type mints a
   `FrameId`, and a new id shape is a wire break that every build before it drops.
-- **Send a full DIGEST at link-up and every 60 s.** Android back-fills only in answer to one.
+- **Send a full DIGEST at link-up and on the re-offer,** every 60 s backing off to 600 s toward a neighbour whose
+  offers draw nothing (ADR 2026-11.3jry). Android back-fills only in answer to one.
 - **Never write a link record tag outside 1..11; 8 (`PROOF`) only to a HELLO carrying `CAP_LINK_PROOF`; 9
   (`TAG_NEXT`) only while this port blinds, to a proven link whose HELLO carries `CAP_BLIND_ADVERT`; 10 (`KEY_SHARE`)
   and 11 (`SEALED`) only on a link opened in the sealed form.** Every build drops the link on an unknown tag: Android

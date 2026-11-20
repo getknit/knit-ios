@@ -51,8 +51,12 @@ public final class MeshEngine {
 
     var router: Router
     var custody: CustodySync
-    /// The digests whose reply round waits on a link still holding a round unwritten (ADR 2026-10.f5zs).
-    var heldDigests = HeldDigests()
+    /// The digest answers under way, one per neighbour, paced in rounds (the `custody-carry-policy` contract, §2).
+    var custodyAnswers = CustodyAnswers()
+    /// When each linked neighbour gets our periodic digest again (the contract, §7).
+    var reoffers = ReofferBackoff()
+    /// What the answers, the memo and the back-off did (the contract, §8).
+    var custodyRounds = CustodyRoundCounts()
     var pendingInbound = PendingInbound()
     var keyExchange: KeyExchange
     var blobExchange: BlobExchange
@@ -141,7 +145,7 @@ public final class MeshEngine {
         self.random = random
         self.configuration = configuration
         self.log = log
-        custody = CustodySync(log: log)
+        custody = CustodySync(own: identity.nodeId, log: log)
         router = Router(configuration: configuration.router)
         blobExchange = BlobExchange(queriesHolders: configuration.queriesBlobHolders)
         self.partials = partials
@@ -194,8 +198,8 @@ public final class MeshEngine {
         let blobs = [blobExchange.nextDeadline, blobExchange.parkPollAt]
         let ratchetSweep = configuration.ratchet ? timers.ratchetSweep : nil
         let ticks = ackSync.nextBatchDue
-        let rounds = heldDigests.nextCheck
-        let deadlines = [router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ticks, ratchetSweep, rounds]
+        let rounds = [custodyAnswers.nextDeadline, custody.ledger.nextCredit]
+        let deadlines = [router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ticks, ratchetSweep] + rounds
         return (deadlines + blobs + [nextPresenceLinkUp]).compactMap(\.self).min()
     }
 
@@ -221,6 +225,8 @@ public final class MeshEngine {
         _ = ownProfile()
         settleQuoteBacklog()
         sweep()
+        // Every row custody kept before the restart, classified once for the rounds' third tier.
+        classifyCustody()
         // Before anything opens a frame, as Android's start sweeps the ratchet before its replay (`MeshManager.kt:2552`).
         sweepRatchet()
         keepAnchoredInits()
@@ -258,7 +264,7 @@ public final class MeshEngine {
         blobExchange.linked([peer])
         rewantMissingBlobs(sparing: Set(neighborIds))
         stepBlobs()
-        transport.sendDigest(stores.custody.liveIds(now: clock.wallMilliseconds()), to: peer)
+        sendLinkUpDigest(to: peer)
         askForMissingKeys(to: [peer])
         sendOwedTicks(to: peer)
         // A partition's merge: the seeds it never acknowledged, with the switch on (`MeshManager.kt:2521`, phase P6b).
@@ -273,8 +279,8 @@ public final class MeshEngine {
     /// is asked at once rather than at the next timer or tick (`BlobExchange.unlinked`, knit-next #140): an ask stands on
     /// a live link until its floor, never on one that is gone.
     public func linkDown(_ nodeId: NodeId) {
-        // Its round waits on a link that is gone: the next link's digest says what it lacks then.
-        heldDigests.drop(nodeId)
+        // Its answer, its memo and its pace end with the link (``custodyLinkDown(_:)``).
+        custodyLinkDown(nodeId)
         cancelPresenceLinkUp(nodeId)
         // A newcomer is one only while its link stands (knit-next ADR 2026-10.2drc): a link-up that went pulls nobody later.
         blobExchange.unlinked([nodeId])
@@ -297,7 +303,7 @@ public final class MeshEngine {
         case .duplicate, .refused, .reopened:
             return
         }
-        deliver(frame)
+        deliver(frame, from: frame.from)
         // The blob traffic is answered, never flooded, whatever its relay flag says. Android floods a request marked
         // `relay = true`, and every node it reached would serve the neighbour that handed it on; no build sends one
         // (ADR 2026-10.nh55). A holder query and its answer are as unsigned and as point to point.
@@ -318,13 +324,13 @@ public final class MeshEngine {
         }
         stepDueBlobs(now: now)
         pollParkedAsks(now: now)
-        answerHeldDigests(now: now)
+        serveCustodyRounds(now: now)
         lapseTyping(now: now)
         flushDueTickBatches(now: now)
         firePresenceLinkUps(now: now)
         fireOwnSettleRetry(now: now)
         if now >= due.reoffer {
-            reoffer()
+            reoffer(now: now)
             due.reoffer = now + configuration.reofferMilliseconds
         }
         if now >= due.sweep {

@@ -124,7 +124,9 @@ Before you edit, write down for yourself, for each behaviour the change adds or 
   reinstall and a link replaced under the same node id do to each.
 - **Whether every node computes the same.** Anything custody keeps, evicts, lists in its digest or refuses is a
   function of the frame alone and of frame-global time, never of receive time, arrival order, the block list, a
-  deletion or a setting. Both stores apply it through `CustodyRules`.
+  deletion or a setting. Both stores apply it through `CustodyRules`. The one exception is the global cap's choice of
+  row at the cap, which reads this node's holder counts after the sender's count (ADR 2026-11.3jry). Nothing else
+  joins it: what eviction reads, a peer can read back from the digest.
 - **Whose input can trigger it.** `blobreq`, `blobhave`, `blobhas`, `blobprog` and `blobcancel` are unsigned and
   point to point, and a room post is anyone's. None may reach a read that answers what the asker could not
   otherwise learn (ADR 2026-10.f3mv), and every map they key is bounded.

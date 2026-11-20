@@ -281,9 +281,7 @@ extension MeshEngine {
     /// Takes a frame of ours into custody, under the same quotas as everyone's (ORIGIN_SELF).
     func carryOwn(_ frame: SignedFrame) {
         let carried = CarriedFrame(envelope: frame.envelope, sig: frame.wire.sig, signed: frame.wire.signed)
-        if custody.carryOwn(carried, in: stores.custody, now: clock.wallMilliseconds()) {
-            noteCustodyChanged()
-        }
+        noteCustodyWrite(custody.carryingOwn(carried, in: stores.custody, now: clock.wallMilliseconds()), of: frame.envelope, from: nil)
     }
 
     // MARK: Receipts

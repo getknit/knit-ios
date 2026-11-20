@@ -237,7 +237,7 @@ extension EngineFixture {
     /// Hands the engine a frame from `peer` past the router's dedup, as Kotlin's pipeline rig does, or as a copy past the
     /// router's ten minutes would arrive.
     func deliverPastRouter(_ frame: TestFrame, from peer: TestPeer) {
-        engine.deliver(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: peer.nodeId))
+        engine.deliver(InboundFrame(wire: frame.wire, envelope: frame.envelope, from: peer.nodeId), from: peer.nodeId)
     }
 }
 

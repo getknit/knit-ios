@@ -2,7 +2,8 @@ import KnitSync
 import KnitWire
 
 /// A ``CustodyStore`` in memory, for the Linux peer and the tests. It applies ``CustodyRules`` exactly as the SQL
-/// store will, keys frames by their ids' bytes (``ExactKey``), and is safe to share across threads.
+/// store does, the carry each write is handed included, keys frames by their ids' bytes (``ExactKey``), and is safe to
+/// share across threads.
 public final class MemoryCustodyStore: CustodyStore {
     private struct Row: Sendable {
         var frame: CarriedFrame
@@ -49,7 +50,7 @@ public final class MemoryCustodyStore: CustodyStore {
     }
 
     @discardableResult
-    public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult {
+    public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64, carry: some CustodyCarry) -> CustodyStoreResult {
         let current = limits
         let expiresAt: Int64
         switch CustodyRules.admission(of: frame, now: now, limits: current) {
@@ -67,7 +68,7 @@ public final class MemoryCustodyStore: CustodyStore {
             state.rows[key] = Row(frame: frame, entry: entry, origin: origin, receivedAt: now, sequence: state.nextSequence)
             state.nextSequence += 1
             let live = state.live(now: now).map(\.entry)
-            let evicted = CustodyRules.evictions(after: entry, among: live, limits: current)
+            let evicted = CustodyRules.evictions(after: entry, among: live, limits: current, carry: carry)
             for id in evicted {
                 state.rows[ExactKey(id)] = nil
             }

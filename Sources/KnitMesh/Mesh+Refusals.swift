@@ -9,4 +9,8 @@ extension Mesh {
     /// Profiles refused because their `signed` is longer than custody's profile cap, at the engine's door or by custody
     /// (``MeshEngine/profileOversizeRefused``), each counted once.
     public var profileOversizeRefused: Int { engine.profileOversizeRefused }
+
+    /// What the paced custody answers, the not-kept memo and the re-offer back-off did (``MeshEngine/custodyRoundCounts``,
+    /// the `custody-carry-policy` contract, §8).
+    public var custodyRoundCounts: CustodyRoundCounts { engine.custodyRoundCounts }
 }

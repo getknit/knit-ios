@@ -32,53 +32,6 @@ import Testing
         return record.id
     }
 
-    /// Node `index`, reinstalled while node `1 - index` keeps sending under the session it held, comes back, gets what was
-    /// sent while it was away, and the pair carries on under a new session. Run for either side, so each reinstalls once.
-    @Test(arguments: [0, 1])
-    func aReinstalledNodeGetsWhatWasSentWhileItWasAwayAndCarriesOnUnderANewSession(reinstalled index: Int) throws {
-        let peers = [alice, bob]
-        let keychains = peers.map { KeptSecretStore($0.keys.storedForm) }
-        let lab = EngineLab([
-            try EngineFixture.ratcheting(alice, keychain: keychains[0], seed: 11),
-            try EngineFixture.ratcheting(bob, keychain: keychains[1], seed: 12),
-        ])
-        let other = 1 - index
-        lab.link(0, 1)
-        try send(lab, 0, 1, "before")
-        try send(lab, 1, 0, "before too")
-        lab.expectConverged(0, 1, atLeast: 2, "before")
-        let root = try #require(lab[0].ratchetRecords(of: bob).session).root
-
-        lab.advance(Self.minute)
-        lab.unlink(0, 1)
-        let wall = lab[other].clock.wallMilliseconds()
-        lab.replace(index, with: try EngineFixture.ratcheting(peers[index], keychain: keychains[index], wall: wall, seed: 21))
-        // The peer goes on under the session it holds while the node is away: three, for the node's heuristic.
-        let away = try (1...3).map { try send(lab, other, index, "while you were away \($0)") }
-
-        lab.link(0, 1)
-        #expect(Set(lab[index].resetsSent(to: peers[other]).map(\.envelope.id)).count == 1, "the third NO_SESSION reset the pair")
-        let read = lab.thread(index, with: other)
-        #expect(away.allSatisfy { id in read.contains { $0.hasPrefix(id) } }, "the peer sealed them again, and they open: \(read)")
-        // Since P5d our receipt is sealed and purges nothing, so the peer's custody keeps its opener, the DM its init rode,
-        // for the day, and serves it back to the node that answered it and then lost its database: Bob, here. Served newest
-        // first, it comes after the third failure has reset the pair. It raced the reset by node id and, from a peer whose id
-        // is the smaller, dragged the node back onto the root the pair left (the P5d crypto owner's finding). The node now
-        // knows its init for one it answered, which races nothing (ADR 2026-10.wcex).
-        #expect(lab[index].ratchetRecords(of: peers[other]).session?.root != root, "a new session, not the old one")
-
-        try send(lab, index, other, "after")
-        try send(lab, other, index, "after too")
-        // A responder's opener comes back too, unread here: the session it rode is the one the reinstall lost. A copy past
-        // the router's window can still read read-only (``aLateReServeOfTheOpenerReadsReadOnlyAndMovesNothing(reinstalled:)``).
-        #expect(lab.thread(index, with: other).count == 5, "the three and what came after")
-        #expect(Set(lab.thread(index, with: other)).isSubset(of: Set(lab.thread(other, with: index))))
-        #expect(lab.sessionsAgree(0, 1), "\(lab.describe(0, 1))")
-        #expect(lab[other].ratchetRecords(of: peers[index]).session?.lastResetSentAt == 0, "the peer never reset back")
-        lab.advance(Self.minute)
-        lab.expectCustodyAgrees(0, 1, resealed: away, from: other, to: index)
-    }
-
     /// The reinstall's other ordering (the P5d crypto review's first finding), in both node-id orders: node `index` answered
     /// the peer's opener and then reinstalled, after a short history and with nothing sent while it was away, so the
     /// back-fill brings the opener before any third failure could reset the pair. Before the fix the node took the old root
@@ -102,16 +55,16 @@ import Testing
     }
 
     /// The same ordering with a room post between (the P5d crypto re-review's first finding), in both node-id orders: the
-    /// peer posted in the room after its opener, so the back-fill, profiles first and then newest first, brings the post
+    /// peer posted in the room after its opener, so an older carrier's back-fill, profiles first and then newest first, brings the post
     /// ahead of the opener. The node delivers it and owes the peer a tick, which it seals at once over the link
     /// (`sealLiveTick`), and with no session held that seal starts one with a plain init, so when the opener lands the
     /// node holds its own unanswered init. When the node's id was the larger, the peer's remnant guard refused that init and
     /// the opener's old root won the race at the node. Now the opener races nothing, and the reset's guard covers this
     /// state, our own init unanswered with no reset since it, so the node marks that init with the flag at once, and the
     /// peer adopts it in either order (``RatchetResetPolicy/resetsOnAnsweredInit(_:)``, ADR 2026-10.wcex's option (i)).
-    @Test(arguments: [0, 1])
-    func aReinstalledResponderTicksItsPeersRoomPostBeforeTheOpenerLands(reinstalled index: Int) throws {
-        let history = try reinstalledAfterAShortHistory(index) { lab in
+    @Test(arguments: [0, 1], [true, false])
+    func aReinstalledResponderTicksItsPeersRoomPostBeforeTheOpenerLands(reinstalled index: Int, olderCarrier: Bool) throws {
+        let history = try reinstalledAfterAShortHistory(index, olderCarrier: olderCarrier) { lab in
             _ = try #require(lab[1 - index].engine.postToRoom("after the opener"))
             lab.carry()
         }
@@ -119,7 +72,8 @@ import Testing
         let backFill = history.backFill
         let post = try #require(backFill.firstIndex { $0.envelope.isRoomPost }, "the back-fill brought the peer's room post")
         let opened = try #require(backFill.firstIndex { ExactKey($0.envelope.id) == ExactKey(history.opener) })
-        #expect(post < opened, "ahead of the opener")
+        // Behind an older carrier the post comes first; this port serves the node its own DMs first (§1).
+        #expect((post < opened) == olderCarrier, "the post \(olderCarrier ? "ahead of" : "behind") the opener")
         let ahead = try framesToTheNode(ahead: history.opener, in: backFill, of: index)
         #expect(ahead < 3, "which still reached the node before any reset could")
 
@@ -130,14 +84,14 @@ import Testing
     }
 
     /// The reinstall's first ordering for a responder, in both node-id orders: node `index` answered the peer's opener,
-    /// reinstalled, and the peer sent three DMs while it was away, so the back-fill, newest first, brings their three
+    /// reinstalled, and the peer sent three DMs while it was away, so an older carrier's back-fill, newest first, brings their three
     /// failures and the node's heuristic reset ahead of the opener. The opener then met the node's unanswered reset in the
     /// race, by node id alone, and from a peer whose id is the smaller took the old root back while the peer adopted the
     /// reset: the split seen live on 2026-10-18 (ADR 2026-10.5sk9's live runs). Now the opener races nothing, and since our
     /// reset has gone, no second one follows (ADR 2026-10.wcex).
     @Test(arguments: [0, 1])
     func aReinstalledResponderGetsItsOpenerBackAfterItsResetAndStaysOnTheNewRoot(reinstalled index: Int) throws {
-        let history = try reinstalledAfterAShortHistory(index, prelude: nil) { lab in
+        let history = try reinstalledAfterAShortHistory(index, olderCarrier: true, prelude: nil) { lab in
             try (1...3).map { try send(lab, 1 - index, index, "while you were away \($0)") }
         }
         let lab = history.lab
@@ -195,8 +149,13 @@ import Testing
 
     /// Node `1 - index`'s opener to node `index` and node `index`'s answer, then `prelude`, then node `index` reinstalled, a
     /// fresh database with the Keychain's identity and prekeys kept, then `away`, and linked again.
+    ///
+    /// With `olderCarrier`, the peer's back-fill reaches the node as a build before the paced rounds serves it: profiles
+    /// first, then newest first (the `custody-carry-policy` contract, §9). This port serves a recipient's own DMs oldest
+    /// first, ahead of everything but profiles (§1), so the orderings below arise here only from an older Android carrier.
     private func reinstalledAfterAShortHistory(
-        _ index: Int, prelude: ((EngineLab) throws -> Void)? = nil, away: ((EngineLab) throws -> [String])? = nil
+        _ index: Int, olderCarrier: Bool = false, prelude: ((EngineLab) throws -> Void)? = nil,
+        away: ((EngineLab) throws -> [String])? = nil
     ) throws -> ShortHistory {
         let peers = [alice, bob]
         let other = 1 - index
@@ -220,9 +179,29 @@ import Testing
         #expect(lab[index].engine.prekeyRing?.answeredInits == kept, "and the reinstall found it there")
         let sentAway = try away?(lab) ?? []
         let written = lab[other].transport.written.count
-        lab.link(0, 1)
-        let backFill = lab[other].transport.written.dropFirst(written).filter { $0.to == peers[index].nodeId }
-        return ShortHistory(lab: lab, opener: opener, backFill: Array(backFill), away: sentAway)
+        guard olderCarrier else {
+            lab.link(0, 1)
+            let backFill = Array(lab[other].transport.written.dropFirst(written).filter { $0.to == peers[index].nodeId })
+            // This port serves the node its own DMs, the opener among them, ahead of everything but profiles (§1).
+            if let post = backFill.firstIndex(where: \.envelope.isRoomPost) {
+                #expect(backFill.firstIndex { ExactKey($0.envelope.id) == ExactKey(opener) }.map { $0 < post } == true, "opener first")
+            }
+            return ShortHistory(lab: lab, opener: opener, backFill: backFill, away: sentAway)
+        }
+        let received = lab[other].stores.custody.liveIndex(now: lab[other].clock.wallMilliseconds()).map(\.id)
+        lab.link(0, 1, holding: [(from: other, to: index)])
+        var backFill: [Written] = []
+        lab.release(from: other, to: index) { carried in
+            let reordered = EngineLab.asAnOlderCarrierServes(carried, received: received)
+            backFill = reordered.compactMap { item in
+                guard case .frame(let frame) = item, frame.to == peers[index].nodeId else {
+                    return nil
+                }
+                return frame
+            }
+            return reordered
+        }
+        return ShortHistory(lab: lab, opener: opener, backFill: backFill, away: sentAway)
     }
 
     /// How many of the peer's frames to node `index` the back-fill carried ahead of the opener. Fewer than three, and the
@@ -331,5 +310,88 @@ import Testing
         #expect(row.attachment?.name == "quarterly-report.pdf", "the re-sealed copy named the file")
         #expect(row.attachment?.size == 1_400_000, "and gave its size")
         #expect(row.attachment?.mime == "application/pdf" && row.attachment?.hash == blob)
+    }
+}
+
+/// A reinstalled node's back-fill, in this port's order and an older carrier's, one round or several.
+extension RatchetRestoreLabTests {
+    /// Node `index`, reinstalled while node `1 - index` keeps sending under the session it held, comes back, gets what was
+    /// sent while it was away, and the pair carries on under a new session. Run for either side, so each reinstalls once.
+    @Test(arguments: [0, 1], [false, true])
+    func aReinstalledNodeGetsWhatWasSentWhileItWasAwayAndCarriesOnUnderANewSession(reinstalled index: Int, olderCarrier: Bool) throws {
+        try reinstalledNodeCarriesOn(index, away: 3, olderCarrier: olderCarrier)
+    }
+
+    /// The same across a back-fill of several rounds (the `custody-carry-policy` contract, §2): forty DMs while the node is
+    /// away, more than one round's 16 KiB, so the era changes while the rounds still run.
+    @Test(arguments: [0, 1])
+    func aReinstalledNodeGetsABackFillOfSeveralRoundsAcrossTheEraChange(reinstalled index: Int) throws {
+        try reinstalledNodeCarriesOn(index, away: 40, olderCarrier: false)
+    }
+
+    /// Node `index`, reinstalled while the peer sends `count` DMs under the session it held, comes back by a back-fill in this
+    /// port's order, or in an older carrier's with `olderCarrier`. Pass: exactly one reset, the node's, and none from the
+    /// peer; every DM read once; one session; the custodies agree.
+    private func reinstalledNodeCarriesOn(_ index: Int, away count: Int, olderCarrier: Bool) throws {
+        let peers = [alice, bob]
+        let keychains = peers.map { KeptSecretStore($0.keys.storedForm) }
+        let lab = EngineLab([
+            try EngineFixture.ratcheting(alice, keychain: keychains[0], seed: 11),
+            try EngineFixture.ratcheting(bob, keychain: keychains[1], seed: 12),
+        ])
+        let other = 1 - index
+        lab.link(0, 1)
+        try send(lab, 0, 1, "before")
+        try send(lab, 1, 0, "before too")
+        lab.expectConverged(0, 1, atLeast: 2, "before")
+        let root = try #require(lab[0].ratchetRecords(of: bob).session).root
+
+        lab.advance(Self.minute)
+        lab.unlink(0, 1)
+        let wall = lab[other].clock.wallMilliseconds()
+        lab.replace(index, with: try EngineFixture.ratcheting(peers[index], keychain: keychains[index], wall: wall, seed: 21))
+        // The peer goes on under the session it holds while the node is away: at least three, for the node's heuristic.
+        let away = try (1...count).map { try send(lab, other, index, "while you were away \($0)") }
+
+        let roundsBefore = lab[other].engine.custodyRoundCounts.custodyRoundsCut
+        if olderCarrier {
+            lab.link(0, 1, holding: [(from: other, to: index)])
+            lab.releaseAsAnOlderCarrier(from: other, to: index)
+        } else {
+            lab.link(0, 1)
+        }
+        // The rounds after the first, two seconds apart.
+        for _ in 0..<(count / 10) {
+            lab.advance(CustodySync.roundMilliseconds)
+        }
+        if count > 10 {
+            let rounds = lab[other].engine.custodyRoundCounts.custodyRoundsCut - roundsBefore
+            #expect(rounds >= 2, "the back-fill took several rounds: \(rounds)")
+        }
+        // One reset either way: an older carrier's back-fill, newest first, brings the third failure first; this port's, the
+        // node's own DMs oldest first, brings the opener back first.
+        #expect(Set(lab[index].resetsSent(to: peers[other]).map(\.envelope.id)).count == 1, "the node reset the pair once")
+        let read = lab.thread(index, with: other)
+        #expect(away.allSatisfy { id in read.contains { $0.hasPrefix(id) } }, "the peer sealed them again, and they open: \(read)")
+        // Since P5d our receipt is sealed and purges nothing, so the peer's custody keeps its opener, the DM its init rode,
+        // for the day, and serves it back to the node that answered it and then lost its database: Bob, here. Whichever
+        // comes first, it or the failures, it once raced the reset by node id and, from a peer whose id is the smaller,
+        // dragged the node back onto the root the pair left (the P5d crypto owner's finding). The node now knows its init for
+        // one it answered, which races nothing (ADR 2026-10.wcex).
+        #expect(lab[index].ratchetRecords(of: peers[other]).session?.root != root, "a new session, not the old one")
+
+        try send(lab, index, other, "after")
+        try send(lab, other, index, "after too")
+        // A responder's opener comes back too, unread here: the session it rode is the one the reinstall lost. A copy past
+        // the router's window can still read read-only (``aLateReServeOfTheOpenerReadsReadOnlyAndMovesNothing(reinstalled:)``).
+        let thread = lab.thread(index, with: other)
+        #expect(thread.count == count + 2, "the \(count) and what came after")
+        #expect(away.allSatisfy { id in thread.count { $0.hasPrefix(id) } == 1 }, "each read once")
+        #expect(Set(thread).isSubset(of: Set(lab.thread(other, with: index))))
+        #expect(lab.sessionsAgree(0, 1), "\(lab.describe(0, 1))")
+        #expect(lab[other].ratchetRecords(of: peers[index]).session?.lastResetSentAt == 0, "the peer never reset back")
+        #expect(lab[other].resetsSent(to: peers[index]).isEmpty)
+        lab.advance(Self.minute)
+        lab.expectCustodyAgrees(0, 1, resealed: away, from: other, to: index)
     }
 }

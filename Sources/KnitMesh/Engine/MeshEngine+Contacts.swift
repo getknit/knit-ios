@@ -100,7 +100,7 @@ extension MeshEngine {
         log.log(.info, "mesh pinned \(peer) from a contact card")
         // Replay skips the router: each was admitted, and its relay scheduled, when it first arrived.
         for parked in pendingInbound.release(peer) {
-            deliver(parked.frame)
+            deliver(parked.frame, from: nil)
         }
         if source == .link {
             requestKey(peer)

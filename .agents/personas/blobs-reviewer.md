@@ -11,7 +11,8 @@ description: >-
   +Deletes or +Blocks, which the hook cannot see. Reads the diff for the shapes that have passed single-engine tests
   and cost the mesh (a serve nobody asked for, a memo standing in for the link, a cache standing in for the
   database, a wait on an answer the wire cannot give, every holder acting at once, a guessed bound, a per-node input
-  in custody, arrival order deciding what is kept, a rule that drifted from the pinned Kotlin), routes each touched
+  in custody outside the cap's one carry key, arrival order deciding what is kept below the cap, a rule that drifted
+  from the pinned Kotlin), routes each touched
   symbol to its ADRs, runs the touched suites, and names the two-engine test or trial the change owes. Reports
   findings and stamps what it reviewed; never edits the tree.
 tools: Bash, Read, Grep, Glob
@@ -138,18 +139,23 @@ explicitly. The commits are the evidence that each one bit this codebase or the 
 
 ### What custody keeps
 
-7. **A per-node input in custody or the digest.** The carry gate, the quotas, the eviction order, the TTL's clock
-   and the digest must be the same on every node and on Android: frame-global `(sentAt ASC, id ASC)` with ids
-   compared by their bytes (`ExactKey`, ADR 2026-09.jc2x), live rows only, and the same `CustodyRules` in both
+7. **A per-node input in custody or the digest, outside the cap's carry key.** The carry gate, the quotas, the
+   TTL's clock and the digest must be the same on every node and on Android: frame-global `(sentAt ASC, id ASC)` with
+   ids compared by their bytes (`ExactKey`, ADR 2026-09.jc2x), live rows only, and the same `CustodyRules` in both
    stores. Receive time, origin, the block list (ADR 2026-10.5wgg), a deletion (ADR 2026-10.u7cq) or a setting there
-   is a digest no peer can match. With the ratchet on, a sealed receipt purges nothing anywhere, ours included, while
+   is a digest no peer can match. The one local input custody reads is the global cap's choice of row at the cap,
+   which reads this node's holder counts after the sender's count (ADR 2026-11.3jry). It reads nothing else: a
+   contact, a sighting or a meeting there is readable back from the digest, and no key joins it without a security
+   pass. The sender, group and room trims never read it, and with no holders recorded the order is the old one. With the ratchet on, a sealed receipt purges nothing anywhere, ours included, while
    a cleartext one still purges and self-vaccinates (ADR 2026-09.p6nb, amended; `InboundPipeline.kt:2819-2830` at
    knit-next `ac491f4c`): a node that purges on a sealed receipt keeps a digest no Android peer can match.
    Evidence: knit-next bc4ba0a5 (own frames out of the quota: 117 against 100), cf0b6e00 (TTL on receive time),
    daffbc82 (expired rows folded), e7528cb7 (the block list in the carry gate).
-8. **Arrival order deciding what is kept.** A receipt before its DM, a sender's chat served before the profile that
-   lets a newcomer read it, an own frame flooded before it is custodied: each leaves custody depending on which copy
-   came first. Evidence: 1451eeb (a receipt that landed first purged nothing, so the iPhone carried a purged DM to
+8. **Arrival order deciding what is kept below the cap.** A receipt before its DM, a sender's chat served before the
+   profile that lets a newcomer read it, an own frame flooded before it is custodied: each leaves custody depending
+   on which copy came first. At the cap stores differ by design (ADR 2026-11.3jry), and what to judge there is cost:
+   a frame a peer serves back must count that peer as a holder in its own write, or two full stores swap frames for
+   good; a declined frame must lapse in the memo; and an idle pair's re-offers must back off. Evidence: 1451eeb (a receipt that landed first purged nothing, so the iPhone carried a purged DM to
    its expiry and custody never matched; found by `iphone-soak`, 54038e9), 1e82eb1 (a newcomer took ten minutes to
    converge: profiles served behind chat and a per-sender park far below one backlog, 57 frames dropped and 41
    unconverged), knit-next 85baeeb9 (a link raised between the flood and the custody write missed both).
@@ -307,12 +313,14 @@ verify.
 - **Flooding** (`custody.md`, "Flooding"). The SeenSet keeps 4,096 ids for 10 minutes, and a frame is marked seen
   before it is verified. `LinkCrossings` lets a frame cross one link once in 10 minutes, 1,024 entries a link. Room
   posts pass an ingress budget of 240, then 30 a minute per link.
-- **Sync** (`custody.md`, "Sync over a link"). A full DIGEST at link-up and every 60 s; Android back-fills only in
-  answer to one. A reply serves profiles first, then the rest newest-received first, and sends a keyless sender's
-  key ahead of its frames. A link holds at most one queued digest (ADR 2026-09.3ch7, fa87bac; `bluetooth-reviewer`'s
-  shape 4 too). This port meters a peer's digests and answers in capped rounds of 200 frames or 256 KiB from
-  `liveIndex`, minus what crossed the link either way, holding a round while the link has 128 KiB unwritten; keyreq
-  answers draw on a byte bucket per peer (ADR 2026-10.f5zs). Android does neither.
+- **Sync** (`custody.md`, "Sync over a link"). A full DIGEST at link-up and on the re-offer, 60 s backing off to
+  600 s per neighbour; a node back-fills only in answer to one. A reply serves profiles first, then the peer's own
+  mail and its groups' frames oldest first, then the rest newest-received first, and sends a keyless sender's key
+  ahead of its frames once per answer. A link holds at most one queued digest (ADR 2026-09.3ch7, fa87bac;
+  `bluetooth-reviewer`'s shape 4 too). This port meters a peer's digests (ADR 2026-10.f5zs) and answers in paced
+  rounds of 16 KiB every 2 s from `liveIndex`, minus what crossed the link either way and the not-kept memo, holding
+  a round while the link has 128 KiB unwritten (ADR 2026-11.3jry, shared with Android); keyreq answers draw on a byte
+  bucket per peer.
 - **Parking** (`custody.md`, "Key recovery"). `PendingInbound` holds a frame 2 minutes, at most 512 frames and
   4 MiB, and 200 per sender. A `keyreq` goes to neighbours with a 30 s cooldown.
 - **Asking** (ADR 2026-10.m9uq and amendments). A query is answered SENDING, HAVE, FETCHING or NONE, in the order
@@ -349,7 +357,7 @@ One line per invariant, with the ADR to read. Not exhaustive and not authoritati
 - **Report.** Every kept or skipped file is reported at the receiver's cadence, only to a neighbour whose HELLO
   carries `CAP_BLOB_HAVE` (ds45, xwjc).
 - **Custody.** One `CustodyRules` in both stores; ids by their bytes; nothing per node in the carry gate, the
-  quotas or the digest (p6nb, jc2x, nyya); a sealed receipt purges nothing (p6nb, amended); profiles served first
+  quotas or the digest, and only holder counts in the cap's choice (p6nb, jc2x, nyya, 3jry); a sealed receipt purges nothing (p6nb, amended); profiles served first
   and a whole quota parked per sender (1e82eb1); a carrier keeps each pin's proof (18e788b); an early receipt keeps
   its DM out (1451eeb).
 - **What custody never reads.** The block list (5wgg) and deletions (u7cq).

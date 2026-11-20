@@ -122,3 +122,12 @@ pinned the exception.
 digests, rule 5's keyreq bucket) are keyed by a proven id on a link where both sides carry `CAP_LINK_PROOF`. There, a
 node claiming an honest peer's id can no longer empty that peer's buckets: its claim is refused or fails its proof
 before anything is metered. Toward a peer that can't prove itself, the consequence above still holds.
+
+**Amended 2026-11-20, by ADR 2026-11.3jry:** rule 4's round is now 16,384 bytes, released at most every 2,000 ms (8
+KiB/s), and the 200-frame count is gone. An answer no longer waits for the next 60 s digest: it keeps the peer's latest
+digest, only the ids we hold, and cuts its next round when due until nothing is left, the link goes or 120 s pass since
+that digest. A newer digest replaces the kept one and never brings a round forward, so the digest meter (rule 1) still
+bounds what a peer can ask for. The round serves the asking peer's own mail and its groups' frames ahead of the rest,
+and a not-kept memo on a proven link holds back for 600 s what the peer declined. `HeldDigests.lineBytes` stays 131,072
+bytes as a literal: a link holding that much unwritten delays a round and never enlarges one. The consequence "A newcomer
+fills in slices" no longer holds: a newcomer below the cap fills in within one answer.

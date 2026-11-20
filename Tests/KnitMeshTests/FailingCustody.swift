@@ -28,12 +28,12 @@ final class FailingCustody: CustodyStore, @unchecked Sendable {
 
     var limits: CustodyLimits { held.limits }
 
-    func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult {
+    func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64, carry: some CustodyCarry) -> CustodyStoreResult {
         guard !failsWrites else {
             failUnit(transactor)
             return .refused(.writeFailed)
         }
-        return held.store(frame, origin: origin, now: now)
+        return held.store(frame, origin: origin, now: now, carry: carry)
     }
 
     func liveFrames(now: Int64) -> [CarriedFrame] {
@@ -45,7 +45,13 @@ final class FailingCustody: CustodyStore, @unchecked Sendable {
     }
 
     func liveIndex(now: Int64) -> [CustodyIndexEntry] { failsReads ? [] : held.liveIndex(now: now) }
-    func liveIds(now: Int64) -> [String] { failsReads ? [] : held.liveIds(now: now) }
+    func liveIds(now: Int64) -> [String] {
+        guard !failsReads else {
+            failUnit(transactor)
+            return []
+        }
+        return held.liveIds(now: now)
+    }
 
     func frame(_ id: String, now: Int64) -> CarriedFrame? {
         if let left = framesReadBeforeFailing {

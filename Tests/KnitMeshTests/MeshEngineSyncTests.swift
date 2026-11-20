@@ -68,7 +68,9 @@ import Testing
         #expect(served.first?.wire == WireEnvelope(sig: served[0].wire.sig, signed: served[0].wire.signed), "a fresh hop budget")
     }
 
-    @Test func everyLinkedNeighbourGetsOurDigestEveryMinute() {
+    @Test func everyLinkedNeighbourGetsOurDigestAtTheFirstTickThenLessOftenWhileItDrawsNothing() {
+        // The re-offer backs off a neighbour whose offers draw nothing (the `custody-carry-policy` contract, §7): 60 s after
+        // the link-up digest, then 120 s.
         let fixture = EngineFixture(alice)
         fixture.link(bob, carol)
         fixture.transport.clear()
@@ -76,6 +78,9 @@ import Testing
         #expect(fixture.transport.digests.isEmpty)
         fixture.advance(1)
         #expect(Set(fixture.transport.digests.map(\.to)) == [bob.nodeId, carol.nodeId])
+        fixture.advance(60_000)
+        #expect(fixture.transport.digests.count == 2, "held: nothing came of the last one")
+        #expect(fixture.engine.custodyRoundCounts.custodyReoffersHeld == 2)
         fixture.advance(60_000)
         #expect(fixture.transport.digests.count == 4)
     }

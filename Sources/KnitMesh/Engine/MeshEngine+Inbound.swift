@@ -17,7 +17,7 @@ extension MeshEngine {
     /// its key (``refusesOversizeProfile(_:)``, ADR 2026-10.r88m): it is not verified, carried, pinned, kept as a proof,
     /// cached or applied, asks for no key and parks nothing, and the router still relays it. Every profile comes through
     /// here, flooded or as a key request's or a digest round's point-to-point answer; none is ever parked.
-    func deliver(_ frame: InboundFrame) {
+    func deliver(_ frame: InboundFrame, from source: NodeId?) {
         guard !refusesOversizeProfile(frame) else {
             return
         }
@@ -28,11 +28,7 @@ extension MeshEngine {
         // The custody entry rule (InboundPipeline.kt:236). A profile is carried even point to point, the way a
         // key request serves it, or the requester would pin the key and hold nothing (ADR 2026-09.7bu7).
         if envelope.type.isCustodial, frame.wire.relay || envelope.type == .profile {
-            let carried = CarriedFrame(envelope: envelope, sig: frame.wire.sig, signed: frame.wire.signed)
-            let now = clock.wallMilliseconds()
-            if custody.carry(carried, in: stores.custody, now: now, authenticate: { isCarriable(envelope) }) {
-                noteCustodyChanged()
-            }
+            carryDelivered(frame, from: source)
         }
         switch envelope.type {
         case .chat:

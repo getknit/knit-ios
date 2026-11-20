@@ -78,3 +78,10 @@ room and group newest-N, two arrival orders, and the gate on our own frames. The
 stores through a real `SeenSet`, and two engines through `PipeLab`'s digest rounds and `LinkCrossings`, with and without
 a Sybil flood. `MeshEngineGroupInboundTests.aTruncatedPreDepartedRosterWithinThePinIsDeliveredButNotCarried` keeps the
 gate out of delivery.
+
+**Amended 2026-11-20, by ADR 2026-11.3jry:** rule 1's "two nodes holding the same frames keep the same ones" now holds
+below the cap only. Within the largest sender buckets, the global trim takes the frame the most peers are believed to
+hold before an older one (`CustodyLimits.spreadMax`, 8), then the oldest `(sentAt, id)`. The sender's count still comes
+first, so the flood bound is what it was: one of the largest buckets loses exactly one row per eviction. The sender,
+group and room trims never read the holders. With none recorded, as after a restart, the order is rule 1's exactly, and
+`custody-v1.json`'s first 33 steps replay unchanged.

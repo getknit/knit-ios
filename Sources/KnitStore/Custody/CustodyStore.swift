@@ -3,8 +3,9 @@ import KnitWire
 /// The frames this node carries for store-and-forward (`ForwardStore.kt` in knit-next).
 ///
 /// Every time is the wall clock in epoch milliseconds, because custody expires at the originator's `sentAt`
-/// plus a TTL. An implementation applies ``CustodyRules`` on every ``store(_:origin:now:)``, and every read
-/// sees live frames only.
+/// plus a TTL. An implementation applies ``CustodyRules`` on every ``store(_:origin:now:carry:)``, and every read
+/// sees live frames only. Below the row cap two stores holding the same frames keep the same ones; at the cap the global
+/// trim reads this node's carry (``CustodyCarry``, the `custody-carry-policy` contract, §5).
 public protocol CustodyStore: AnyObject, Sendable {
     /// The limits every rule here runs under. The engine reads ``CustodyLimits/maxProfileSignedBytes`` from here for the
     /// profiles it refuses before reading them, so the door and custody always bound the same frames.
@@ -13,9 +14,10 @@ public protocol CustodyStore: AnyObject, Sendable {
     /// Takes `frame` into custody and trims every bucket it lands in to its quota, after ``CustodyRules/admission(of:now:limits:)``
     /// admits it. Answers whether the frame is held after its own write, which the trims may have undone, and whether
     /// custody changed (`ForwardStore.store` at knit-next `e0cbb842a`). A frame whose id a row already holds is left as it
-    /// is and answers held and unchanged. A write that fails answers ``CustodyRefusal/writeFailed``.
+    /// is and answers held and unchanged. A write that fails answers ``CustodyRefusal/writeFailed``. Only the global cap's
+    /// choice of row reads `carry` (``CustodyRules/evictions(after:among:limits:carry:)``).
     @discardableResult
-    func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult
+    func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64, carry: some CustodyCarry) -> CustodyStoreResult
 
     /// Every live frame, the most recently received first: the order a digest answer serves them in.
     func liveFrames(now: Int64) -> [CarriedFrame]
@@ -53,6 +55,12 @@ public protocol CustodyStore: AnyObject, Sendable {
 }
 
 extension CustodyStore {
+    /// ``store(_:origin:now:carry:)`` knowing of no holder (``NoCustodyCarry``): the old global key.
+    @discardableResult
+    public func store(_ frame: CarriedFrame, origin: CustodyOrigin, now: Int64) -> CustodyStoreResult {
+        store(frame, origin: origin, now: now, carry: NoCustodyCarry())
+    }
+
     /// The FNV fold over the live ids (`StoreDigest.current`), whose low 32 bits the advert carries as its digest
     /// cue.
     public func fingerprint(now: Int64) -> UInt64 {
@@ -60,7 +68,7 @@ extension CustodyStore {
     }
 }
 
-/// What ``CustodyStore/store(_:origin:now:)`` did with a frame.
+/// What ``CustodyStore/store(_:origin:now:carry:)`` did with a frame.
 ///
 /// "Held" and "changed" differ under the trims: one write can evict an older row and then the frame itself, as when the
 /// sender trim takes an older frame and the group trim takes the new one. Android answers only the first
@@ -74,12 +82,16 @@ public struct CustodyStoreResult: Sendable, Equatable {
     public var changed: Bool
     /// Why the frame was refused, when it was.
     public var refusal: CustodyRefusal?
+    /// The ids the write's trims removed, the frame's own among them when its own write evicted it: the rows whose carry
+    /// ledger entries die with them.
+    public var evicted: [String]
 
     /// Makes an answer.
-    public init(held: Bool, changed: Bool, refusal: CustodyRefusal? = nil) {
+    public init(held: Bool, changed: Bool, refusal: CustodyRefusal? = nil, evicted: [String] = []) {
         self.held = held
         self.changed = changed
         self.refusal = refusal
+        self.evicted = evicted
     }
 
     /// A frame refused for `reason`: not held, and nothing changed.
@@ -94,6 +106,6 @@ public struct CustodyStoreResult: Sendable, Equatable {
     /// them.
     public static func inserted(_ id: String, evicted: [String]) -> Self {
         let key = ExactKey(id)
-        return Self(held: !evicted.contains { ExactKey($0) == key }, changed: true)
+        return Self(held: !evicted.contains { ExactKey($0) == key }, changed: true, evicted: evicted)
     }
 }

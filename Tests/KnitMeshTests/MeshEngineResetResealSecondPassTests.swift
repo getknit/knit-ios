@@ -31,7 +31,7 @@ import Testing
     /// The tick, as the clock moves `milliseconds` on.
     private func tick(_ fixture: EngineFixture, after milliseconds: Int64) {
         fixture.clock.advance(milliseconds)
-        fixture.engine.reoffer()
+        fixture.engine.reoffer(now: fixture.clock.monotonicMilliseconds())
     }
 
     @Test func aResetsResealGoesOutOnceMoreAfterTheDedupWindow() throws {
