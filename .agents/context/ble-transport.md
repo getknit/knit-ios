@@ -524,7 +524,19 @@ Files cross a link as Android's do (ADR 2026-10.h6zz).
     peer, or a windowed one whose receiver is silent for 3 s or reports only every 2 s, is paced at one 4 KiB/s budget
     split among the links feeding at the pace. The window logs `link file window …` and the pace `link file pace …`.
   - Each chunk also waits until the radio reports the last one out of its `LinkOutbox`
-    (`RadioEvent.wroteFileRecord`), so frames go out between chunks.
+    (`RadioEvent.wroteFileRecord`), so frames go out between chunks. The link's feed keeps each chunk handed over, with
+    where it ends in the channel's byte order (`UnwrittenFileRecords`), past its report until the level shows it has
+    left the socket too. `MeshTransport.queuedFrameBytes` takes those unsent bytes out of the level, so a file's own
+    bytes, in the outbox or in the socket, are not counted against custody's line (the `custody-carry-policy`
+    contract, §2's "Unwritten"). The report alone gates the next chunk. BLE and BlueZ report writes; a radio that does
+    not has no queue and reads 0.
+  - BlueZ's level also counts what each L2CAP socket holds below the link (`OutboxLevel.belowBytes`): `SO_SNDBUF` less
+    `TIOCOUTQ`, which `bt_sock_ioctl` answers as free space (`SocketBacklog`). It is read on the caller's thread under
+    the lock the loop takes to forget a channel before closing its socket, and any failed or impossible answer counts
+    0. The stall watch ignores it. KnitBLE leaves it 0: CoreBluetooth's stream says nothing (contract §9). The kernel
+    reading is unverified until a run on `hci1`, and so is its overhead: it counts each L2CAP PDU's whole buffer, which
+    at a small remote MPS may be several times the payload, so it may hold custody's rounds longer than the link
+    needs. The trial measures that ratio before anything scales it.
   - Our photo goes as kind AVATAR right behind our profile at each link-up. Anything served goes as kind ATTACHMENT.
 - **In:** each link's records pass through a `FileIntake` under Android's receiving rules.
   - A peer's own AVATAR push is kept up to 1 MiB, and an ATTACHMENT only when the engine asked for its hash.
@@ -540,6 +552,9 @@ Files cross a link as Android's do (ADR 2026-10.h6zz).
     covers a closed link, a stale link replaced, and a radio that goes off, resets or loses permission. A
     bad record and `LinkManager.stop()` drop the bytes instead. A new teardown path has to make the same choice (ADR
     2026-10.w6rn).
+  - `MeshTransport.isFileArrivingLive` is `isFileArriving` while the stream moved within `FeedMeter.stallMilliseconds`
+    (15 s): its header or a chunk, kept or skipped, stamps the link's `ArrivalClock.movedAt`. Custody reads it so a
+    stalled stream stops coming first (the `custody-carry-policy` contract, revision 16, §2).
   - A whole file stays on its way, to the fetch and to a holder query, from its END until the engine has taken it
     (`MeshTransport.fileTaken`, knit-next #138), since a radio read runs all its records before the engine sees one.
   - The engine tells the sender how much of a kept file is in with a `blobprog`: on every chunk that brings 2 KiB, at

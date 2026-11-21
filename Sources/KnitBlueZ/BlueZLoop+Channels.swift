@@ -65,6 +65,7 @@
                     devicePath: device,
                     limit: configuration.sockets.sendLimit(of: descriptor)
                 )
+                mailbox.backlogs.watch(id, descriptor: descriptor)
                 log.log(.debug, "bluez accepted \(id), writing SDUs of up to \(channels[id]?.limit ?? 0) bytes")
                 emit(.accepted(id))
                 let due = now + configuration.readvertiseDelayMilliseconds
@@ -80,6 +81,7 @@
             if channel.connecting {
                 let opened = !failed && events & Int16(POLLOUT) != 0 && Descriptor.pendingError(channel.descriptor) == 0
                 guard opened else {
+                    mailbox.backlogs.forget(id)
                     Descriptor.close(channel.descriptor)
                     channels[id] = nil
                     if let path = channel.devicePath {
@@ -90,6 +92,7 @@
                 }
                 channels[id]?.connecting = false
                 channels[id]?.limit = configuration.sockets.sendLimit(of: channel.descriptor)
+                mailbox.backlogs.watch(id, descriptor: channel.descriptor)
                 log.log(.debug, "bluez \(id) connected, writing SDUs of up to \(channels[id]?.limit ?? 0) bytes")
                 emit(.connected(id))
                 flush(id)
@@ -281,6 +284,8 @@
             guard let channel = channels.removeValue(forKey: id) else {
                 return
             }
+            // Before the close, so no level read reaches a descriptor number the kernel may hand out again.
+            mailbox.backlogs.forget(id)
             Descriptor.close(channel.descriptor)
             emit(.closed(id))
             if let path = channel.devicePath, !linkInUse(path) {

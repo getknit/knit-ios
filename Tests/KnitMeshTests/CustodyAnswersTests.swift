@@ -8,11 +8,10 @@ import Testing
 
 /// The answer book (contract §2).
 @Suite struct CustodyAnswersTests: CustodySyncCase {
-    @Test func aDigestOpensAnAnswerDueNowAndANewerOneReplacesItWithoutBringingTheRoundForward() {
+    @Test func aDigestOpensAnAnswerAndANewerOneReplacesItsDigest() {
         var answers = CustodyAnswers()
         let opened = answers.receive([ExactKey("a")], from: bob, now: 1000)
         #expect(opened)
-        #expect(answers.answer(for: bob)?.due == 1000)
         answers.noteArrived("c", from: bob)
         answers.noteArrived("gone", from: bob)
         var round = CustodySync.DigestReply(
@@ -24,18 +23,17 @@ import Testing
         #expect(trimmed?.released == [ExactKey("b"): 1000], "trimmed to what custody holds, stamped when it went")
         #expect(trimmed?.arrivedSince == [ExactKey("c")])
         #expect(trimmed?.keysSent == [ExactKey(alice.string)], "and to its senders")
-        #expect(answers.timings.map(\.peer) == [bob] && answers.timings.first?.due == 3000)
-        #expect(answers.answer(for: bob)?.due == 3000)
+        #expect(answers.timings == [CustodyAnswers.Timing(peer: bob, arrivedAt: 1000)])
+        #expect(trimmed?.lastCapped == false, "the round served all there was")
         let reopened = answers.receive([], from: bob, now: 2000)
         #expect(!reopened)
         let answer = answers.answer(for: bob)
-        #expect(answer?.due == 3000, "a peer cannot raise the pace by sending digests")
         #expect(answer?.arrivedAt == 2000)
         #expect(answer?.listed.isEmpty == true)
         #expect(answer?.released == [ExactKey("b"): 1000], "a release a digest cannot speak to yet stays")
         #expect(answer?.keysSent == [ExactKey(alice.string)])
         #expect(answer?.arrivedSince.isEmpty == true, "what arrived since the older digest, the newer one lists")
-        #expect(answers.nextDeadline == 3000)
+        #expect(!answers.isEmpty)
     }
 
     @Test func aDigestForgetsOnlyTheReleasesItCanSpeakTo() {
@@ -59,12 +57,6 @@ import Testing
         #expect(answers.answer(for: bob)?.released.isEmpty == true)
     }
 
-    @Test func theNextRoundWaitsInProportionToAnOversizeOne() {
-        #expect(CustodyAnswers.wait(after: 1) == 2000)
-        #expect(CustodyAnswers.wait(after: 16_384) == 2000)
-        #expect(CustodyAnswers.wait(after: 65_536) == 8000)
-    }
-
     @Test func anAnswerAgesOutTwoMinutesAfterItsLatestDigest() throws {
         var answers = CustodyAnswers()
         answers.receive([], from: bob, now: 0)
@@ -72,23 +64,21 @@ import Testing
         let answer = try #require(answers.answer(for: bob))
         #expect(!CustodyAnswers.isAged(answer, now: 119_999))
         #expect(CustodyAnswers.isAged(answer, now: 120_000))
-        #expect(answers.nextDeadline == 120_000)
         answers.end(bob)
-        #expect(answers.nextDeadline == nil)
+        #expect(answers.isEmpty)
         answers.noteArrived("a", from: bob)
         answers.released(CustodySync.DigestReply(), to: bob, now: 0)
-        let waited = answers.wait(bob, until: 5)
+        let waited = answers.waitsOnDrain(bob)
         #expect(!waited)
         #expect(answers.all.isEmpty)
     }
 
-    @Test func aWaitOnTheLineIsReportedFirstOnce() {
+    @Test func aWaitOnTheDrainIsReportedFirstOnce() {
         var answers = CustodyAnswers()
         answers.receive([], from: bob, now: 0)
-        let first = answers.wait(bob, until: 5000)
-        let second = answers.wait(bob, until: 10_000)
+        let first = answers.waitsOnDrain(bob)
+        let second = answers.waitsOnDrain(bob)
         #expect(first)
         #expect(!second)
-        #expect(answers.answer(for: bob)?.due == 10_000)
     }
 }

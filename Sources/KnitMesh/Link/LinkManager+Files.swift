@@ -10,6 +10,8 @@ internal struct ArrivalClock {
     var reportedAt: Int64
     var reportedBytes: Int64 = -1
     var trailingAt: Int64?
+    /// When the stream last moved: its header, then each chunk taken, kept or skipped (``LinkManager/isFileArrivingLive(from:)``).
+    var movedAt: Int64
     /// The ceiling the file was kept under, read at its header, and whether passing it marks the peer
     /// (``IntakeCeiling``); `nil` for a file the intake never asked about.
     var ceiling: IntakeCeiling?
@@ -18,6 +20,7 @@ internal struct ArrivalClock {
         self.peer = peer
         self.startedAt = startedAt
         reportedAt = startedAt
+        movedAt = startedAt
     }
 }
 
@@ -247,6 +250,7 @@ extension LinkManager {
         guard intakes[id] != nil else {
             return []
         }
+        arrivalClocks[id]?.movedAt = now
         let others = intakes.reduce(0) { $1.key == id ? $0 : $0 + $1.value.bufferedBytes }
         let over = intakes[id]?.chunk(payload, room: configuration.maxBufferedFileBytes - others).map { note($0, from: peer, on: id) } ?? []
         return over + fileProgress(from: peer, on: id, now: now)

@@ -151,6 +151,8 @@ import Testing
         Rig.settle(lab)
         var held = nodes.map { Set($0.stores.custody.liveIds(now: lab.clock.wallMilliseconds())) }
         let pipe = lab.link(nodes[0], nodes[1])
+        // Rounds go as the link drains (the contract, §2, revision 13): a link that writes 8 KiB a second.
+        pipe.bytesPerSecond = Rig.airRate
         let start = lab.clock.monotonicMilliseconds()
         var traces = [Trace(), Trace()]
         var crossings: [[String: Int64]] = [[:], [:]]

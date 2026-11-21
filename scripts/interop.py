@@ -1060,8 +1060,8 @@ def check(arguments: argparse.Namespace) -> int:
         )
         # A new link starts with the phone back-filling every frame our digest lacks, one record per write, and
         # anything the phone sends meanwhile queues behind it. MVP item 4 times a post over a live link, so the
-        # timed steps wait for that sync to finish. Our side answers a digest in paced rounds of 16 KiB every 2 s (ADR
-        # 2026-11.3jry), so a phone lacking a full custody of 1,000 frames from us fills in within one answer, about 75 s.
+        # timed steps wait for that sync to finish. Our side answers a digest in 16 KiB rounds as the link drains (ADR
+        # 2026-11.3jry), so a phone lacking a full custody of 1,000 frames from us fills in within one answer.
         # The exact-set check holds only while the two stores together stay under the 1,000-row cap.
         run.step("custody-converges", lambda: _converges(peer, phone, 420))
         # The aliases as this port computes them, to hold against what the phone's own screens show.
@@ -1259,8 +1259,8 @@ def iphone(arguments: argparse.Namespace) -> int:
                 ups = ios.lines(lambda line: _link(line, phone_id))
                 time.sleep(max(0.0, ups[-1]["_at"] + arguments.hold - time.monotonic()) if ups else 0.0)
                 balanced = run.step("relink-balanced", lambda: _balanced(phone, ios.node_id, tally, head_start=head_start)) is not None
-        # The iPhone back-fills in paced rounds of 16 KiB every 2 s (ADR 2026-11.3jry): a phone lacking a full custody
-        # of 1,000 frames fills in within one answer, about 75 s, while the two stores stay under the cap.
+        # The iPhone back-fills in 16 KiB rounds as the link drains (ADR 2026-11.3jry): a phone lacking a full custody of
+        # 1,000 frames fills in within one answer, while the two stores stay under the cap.
         run.step("custody-converges", lambda: _converges(ios, phone, 420))
         if ios_blinds and arguments.edge_wait:
             run.step("tag-next-across-edge", lambda: _tag_next_across_edge(ios, phone, phone_id, arguments.edge_wait))

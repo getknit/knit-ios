@@ -123,11 +123,15 @@ digests, rule 5's keyreq bucket) are keyed by a proven id on a link where both s
 node claiming an honest peer's id can no longer empty that peer's buckets: its claim is refused or fails its proof
 before anything is metered. Toward a peer that can't prove itself, the consequence above still holds.
 
-**Amended 2026-11-20, by ADR 2026-11.3jry:** rule 4's round is now 16,384 bytes, released at most every 2,000 ms (8
-KiB/s), and the 200-frame count is gone. An answer no longer waits for the next 60 s digest: it keeps the peer's latest
-digest, only the ids we hold, and cuts its next round when due until nothing is left, the link goes or 120 s pass since
-that digest. A newer digest replaces the kept one and never brings a round forward, so the digest meter (rule 1) still
-bounds what a peer can ask for. The round serves the asking peer's own mail and its groups' frames ahead of the rest,
-and a not-kept memo on a proven link holds back for 600 s what the peer declined. `HeldDigests.lineBytes` stays 131,072
-bytes as a literal: a link holding that much unwritten delays a round and never enlarges one. The consequence "A newcomer
-fills in slices" no longer holds: a newcomer below the cap fills in within one answer.
+**Amended 2026-11-20, by ADR 2026-11.3jry:** rule 4's round is now 16,384 bytes, and the 200-frame count is gone. No
+clock paces it: the first round is cut when the digest arrives, and the next as soon as the link to that peer holds
+less than one round unwritten, looked at every 100 ms while an answer is open. `HeldDigests`, its 131,072-byte line and
+its 5 s look are gone, and the one-round line replaces them. An answer no longer waits for the next 60 s digest: it
+keeps the peer's latest digest, only the ids we hold, and cuts rounds until nothing is left, the link goes or 120 s pass
+since that digest. A newer digest replaces the kept one and cuts no round of its own, so the digest meter (rule 1) still
+bounds what a peer can ask for, and a link that doesn't drain gets nothing more. A file streaming on the link doesn't
+count against the line, and while it streams a round carries only the peer's own mail. The round serves the asking
+peer's own mail and its groups' frames ahead of the rest, and a not-kept memo on a proven link holds back for 600 s what
+the peer declined. A fixed pace of one round every 2 s was tried first and dropped: the maintainer ruled that custody
+must not cap how fast linked phones sync. The consequence "A newcomer fills in slices" no longer holds: a newcomer below
+the cap fills in within one answer, as fast as the link writes.

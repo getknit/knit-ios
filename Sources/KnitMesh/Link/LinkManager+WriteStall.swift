@@ -7,9 +7,30 @@ extension LinkManager {
     // MARK: MeshTransport
 
     /// What waits unwritten on the live link to `peer`, read from the radio at its entry points (``Radio/outboxLevel(on:)``),
-    /// on the channel ``send(_:to:)`` writes to. 0 when unlinked.
+    /// on the channel ``send(_:to:)`` writes to: its queue, and what its socket holds below the link where the radio can
+    /// say (``OutboxLevel/unwrittenBytes``). 0 when unlinked.
     public func queuedBytes(to peer: NodeId) -> Int {
-        liveChannel(to: peer).map { radio.outboxLevel(on: $0).queuedBytes } ?? 0
+        liveChannel(to: peer).map { radio.outboxLevel(on: $0).unwrittenBytes } ?? 0
+    }
+
+    /// ``queuedBytes(to:)`` less what of it is the FILE records fed to `peer` that have not left the link, in its queue or
+    /// in the socket below it (``UnwrittenFileRecords``), never below zero, on the same channel and from one level read. 0
+    /// when unlinked.
+    ///
+    /// Only a radio that reports FILE writes (``Radio/reportsFileWrites``) has records to leave out: BLE and BlueZ, and
+    /// knit-peer's wrappers through them. One that does not has no queue of its own and reads 0 queued (the default
+    /// ``Radio/outboxLevel(on:)``, DemoRadio's, and the test radios' unless a test sets a level), so there is no file's
+    /// window in its count to leave out.
+    /// The records go once the level shows them sent, at the latest with their link at ``retire(_:backingOff:now:)``.
+    public func queuedFrameBytes(to peer: NodeId) -> Int {
+        guard let id = liveChannel(to: peer) else {
+            return 0
+        }
+        let level = radio.outboxLevel(on: id)
+        guard let unwritten = feeds[id]?.unwritten else {
+            return level.unwrittenBytes
+        }
+        return unwritten.frameBytes(of: level)
     }
 
     /// Whether the frame with `key` crossed the live link to `peer`, either way, inside the window (``LinkCrossings``), on

@@ -39,7 +39,7 @@
         static let ours = AdvertPayload(capabilities: .local, nodeId: fixtureNodeId(3), digestCue: 5, psm: UnixSockets.psm)
 
         let fake: FakeBlueZ
-        let mailbox = Mailbox()
+        let mailbox: Mailbox
         let sockets: UnixSockets
         let log = CapturingLog()
         let loop: BlueZLoop
@@ -72,8 +72,10 @@
             neverSighted: Set<NodeId> = [],
             rotateAdvert: Int64? = nil,
             stopReadingAfter: Int64? = nil,
-            flipsSealedBit: Bool = false
+            flipsSealedBit: Bool = false,
+            queuedBelow: (@Sendable (Int32) -> Int)? = nil
         ) throws {
+            mailbox = queuedBelow.map { Mailbox(queuedBelow: $0) } ?? Mailbox()
             fake = try FakeBlueZ()
             sockets = UnixSockets(
                 directory: UnixSockets.temporaryDirectory(), limit: limit, failsToListen: failsToListen, acceptedPeer: acceptedPeer)

@@ -61,6 +61,8 @@ final class RecordingTransport: MeshTransport {
     private(set) var withdrawn: [(hash: BlobHash, to: NodeId)] = []
     /// The neighbours a link would say are streaming a file to us, as a test sets them.
     var arrivingFrom: Set<NodeId> = []
+    /// The neighbours whose stream to us, still arriving, a test marked stalled.
+    var stalledFrom: Set<NodeId> = []
     /// How many files a link would say it is streaming out, as a test sets it.
     var feedingLoad = 0
     /// Every file the engine said it took, in order.
@@ -147,6 +149,14 @@ final class RecordingTransport: MeshTransport {
         unwritten[peer] ?? 0
     }
 
+    /// The bytes of a streaming file's window a test says sit among ``unwritten`` for each neighbour.
+    var fileWindow: [NodeId: Int] = [:]
+
+    /// What waits unwritten for `peer` less a streaming file's window: what custody's rounds wait on.
+    func queuedFrameBytes(to peer: NodeId) -> Int {
+        max(0, queuedBytes(to: peer) - (fileWindow[peer] ?? 0))
+    }
+
     func hasCrossed(_ key: String, to peer: NodeId) -> Bool {
         crossed[peer]?.contains(key) == true || crossings?(key, peer) == true
     }
@@ -204,6 +214,11 @@ final class RecordingTransport: MeshTransport {
 
     func fileProgressReported(from peer: NodeId, hash: BlobHash, held: Int64, milliseconds: Int64) {
         progressReports.append(FileProgress(from: peer, hash: hash, held: held, milliseconds: milliseconds))
+    }
+
+    /// Whether the stream from `peer` moved within the stall span: one arriving, unless a test marked it stalled.
+    func isFileArrivingLive(from peer: NodeId) -> Bool {
+        arrivingFrom.contains(peer) && !stalledFrom.contains(peer)
     }
 
     func isFileArriving(from peer: NodeId) -> Bool {

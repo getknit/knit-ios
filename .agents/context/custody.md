@@ -3,7 +3,7 @@
 How knit-next floods, deduplicates, carries and back-fills frames at the pinned commit, and the paired change
 mirrored ahead of it (ADR 2026-11.3jry). The numbers here are cross-platform law, not tuning knobs. Below the row cap,
 if the iPhone bounds its carried set differently from Android, the two never agree on what each is missing. At the
-cap stores differ by design, and the shared pace, memo and back-off are what keep that from re-sending frames at every
+cap stores differ by design, and the shared rounds, memo and back-off are what keep that from re-sending frames at every
 exchange. The `blobs-owner` reads it before it writes and the `blobs-reviewer` before it judges
 (`.agents/rules/owners.md`).
 
@@ -141,15 +141,20 @@ A node carries frames for people who are not in range yet. This is store-and-for
   never held and counts as an offer. Only the custody digest waits, and the ticks, seeds, key asks and blob steps on the
   same tick keep their own rules (ADR 2026-11.3jry).
 - On receiving the peer's `DIGEST`, a node serves the live frames the list omits: at the pin, Android pushes every one
-  at once (`ForwardSync.kt:136-163`); after ADR 2026-11.3jry both sides serve them in paced rounds, below. Each
+  at once (`ForwardSync.kt:136-163`); after ADR 2026-11.3jry both sides serve them in rounds as the link drains, below. Each
   goes out as a fresh `WireEnvelope` with `ttl = 8` and `hops = 0`, with `sig` and `signed` copied verbatim. Group
   frames go to any peer that lacks them, member or not, as room posts do (knit-next ADR 2026-10.hr9f, `9f53dc34f`).
   A non-member that is never back-filled keeps a smaller bucket for each member, so it holds frames the members
   evicted and serves them back at every exchange.
-- **Both answer in paced rounds** (ADR 2026-11.3jry, after ADR 2026-10.f5zs). On Bluetooth a round is 16,384 bytes as
-  encoded, keys ahead counted, released at most every 2,000 ms: 8 KiB/s. The first pick always goes, and the round
-  stops at the first pick that would pass the budget; the next is due `max(2000, bytes × 2000 / 16384)` ms later. Each
-  round is cut fresh from `CustodyStore.liveIndex`, which decodes nothing, in four tiers:
+- **Both answer in rounds as the link drains** (ADR 2026-11.3jry, after ADR 2026-10.f5zs). On Bluetooth a round is
+  16,384 bytes as encoded, keys ahead counted. The first pick always goes, and the round stops at the first pick that
+  would pass the budget. No clock paces an answer: the first round is cut when the digest arrives, the next as soon as
+  the link to that peer holds less than one round unwritten (`MeshTransport.queuedFrameBytes(to:)`: the outbox, plus
+  on knit-peer what the BlueZ socket holds, less a streaming file's unwritten records). The engine looks every 100 ms
+  while an answer is open or a credit waits. A fixed pace of a round every 2 s came first and was dropped by the
+  maintainer's ruling that custody must not cap how fast linked phones sync. The iPhone can't see what CoreBluetooth's
+  L2CAP stream holds below the outbox, so it feeds until the stream blocks, until a device trial sizes that buffer.
+  While a file streams to or from the peer, a round carries only the peer's own mail. Each round is cut fresh from `CustodyStore.liveIndex`, which decodes nothing, in four tiers:
   1. profiles, newest received first;
   2. frames whose `recipientId` is the asking peer, oldest `(sentAt, id)` first;
   3. group frames whose own cleartext roster lists the peer, oldest first, read from the roster custody remembered
@@ -159,10 +164,11 @@ A node carries frames for people who are not in range yet. This is store-and-for
   It leaves out the digest's ids, what this answer already released, what arrived from the peer since its digest, the
   memo's ids and whatever crossed the link either way. A release is remembered until a digest at least 20 s after it,
   which forgets it, so a frame lost with the link still up is owed again. An answer keeps the peer's latest digest
-  (only the ids we hold) and ends when nothing is left, at link-down, or 120 s after that digest. A newer digest replaces the kept one and
-  never brings a round forward. A peer's digests are still metered, a burst of 2 and then one per 30 s. While the link
-  still holds 128 KiB unwritten, a due round waits and is looked at again every 5 s. A newcomer below the cap fills in
-  within one answer: 1,000 frames of about 600 bytes take about 75 s.
+  (only the ids we hold) and ends when nothing is left, at link-down, or 120 s after that digest, judged at every look
+  before the link is tested. A newer digest replaces the kept one and cuts no round of its own. A peer's digests are
+  still metered, a burst of 2 and then one per 30 s. A cut loses under two rounds plus a first pick over the budget,
+  and a link that doesn't drain gets nothing more. A newcomer below the cap fills in within one answer, as fast as the
+  link writes.
 - **The not-kept memo,** on a proven link only (ADR 2026-11.hpmt). An id released to a peer is pending, and not
   released again, until a digest at least 20 s after the release judges it, the link ends, or 600 s pass. A digest that
   lacks it marks it not kept, and it isn't released to that peer for 600 s. A frame addressed to the peer is never
@@ -170,11 +176,13 @@ A node carries frames for people who are not in range yet. This is store-and-for
   release, and on a link `LinkCrossings` lets it cross at most once in 10 minutes, unless 1,024 other frames were
   written to that link since. The memo goes at link-down, at most 64 peers are kept, and a linked peer's is never the one
   evicted. On a link that proved nothing, `LinkCrossings` alone keeps a frame from crossing twice in 10 minutes, while it
-  remembers the frame: it holds 1,024 writes a link, which a link at the full pace makes in about 80 s, so the pace is
-  the bound that always holds. This port's round asks it when the round is cut, so a frame it remembers is never
+  remembers the frame: it holds 1,024 writes a link, which a link writing 8 KiB/s makes in about 80 s, so the judging
+  delay and the rounds are the bound that always holds. This port's round asks it when the round is cut, so a frame it remembers is never
   released; Android's link drops such a frame after the round released it. Two full stores linked to each other stop
   swapping without end, down to one crossing a frame a lapse; a frame that crosses again at a lapse is
-  sometimes kept, which sends that neighbour's re-offer back to 60 s (ADR 2026-11.3jry).
+  sometimes kept, which sends that neighbour's re-offer back to 60 s (ADR 2026-11.3jry). One such keep evicts a shared
+  row that the peer then serves for the first time, and that row can be kept too, because a hand-off is credited even
+  when the full peer evicted the frame on arrival: the peer counts among its holders until a digest from it lacks it.
 - **Custody is pushed only in answer to a DIGEST.** A node that sends none gets no back-fill. A node whose digest
   under-reports gets the missing frames again once per 600 s lapse on a proven link, and otherwise once per 10 minutes
   of `LinkCrossings` while the link lasts. An Android build from before ADR 2026-11.3jry still pushes the whole
@@ -183,7 +191,8 @@ A node carries frames for people who are not in range yet. This is store-and-for
   (ADR 2026-09.3ch7, knit-next's ADR 2026-09.tjfb). Android queues a back-fill whole; this port queues one round at
   a time. A digest made while an older one still waits takes that one's place, so a slow link writes one current
   digest behind a back-fill, not one per 60 s tick. What the socket already holds goes out as it was: on `hci1` that
-  can still be minutes of digests (`.agents/context/linux-peer.md`, "Why the frames were late"). This port's queue
+  can still be minutes of digests (`.agents/context/linux-peer.md`, "Why the frames were late"). Custody now counts
+  it on knit-peer before it cuts a round (`OutboxLevel.belowBytes`), but nothing can take it back. This port's queue
   holds at most 4 MiB per link, and a link whose writes stop for 120 s ends, as on Android (ADR 2026-10.f5zs).
 
 The advert's digest cue is the low 32 bits of an FNV-1a-64 fold (offset `0xCBF29CE484222325`, prime

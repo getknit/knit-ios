@@ -53,12 +53,21 @@
         /// Every open channel's bytes delivered and not yet processed, which the loop reads before it polls a channel
         /// for input (ADR 2026-10.f5zs, rule 6).
         let credits = InboxCredits()
+        /// Every open channel's socket, whose buffer below the link ``level(on:)`` reads (``SocketBacklog``).
+        let backlogs: SocketBacklogs
         /// The pipe's read end, which the loop polls. If `pipe` failed both ends are -1, which `poll` skips; the
         /// loop then sees commands at its next timeout instead of at once.
         let descriptor: Int32
         private let wakeEnd: Int32
 
-        init() {
+        /// A mailbox whose channels' sockets are never read below the link, as a test's loop over Unix sockets needs.
+        convenience init() {
+            self.init { _ in 0 }
+        }
+
+        /// A mailbox whose channels' sockets are read with `queuedBelow` (``SocketProvider/queuedBelow(_:)``).
+        init(queuedBelow: @escaping @Sendable (Int32) -> Int) {
+            backlogs = SocketBacklogs(read: queuedBelow)
             var ends: [Int32] = [-1, -1]
             if pipe(&ends) == 0 {
                 ends.forEach(Descriptor.makeNonBlocking)
@@ -99,6 +108,15 @@
                 defer { state.commands.removeAll() }
                 return state.commands
             }
+        }
+
+        /// `channel`'s level: what ``levels`` counts, and what its socket holds below the link (``OutboxLevel/belowBytes``),
+        /// never more than it was handed, since a socket holds nothing it was not given. `writtenBytes` stays what the
+        /// socket took, which the stall watch reads progress from.
+        func level(on channel: ChannelID) -> OutboxLevel {
+            var level = levels.level(on: channel)
+            level.belowBytes = min(backlogs.bytes(on: channel), Int(clamping: level.writtenBytes))
+            return level
         }
 
         /// A channel id never used before, counted from now (``levels``).

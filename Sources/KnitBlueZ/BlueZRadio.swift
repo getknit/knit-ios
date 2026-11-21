@@ -83,7 +83,7 @@
         /// Whether the radio serves the doorbell (``RadioProfile/servesDoorbell``): the `ios` profile only.
         public let servesDoorbell: Bool
         public let events: AsyncStream<RadioEvent>
-        private let mailbox = Mailbox()
+        private let mailbox: Mailbox
         private let finished: AsyncStream<Void>
 
         /// Starts the radio's thread. Nothing touches BlueZ or the adapter until ``start()``, except reading which
@@ -92,6 +92,7 @@
             advertisesServiceData = configuration.profile.advertisesServiceData
             dialsGattPeers = configuration.readsGattPayloads
             servesDoorbell = configuration.profile.servesDoorbell
+            mailbox = Mailbox { [sockets = configuration.sockets] in sockets.queuedBelow($0) }
             let (stream, continuation) = AsyncStream<RadioEvent>.makeStream()
             let (ended, done) = AsyncStream<Void>.makeStream()
             events = stream
@@ -155,10 +156,10 @@
             mailbox.post(.close(channel))
         }
 
-        /// Counted as each write is posted and as the loop's sockets take its bytes (``Mailbox/levels``), so it reads
-        /// without waiting on the loop.
+        /// Counted as each write is posted and as the loop's sockets take its bytes (``Mailbox/levels``), with what each
+        /// socket still holds below the link read fresh (``SocketBacklogs``), so it reads without waiting on the loop.
         public func outboxLevel(on channel: ChannelID) -> OutboxLevel {
-            mailbox.levels.level(on: channel)
+            mailbox.level(on: channel)
         }
 
         /// Taken off the channel's credit here, at once; the loop hears only a resume (``Mailbox/consumed(_:on:)``).

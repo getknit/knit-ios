@@ -58,7 +58,7 @@ extension CustodySync {
     }
 
     /// One round to a neighbour whose digest listed `theirIds`, cut as the first round of a fresh answer with no memo: what
-    /// ``round(_:memo:in:now:at:crossed:key:)`` serves when nothing else is known.
+    /// ``round(_:memo:in:now:at:addressedOnly:crossed:key:)`` serves when nothing else is known.
     public func missing(
         from theirIds: [String],
         for peer: NodeId,
@@ -67,7 +67,7 @@ extension CustodySync {
         crossed: (String) -> Bool = { _ in false },
         key: (NodeId) -> WireEnvelope? = { _ in nil }
     ) -> DigestReply {
-        let answer = CustodyAnswers.Answer(peer: peer, listed: Set(theirIds.map(ExactKey.init)), arrivedAt: 0, due: 0)
+        let answer = CustodyAnswers.Answer(peer: peer, listed: Set(theirIds.map(ExactKey.init)), arrivedAt: 0)
         return round(answer, memo: false, in: store, now: now, at: 0, crossed: crossed, key: key)
     }
 
@@ -86,6 +86,10 @@ extension CustodySync {
     /// 3. group frames whose own remembered roster lists the peer (``CarryLedger/roster(of:)``), by `(sentAt, id)`, for any
     ///    group, ours or not: departed members do not count, and a row not classified orders in tier 4;
     /// 4. everything else, newest received first.
+    ///
+    /// With `addressedOnly`, while the link carries a file to or from the peer (§2, "A file comes first"), the round serves
+    /// tier 2 alone, with the keys ahead of it: profiles and every other tier wait for the file, so a sender's profile in
+    /// custody is no reason to hold back its key.
     ///
     /// Oldest first in tiers 2 and 3 because the key is frame-global, so every node and both platforms agree, a ratchet reads
     /// in sending order, and a group's seed (tier 2) lands before its posts (tier 3). No tier withholds a frame: a group frame
@@ -106,6 +110,7 @@ extension CustodySync {
         in store: some CustodyStore,
         now: Int64,
         at monotonic: Int64,
+        addressedOnly: Bool = false,
         crossed: (String) -> Bool = { _ in false },
         key: (NodeId) -> WireEnvelope? = { _ in nil }
     ) -> DigestReply {
@@ -116,9 +121,9 @@ extension CustodySync {
         var reply = DigestReply()
         reply.live = Set(index.map { ExactKey($0.id) })
         reply.senders = Set(index.map { ExactKey($0.senderId) })
-        let keyedEntries = index.filter { $0.type == .profile || answer.listed.contains(ExactKey($0.id)) }
+        let keyedEntries = index.filter { ($0.type == .profile && !addressedOnly) || answer.listed.contains(ExactKey($0.id)) }
         var keyed = Set(keyedEntries.map { ExactKey($0.senderId) }).union(answer.keysSent)
-        for pick in picks(of: index, answer: answer, memo: memo, at: monotonic, crossed: crossed) {
+        for pick in picks(of: index, answer: answer, memo: memo, at: monotonic, crossed: crossed) where pick.addressed || !addressedOnly {
             let entry = pick.entry
             let keyAhead =
                 keyed.contains(ExactKey(entry.senderId)) ? nil : Self.keyAhead(of: entry.senderId, to: peer, crossed: crossed, key: key)

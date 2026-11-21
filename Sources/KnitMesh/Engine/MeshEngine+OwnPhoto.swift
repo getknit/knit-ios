@@ -56,7 +56,9 @@ extension MeshEngine {
         else {
             return
         }
-        _ = transport.sendFile(file, to: peer)
+        if transport.sendFile(file, to: peer) {
+            custodyAnswers.noteFileOut(hash, to: peer)
+        }
     }
 
     /// A file we streamed left the radio whole.

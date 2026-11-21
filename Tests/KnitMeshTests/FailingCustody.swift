@@ -44,7 +44,13 @@ final class FailingCustody: CustodyStore, @unchecked Sendable {
         return held.liveFrames(now: now)
     }
 
-    func liveIndex(now: Int64) -> [CustodyIndexEntry] { failsReads ? [] : held.liveIndex(now: now) }
+    /// How many times the index was read.
+    private(set) var indexReads = 0
+
+    func liveIndex(now: Int64) -> [CustodyIndexEntry] {
+        indexReads += 1
+        return failsReads ? [] : held.liveIndex(now: now)
+    }
     func liveIds(now: Int64) -> [String] {
         guard !failsReads else {
             failUnit(transactor)

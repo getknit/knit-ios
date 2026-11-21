@@ -123,9 +123,9 @@ import Testing
             let largest = round.map(\.bytes).max() ?? 0
             #expect(bytes <= CustodySync.roundBytes + largest, "\(bytes) bytes at \(at)")
         }
-        // Every frame crossed once: a slice served is not served again while its crossing lasts.
-        let ids = served.map(\.id)
-        #expect(ids.count == Set(ids).count)
+        // Each crossed once, but the holder's profile its link-up pushed outside the answer (1,024 stamps outrun at link speed).
+        let repeated = Dictionary(grouping: served, by: \.id).filter { $0.value.count > 1 }.keys
+        #expect(repeated.count <= 1 && repeated.allSatisfy { $0.hasPrefix("profile-\(holder.nodeId)") }, "\(repeated.sorted())")
     }
 
     @Test func aFloodOfEmptyDigestsBuysTwoRoundsThenOneEveryThirtySeconds() throws {
@@ -146,7 +146,7 @@ import Testing
         #expect(rounds >= 2)
     }
 
-    @Test func aLinkHoldingARoundGetsTheNextOnceItsQueueFalls() throws {
+    @Test func aLinkHoldingARoundGetsTheNextAtTheFirstLookAfterItDrains() throws {
         let lab = PipeLab()
         let wall = lab.clock.wallMilliseconds()
         let holder = lab.node(1)
@@ -158,73 +158,18 @@ import Testing
         }
         let newcomer = lab.node(2)
         // The holder's radio says its next channel still holds a round unwritten, as a back-fill being written would.
-        holder.radio.setLevel(OutboxLevel(queuedBytes: HeldDigests.lineBytes), on: ChannelID(10))
+        holder.radio.setLevel(OutboxLevel(queuedBytes: CustodySync.roundBytes), on: ChannelID(10))
         let pipe = lab.link(holder, newcomer)
         #expect(pipe.channel(of: holder) == ChannelID(10))
         lab.run(step: 1000, limit: 10_000) { false }
         #expect(!pipe.frames.contains { $0.from == holder.nodeId && $0.id == frameIdOf("dm-0") })
         holder.radio.setLevel(OutboxLevel(), on: ChannelID(10))
         let fell = lab.clock.monotonicMilliseconds()
-        let served = lab.run(step: 100, limit: HeldDigests.recheckMilliseconds) {
+        let served = lab.run(step: 100, limit: 2 * CustodyAnswers.roundCheckMilliseconds) {
             pipe.frames.contains { $0.from == holder.nodeId && $0.id == frameIdOf("dm-0") }
         }
         #expect(served)
-        #expect(lab.clock.monotonicMilliseconds() - fell <= HeldDigests.recheckMilliseconds)
-    }
-
-    @Test func aLinkStreamingAPhotoStillGetsItsRound() throws {
-        // A real feed, its records left unwritten on the holder's radio as on slow air: what it queues is its window, which
-        // stays under the line, so the round goes behind it at once rather than waiting.
-        let lab = PipeLab()
-        let wall = lab.clock.wallMilliseconds()
-        let holder = lab.node(1)
-        let newcomer = lab.node(2)
-        let picture: [UInt8] = (0..<1_000_000).map { UInt8(truncatingIfNeeded: ($0 &* 2_654_435_761) >> 13) }
-        let hash = BlobHash(of: picture)
-        holder.hold(picture)
-        newcomer.stores.conversations.accept(holder.nodeId.string)
-        newcomer.stores.messages.save(
-            MessageRecord(
-                id: frameIdOf("dm-picture"),
-                senderId: holder.nodeId,
-                recipientId: newcomer.nodeId,
-                conversationId: holder.nodeId.string,
-                body: "",
-                sentAt: EngineFixture.start,
-                attachment: MessageAttachment(hash: hash)
-            ))
-        let pipe = lab.link(holder, newcomer, holding: holder)
-        let channel = try #require(pipe.channel(of: holder))
-        let streaming = lab.run(step: 100, limit: 30_000) { holder.links.isFileInFlight(hash, to: newcomer.nodeId) }
-        #expect(streaming, "the feed is under way: \(pipe.asks.count) asks, \(pipe.undelivered(from: holder)) bytes")
-        // The holder takes custody of frames the newcomer lacks once the link is up, so only the next digest's round
-        // can serve them.
-        let author = TestPeer(seed: 700)
-        holder.stores.custody.store(Self.carried(try Self.profile(of: author, publishedAt: wall - 1000)), origin: .relayed, now: wall)
-        for index in 0..<10 {
-            let dm = try author.directMessage("d", to: TestPeer(seed: 999), id: frameIdOf("dm-\(index)"), sentAt: wall - 1000)
-            holder.stores.custody.store(Self.carried(dm), origin: .relayed, now: wall)
-        }
-        let queued = pipe.undelivered(from: holder)
-        #expect(queued > 0 && queued < HeldDigests.lineBytes, "\(queued) bytes queued")
-        holder.radio.setLevel(OutboxLevel(queuedBytes: queued), on: channel)
-        let digest = LinkJSON.digestPayload(ids: newcomer.stores.custody.liveIds(now: wall))
-        let answered = Self.digests(at: holder, from: newcomer)
-        pipe.inject(LinkRecord(.digest, payload: digest), from: newcomer)
-        // Answered on arrival, not held for a look: the link manager writes the round behind the feed's chunk.
-        #expect(Self.digests(at: holder, from: newcomer) == answered + 1)
-        #expect(!holder.log.all.contains { $0.contains("waits") })
-        holder.radio.setLevel(OutboxLevel(), on: channel)
-        pipe.holding = nil
-        let fed = lab.clock.monotonicMilliseconds()
-        #expect(
-            lab.run(step: 100, limit: HeldDigests.recheckMilliseconds) {
-                pipe.frames.contains { $0.from == holder.nodeId && $0.id == frameIdOf("dm-0") }
-            })
-        #expect(lab.clock.monotonicMilliseconds() - fed < HeldDigests.recheckMilliseconds)
-        #expect(Self.digests(at: holder, from: newcomer) == answered + 1, "no other digest bought the round")
-        #expect(lab.run { newcomer.stores.blobs.contains(hash) })
-        #expect(pipe.frames.contains { $0.from == holder.nodeId && $0.id == frameIdOf("dm-0") })
+        #expect(lab.clock.monotonicMilliseconds() - fell <= CustodyAnswers.roundCheckMilliseconds, "at the first look after")
     }
 
     // MARK: A junk flood, then the digests (knit-ios #19)

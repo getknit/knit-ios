@@ -274,6 +274,7 @@
             withdrawApplication(now: now)
             stopDiscovery(now: now)
             for (id, channel) in channels {
+                mailbox.backlogs.forget(id)
                 Descriptor.close(channel.descriptor)
                 mailbox.levels.close(id)
                 mailbox.credits.close(id)

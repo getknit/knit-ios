@@ -16,8 +16,6 @@ internal struct FileFeed {
         /// The blob's byte the next chunk starts at: ``OutboundFile/start`` when the header goes, then past each chunk
         /// written, so `file.size - offset` is what is left to write and `offset - file.start` what was.
         var offset: Int
-        /// FILE records handed to a radio that reports writes, whose last byte it has not reported out yet.
-        var unreported = 0
         /// Whether the END is written.
         var ended = false
         /// When the next record may go while paced: the last chunk's share of a second at the pace.
@@ -41,6 +39,11 @@ internal struct FileFeed {
 
     var streaming: Streaming?
     var waiting: [OutboundFile] = []
+    /// FILE records handed to a radio that reports writes and not yet sent, and where each ends on the channel: the
+    /// streaming file's next record waits until none is unreported (``UnwrittenFileRecords/count``), and
+    /// ``LinkManager/queuedFrameBytes(to:)`` leaves their unsent bytes out. The link's, not the stream's, so a file's
+    /// last records still in the socket stay the file's after its END.
+    var unwritten = UnwrittenFileRecords()
     /// The window, kept across the link's streams: the round trip is the link's (`FramedLink.inFlight`).
     var window: FeedWindow
     /// How many links fed at the pace when this one's `link file pace` line was last logged.
@@ -63,7 +66,7 @@ internal struct FileFeed {
     /// When this feed next has work on the clock alone: a record waiting out the pace, or a full window's look for
     /// silence. A feed waiting for the radio's report has none, since the report itself brings the next record.
     var due: Int64? {
-        guard let streaming, streaming.unreported == 0 else {
+        guard let streaming, unwritten.allReported else {
             return nil
         }
         return streaming.windowedNow ? streaming.waitAt : streaming.nextAt
@@ -127,9 +130,7 @@ extension LinkManager {
 
     /// The radio reported a FILE record's last byte out on `id`: the next one may go once its window or pace allows.
     func fileRecordWritten(on id: ChannelID, now: Int64) -> [Event] {
-        if let unreported = feeds[id]?.streaming?.unreported, unreported > 0 {
-            feeds[id]?.streaming?.unreported = unreported - 1
-        }
+        feeds[id]?.unwritten.reported(level: radio.outboxLevel(on: id))
         pump(id, now: now)
         return []
     }
@@ -171,7 +172,7 @@ extension LinkManager {
                 feeds[id] = feed
                 continue
             }
-            guard streaming.unreported == 0 else {
+            guard feed.unwritten.allReported else {
                 return
             }
             if streaming.ended {
@@ -316,7 +317,8 @@ extension LinkManager {
         if let record {
             radio.writeFileRecord(record, to: id)
             if radio.reportsFileWrites {
-                streaming.unreported += 1
+                // Read after the hand-off, which both radios count before it leaves this call (`OutboxLevels`).
+                feed.unwritten.handed(record.count, level: radio.outboxLevel(on: id))
             }
         }
     }

@@ -9,12 +9,21 @@ public struct OutboxLevel: Sendable, Equatable {
     /// Every byte written to the channel's socket or stream so far. It only grows, so the link manager reads progress
     /// as a change in it (``WriteStallWatch``).
     public var writtenBytes: Int64
+    /// Of ``writtenBytes``, those the socket or stream has taken and not yet sent: the buffer below the link, which the
+    /// `custody-carry-policy` contract counts as unwritten (§2). Only BlueZ reads it (`SocketBacklog`); CoreBluetooth's
+    /// L2CAP stream does not say, so KnitBLE leaves it 0 (§9). Never more than ``writtenBytes``. The stall watch does not
+    /// read it: a socket draining with nothing new queued is no stall.
+    public var belowBytes: Int
 
     /// A level.
-    public init(queuedBytes: Int = 0, writtenBytes: Int64 = 0) {
+    public init(queuedBytes: Int = 0, writtenBytes: Int64 = 0, belowBytes: Int = 0) {
         self.queuedBytes = queuedBytes
         self.writtenBytes = writtenBytes
+        self.belowBytes = belowBytes
     }
+
+    /// Everything handed over and not yet sent: ``queuedBytes`` and ``belowBytes``.
+    public var unwrittenBytes: Int { max(0, queuedBytes) + max(0, belowBytes) }
 }
 
 /// Every open channel's ``OutboxLevel``, kept by a radio where any thread may read it: the `Mesh` actor reads it

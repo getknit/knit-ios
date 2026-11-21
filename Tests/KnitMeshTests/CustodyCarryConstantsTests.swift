@@ -10,18 +10,16 @@ import Testing
 @Suite struct CustodyCarryConstantsTests {
     @Test func theConstantsAreTheContracts() {
         #expect(CustodySync.roundBytes == 16_384)
-        #expect(CustodySync.roundMilliseconds == 2000)
+        #expect(CustodyAnswers.roundCheckMilliseconds == 100)
         #expect(CustodyAnswers.maxAgeMilliseconds == 120_000)
         #expect(CustodyLimits().spreadMax == 8)
         #expect(CarryLedger.judgeAfterMilliseconds == 20_000)
         #expect(CarryLedger.notKeptLapseMilliseconds == 600_000)
         #expect(CarryLedger.maxMemoPeers == 64)
         #expect(CarryLedger.maxRosterMembers == 8)
-        #expect(CarryLedger.creditMilliseconds == CustodySync.roundMilliseconds)
         #expect(ReofferBackoff.baseMilliseconds == 60_000)
         #expect(ReofferBackoff.maxMilliseconds == 600_000)
         #expect(ReofferBackoff.toleranceMilliseconds == 30_000)
-        #expect(HeldDigests.lineBytes == 131_072)
         #expect(MeshConfiguration().reofferMilliseconds == ReofferBackoff.baseMilliseconds, "the tick is the base interval")
     }
 
@@ -72,24 +70,25 @@ import Testing
         #expect(ledger.carry(counting: alice, for: "z").holders(of: "z") == 0, "never ourselves")
     }
 
-    @Test func aCreditedHandOffAddsThePeerOneIntervalLater() {
+    @Test func aCreditedHandOffAddsThePeerWhenItsLinkDrained() {
         var ledger = CarryLedger(own: alice)
         ledger.released([CustodySync.Release(id: "a", addressed: false)], to: bob, now: 1000, linked: [])
-        #expect(ledger.nextCredit == 1000 + CarryLedger.creditMilliseconds)
-        ledger.credit(now: 2999, spreadMax: 8)
-        #expect(ledger.spread(of: "a") == 0)
-        ledger.credit(now: 3000, spreadMax: 8)
+        ledger.released([CustodySync.Release(id: "c", addressed: false)], to: carol, now: 1000, linked: [])
+        #expect(ledger.creditsWaiting == [bob, carol])
+        #expect(ledger.spread(of: "a") == 0, "not before a look found the link drained")
+        ledger.credit(bob, spreadMax: 8)
         #expect(ledger.holders(of: "a") == [bob])
-        #expect(ledger.nextCredit == nil)
+        #expect(ledger.spread(of: "c") == 0, "only that peer's")
+        #expect(ledger.creditsWaiting == [carol])
     }
 
     @Test func aRoundWhoseLinkWentFirstCreditsNothing() {
         var ledger = CarryLedger(own: alice)
         ledger.released([CustodySync.Release(id: "a", addressed: true)], to: bob, now: 1000, linked: [])
         ledger.linkDown(bob)
-        ledger.credit(now: 10_000, spreadMax: 8)
+        ledger.credit(bob, spreadMax: 8)
         #expect(ledger.spread(of: "a") == 0)
-        #expect(ledger.nextCredit == nil)
+        #expect(ledger.creditsWaiting.isEmpty)
     }
 
     @Test func aNinthHolderIsNotRecorded() {
@@ -108,7 +107,7 @@ import Testing
         ledger.released([CustodySync.Release(id: "g", addressed: false)], to: carol, now: 0, linked: [])
         #expect(ledger.roster(of: ExactKey("g")) != nil)
         ledger.forget("g")
-        ledger.credit(now: 10_000, spreadMax: 8)
+        ledger.credit(carol, spreadMax: 8)
         #expect(ledger.spread(of: "g") == 0, "an uncredited hand-off dies with the row")
         #expect(ledger.roster(of: ExactKey("g")) == nil)
         // A write that evicts it says so too.
@@ -128,7 +127,7 @@ import Testing
         _ = ledger.noteDigest(listing: keys("a", "b"), from: bob, live: keys("a", "b"), now: 0, spreadMax: 8)
         ledger.released([CustodySync.Release(id: "b", addressed: false)], to: carol, now: 0, linked: [])
         ledger.prune(keeping: keys("a"))
-        ledger.credit(now: 10_000, spreadMax: 8)
+        ledger.credit(carol, spreadMax: 8)
         #expect(ledger.spread(of: "a") == 1)
         #expect(ledger.spread(of: "b") == 0)
     }
@@ -138,7 +137,7 @@ import Testing
         _ = ledger.noteDigest(listing: keys("a"), from: alice, live: keys("a"), now: 0, spreadMax: 8)
         #expect(ledger.spread(of: "a") == 0)
         ledger.released([], to: bob, now: 0, linked: [])
-        #expect(!ledger.hasMemo(for: bob) && ledger.nextCredit == nil)
+        #expect(!ledger.hasMemo(for: bob) && ledger.creditsWaiting.isEmpty)
     }
 
     @Test func aRosterIsRememberedUpToEightMembers() {

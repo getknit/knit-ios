@@ -47,9 +47,12 @@ import Testing
         return Dictionary(grouping: served, by: \.at).sorted { $0.key < $1.key }.map { ($0.key, $0.value) }
     }
 
-    // MARK: The pace
+    /// The air's rate in the tests that model a draining link: 8 KiB a second, a slow Bluetooth link.
+    static let airRate = 8192
 
-    @Test func everyRoundStaysInItsBudgetAndTheNextWaitsItsInterval() throws {
+    // MARK: Rounds as the link drains
+
+    @Test func roundsGoAsTheLinkDrainsAndNeverStackPastTwoRounds() throws {
         let lab = PipeLab()
         let wall = lab.clock.wallMilliseconds()
         let holder = lab.node(1)
@@ -62,29 +65,32 @@ import Testing
         let ids = Set(frames.map(\.envelope.id))
         Self.settle(lab)
         let pipe = lab.link(holder, newcomer)
-        let converged = lab.run(step: 100, limit: 120_000) { ids.allSatisfy { newcomer.stores.custody.contains($0) } }
+        // Four times the old 2 s pace's 8 KiB a second, so a clock pacing the rounds would show.
+        let rate = 4 * Self.airRate
+        pipe.bytesPerSecond = rate
+        var most = 0
+        let converged = lab.run(step: 100, limit: 120_000) {
+            most = max(most, pipe.undelivered(from: holder))
+            return ids.allSatisfy { newcomer.stores.custody.contains($0) }
+        }
         #expect(converged)
         let rounds = Self.rounds(on: pipe, from: holder, ids: ids)
-        #expect(rounds.count > 4, "\(rounds.count) rounds")
-        for (index, round) in rounds.enumerated() {
-            let bytes = round.frames.reduce(0) { $0 + $1.bytes }
-            let largest = round.frames.map(\.bytes).max() ?? 0
-            #expect(bytes <= CustodySync.roundBytes + largest, "\(bytes) bytes at \(round.at)")
-            if index > 0 {
-                let previous = rounds[index - 1]
-                let wait = CustodyAnswers.wait(after: previous.frames.reduce(0) { $0 + $1.bytes })
-                #expect(round.at - previous.at >= wait, "\(round.at - previous.at) ms after a round")
-            }
-        }
+        let largest = rounds.flatMap(\.frames).map(\.bytes).max() ?? 0
+        #expect(holder.engine.custodyRoundCounts.custodyRoundsCut > 4, "several rounds")
+        #expect(most < 2 * CustodySync.roundBytes + largest, "\(most) bytes unwritten at most")
+        // The link set the pace: about the air's rate, and far faster than a 2 s clock's 16 KiB a round would allow.
+        let span = (rounds.last?.at ?? 0) - (rounds.first?.at ?? 0)
+        let bytes = rounds.flatMap(\.frames).reduce(0) { $0 + $1.bytes }
+        #expect(span <= Int64(bytes) * 1000 / Int64(rate) + 1000, "\(bytes) bytes over \(span) ms")
+        #expect(span < Int64(bytes) * 2000 / Int64(CustodySync.roundBytes) / 2, "\(bytes) bytes over \(span) ms")
         // Every frame crossed once.
         let crossed = rounds.flatMap(\.frames).map(\.id)
         #expect(crossed.count == Set(crossed).count)
-        #expect(holder.engine.custodyRoundCounts.custodyRoundsCut >= rounds.count)
     }
 
     // MARK: A cut mid-answer
 
-    @Test func aCutLosesTheRoundInFlightAndCreditsNothingForIt() throws {
+    @Test func aCutLosesUnderTwoRoundsAndCreditsNothingForTheRoundInFlight() throws {
         let lab = PipeLab()
         let wall = lab.clock.wallMilliseconds()
         let holder = lab.node(1)
@@ -97,8 +103,7 @@ import Testing
         let ids = Set(frames.map(\.envelope.id))
         Self.settle(lab)
         let pipe = lab.link(holder, newcomer)
-        // From here what the holder writes crosses 1.5 s later, so each round is in flight when the next is cut.
-        pipe.delay = (holder, 1500)
+        pipe.bytesPerSecond = Self.airRate
         lab.run(step: 100, limit: 8900) { false }
         let answer = try #require(holder.engine.custodyAnswers.answer(for: newcomer.nodeId))
         pipe.cut()
@@ -108,8 +113,13 @@ import Testing
         #expect(crossed.isSubset(of: released))
         #expect(!lost.isEmpty, "a round was in flight")
         let lostBytes = frames.filter { lost.contains($0.envelope.id) }.reduce(0) { $0 + $1.wire.encoded.count }
-        #expect(lostBytes <= 2 * CustodySync.roundBytes, "about one round lost: \(lostBytes) bytes")
-        #expect(lost.allSatisfy { !holder.engine.custody.ledger.holders(of: $0).contains(newcomer.nodeId) }, "no hand-off credited")
+        let largest = frames.map(\.wire.encoded.count).max() ?? 0
+        #expect(lostBytes < 2 * CustodySync.roundBytes + largest, "under two rounds lost: \(lostBytes) bytes")
+        // The last round cut is credited at a look that finds the link drained after it, which the cut came before.
+        let last = answer.released.values.max() ?? 0
+        let lastRound = Set(answer.released.filter { $0.value == last }.keys.compactMap { key in ids.first { ExactKey($0) == key } })
+        #expect(!lastRound.isEmpty && lastRound.isSubset(of: lost))
+        #expect(lastRound.allSatisfy { !holder.engine.custody.ledger.holders(of: $0).contains(newcomer.nodeId) }, "no credit for it")
         let handed = crossed.filter { holder.engine.custody.ledger.holders(of: $0).contains(newcomer.nodeId) }
         #expect(!handed.isEmpty, "the rounds that crossed in time were credited")
         #expect(holder.engine.custodyRoundCounts.custodyAnswersCutShort == 1)
@@ -139,7 +149,9 @@ import Testing
         #expect(first.stores.custody.liveIds(now: wall).count == limits.maxFrames - 1)
         Self.settle(lab)
         let pipe = lab.link(first, second)
-        lab.run(step: 100, limit: 2 * CustodySync.roundMilliseconds - 100) { false }
+        pipe.bytesPerSecond = Self.airRate
+        // Two rounds' worth of the link's time.
+        lab.run(step: 100, limit: Int64(2 * CustodySync.roundBytes) * 1000 / Int64(Self.airRate)) { false }
         let fromFirst = Set(pipe.frames.filter { $0.from == first.nodeId }.map(\.id))
         let fromSecond = Set(pipe.frames.filter { $0.from == second.nodeId }.map(\.id))
         #expect(Set(forSecond.map(\.envelope.id)).isSubset(of: fromFirst), "every DM for the second, in its first rounds")

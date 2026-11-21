@@ -63,6 +63,11 @@ final class LinkPipe {
         // On a sealed pipe: the opener for what this side writes, and the records its frames' plaintext holds.
         var opener: LinkOpener?
         var inner = LinkRecordReader()
+        // Under ``LinkPipe/bytesPerSecond``: what the air has not carried yet, what it may by now, when, and all it carried.
+        var unwritten: [LinkRecord] = []
+        var allowance: Int64 = 0
+        var airedAt: Int64 = 0
+        var writtenBytes: Int64 = 0
     }
 
     private var sides: [Side]
@@ -147,6 +152,14 @@ final class LinkPipe {
         answerer.apply(answerer.links.handle(.accepted(ChannelID(channel + 1))))
     }
 
+    /// When set, each side's air carries this many bytes a second, a record at a time, and its radio reports what waits as
+    /// queued (``Radio/outboxLevel(on:)``), which custody's rounds wait on. Set once the link is up.
+    var bytesPerSecond: Int? {
+        didSet {
+            for index in sides.indices { sides[index].airedAt = clock.monotonicMilliseconds() }
+        }
+    }
+
     /// Carries what is waiting either way, once. Answers whether anything crossed.
     func pumpOnce() -> Bool {
         guard isUp else {
@@ -172,19 +185,7 @@ final class LinkPipe {
                 }
                 sides[index].read = writes.count
             }
-            while isUp, let record = try? sides[index].reader.next() {
-                if let delayed {
-                    sides[index].inFlight.append(InFlight(record: record, bytes: record.encoded?.count ?? 0, due: now + delayed))
-                } else {
-                    moved = true
-                    deliver(record, from: index)
-                }
-            }
-            while isUp, let first = sides[index].inFlight.first, first.due <= now {
-                sides[index].inFlight.removeFirst()
-                moved = true
-                deliver(first.record, from: index)
-            }
+            moved = carry(index, delayed: delayed, now: now) || moved
         }
         return moved
     }
@@ -265,7 +266,7 @@ final class LinkPipe {
             return 0
         }
         return side.node.radio.writes(on: side.channel).dropFirst(side.read).reduce(0) { $0 + $1.count }
-            + side.inFlight.reduce(0) { $0 + $1.bytes }
+            + side.inFlight.reduce(0) { $0 + $1.bytes } + side.unwritten.reduce(0) { $0 + ($1.encoded?.count ?? 0) }
     }
 
     /// Whether each side registered the other: the handshake crossed, proofs and all.
@@ -341,6 +342,58 @@ extension LinkPipe {
                     noteCrossed(record, from: index)
                 }
             }
+        }
+        return moved
+    }
+}
+
+extension LinkPipe {
+    /// Carries what side `index`'s air can by `now` at `rate` bytes a second, whole records in order; reports what waits.
+    private func drain(_ index: Int, rate: Int, now: Int64) -> Bool {
+        sides[index].unwritten.append(contentsOf: sides[index].inFlight.map(\.record))
+        sides[index].inFlight.removeAll()
+        while let record = try? sides[index].reader.next() {
+            sides[index].unwritten.append(record)
+        }
+        sides[index].allowance += Int64(rate) * (now - sides[index].airedAt) / 1000
+        sides[index].airedAt = now
+        var moved = false
+        while isUp, let first = sides[index].unwritten.first, Int64(first.encoded?.count ?? 0) <= sides[index].allowance {
+            sides[index].unwritten.removeFirst()
+            let bytes = Int64(first.encoded?.count ?? 0)
+            sides[index].allowance -= bytes
+            sides[index].writtenBytes += bytes
+            moved = true
+            deliver(first, from: index)
+        }
+        if sides[index].unwritten.isEmpty {
+            sides[index].allowance = 0
+        }
+        let queued = sides[index].unwritten.reduce(0) { $0 + ($1.encoded?.count ?? 0) }
+        sides[index].node.radio.setLevel(
+            OutboxLevel(queuedBytes: queued, writtenBytes: sides[index].writtenBytes), on: sides[index].channel)
+        return moved
+    }
+
+    /// Carries the records side `index` wrote that its air lets cross by `now`: all at once, after `delayed` ms, or at
+    /// ``bytesPerSecond``. Answers whether anything crossed.
+    private func carry(_ index: Int, delayed: Int64?, now: Int64) -> Bool {
+        if let rate = bytesPerSecond, delayed == nil {
+            return drain(index, rate: rate, now: now)
+        }
+        var moved = false
+        while isUp, let record = try? sides[index].reader.next() {
+            if let delayed {
+                sides[index].inFlight.append(InFlight(record: record, bytes: record.encoded?.count ?? 0, due: now + delayed))
+            } else {
+                moved = true
+                deliver(record, from: index)
+            }
+        }
+        while isUp, let first = sides[index].inFlight.first, first.due <= now {
+            sides[index].inFlight.removeFirst()
+            moved = true
+            deliver(first.record, from: index)
         }
         return moved
     }

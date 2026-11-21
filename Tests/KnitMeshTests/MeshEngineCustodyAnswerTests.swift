@@ -6,8 +6,8 @@ import Testing
 
 @testable import KnitMesh
 
-/// A digest's paced answer, the carry ledger it feeds and the re-offer back-off, on one engine whose peers are played by
-/// hand (the `custody-carry-policy` contract, §2, §3, §6 and §7).
+/// A digest's answer released as the link drains, the carry ledger it feeds and the re-offer back-off, on one engine whose
+/// peers are played by hand (the `custody-carry-policy` contract, §2, §3, §6 and §7, revision 13).
 @Suite struct MeshEngineCustodyAnswerTests {
     let alice = TestPeer(seed: 1)
     let bob = TestPeer(seed: 2)
@@ -52,27 +52,136 @@ import Testing
         written.reduce(0) { $0 + $1.wire.encoded.count }
     }
 
-    @Test func roundsGoAtTheLinksPaceAndANewerDigestDoesNotBringOneForward() throws {
-        let (fixture, ids) = try fixture(dms: 120)
+    /// One look.
+    static let look = CustodyAnswers.roundCheckMilliseconds
+
+    /// Has the transport count what the engine writes to Bob as unwritten until a test drains it: the link as the engine sees
+    /// it, through `queuedBytes(to:)`.
+    func modelsDrain(_ fixture: EngineFixture) {
+        let transport = fixture.transport
+        let peer = bob.nodeId
+        transport.onWrite = { [weak transport] written in
+            if written.to == peer {
+                transport?.unwritten[peer, default: 0] += written.wire.encoded.count
+            }
+        }
+    }
+
+    /// How many rounds the engine cut so far.
+    func roundCount(_ fixture: EngineFixture) -> Int {
+        fixture.engine.custodyRoundCounts.custodyRoundsCut
+    }
+
+    @Test func aDrainedLinkGetsItsNextRoundAtTheNextLook() throws {
+        let (fixture, _) = try fixture(dms: 120)
+        modelsDrain(fixture)
         fixture.engine.receiveDigest([], from: bob.nodeId)
         let first = written(fixture, to: bob)
         #expect(!first.isEmpty && bytes(first) <= CustodySync.roundBytes, "\(bytes(first)) bytes")
-        #expect(fixture.engine.custodyRoundCounts.custodyRoundsCut == 1)
-        fixture.advance(1000)
-        fixture.engine.receiveDigest([], from: bob.nodeId)
-        #expect(written(fixture, to: bob).count == first.count, "a newer digest brings no round forward")
-        fixture.advance(999)
-        #expect(written(fixture, to: bob).count == first.count)
-        fixture.advance(1)
-        #expect(written(fixture, to: bob).count > first.count, "the next round, one interval on")
-        // Then every frame, once each, in rounds two seconds apart.
-        for _ in 0..<40 {
-            fixture.advance(CustodySync.roundMilliseconds)
+        #expect(roundCount(fixture) == 1, "the first round when the digest arrives")
+        fixture.transport.unwritten[bob.nodeId] = CustodySync.roundBytes
+        for _ in 0..<5 {
+            fixture.advance(Self.look)
         }
-        let all = served(fixture, to: bob).map(\.envelope.id)
-        #expect(Set(all) == Set(ids) && all.count == ids.count)
-        #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId) == nil, "the answer ended when nothing was left")
-        #expect(fixture.engine.custodyRoundCounts.custodyAnswersCutShort == 0)
+        #expect(roundCount(fixture) == 1, "a round unwritten holds the next")
+        fixture.transport.unwritten[bob.nodeId] = CustodySync.roundBytes - 1
+        fixture.advance(Self.look)
+        #expect(roundCount(fixture) == 2, "under one round unwritten: the next, at the next look")
+    }
+
+    @Test func aLinkThatDoesNotDrainGetsNoSecondRound() throws {
+        let (fixture, _) = try fixture(dms: 120)
+        modelsDrain(fixture)
+        fixture.engine.receiveDigest([], from: bob.nodeId)
+        fixture.transport.unwritten[bob.nodeId] = max(fixture.transport.unwritten[bob.nodeId] ?? 0, CustodySync.roundBytes)
+        fixture.advance(60_000)
+        #expect(roundCount(fixture) == 1)
+        #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId) != nil, "the answer waits, open")
+    }
+
+    @Test func aLinkIsNeverHandedMoreThanUnderTwoRoundsPlusAFirstPick() throws {
+        // The link takes 1,000 bytes a look; the engine cuts as it drains, and what waits unwritten never reaches two rounds.
+        let (fixture, ids) = try fixture(dms: 120)
+        modelsDrain(fixture)
+        fixture.engine.receiveDigest([], from: bob.nodeId)
+        var most = fixture.transport.unwritten[bob.nodeId] ?? 0
+        let largest = written(fixture, to: bob).map(\.wire.encoded.count).max() ?? 0
+        for _ in 0..<2000 {
+            fixture.transport.unwritten[bob.nodeId] = max(0, (fixture.transport.unwritten[bob.nodeId] ?? 0) - 1000)
+            fixture.advance(Self.look)
+            most = max(most, fixture.transport.unwritten[bob.nodeId] ?? 0)
+        }
+        #expect(most < 2 * CustodySync.roundBytes + largest, "\(most) bytes unwritten at most")
+        #expect(Set(served(fixture, to: bob).map(\.envelope.id)) == Set(ids), "and every frame went, once each")
+        #expect(served(fixture, to: bob).count == ids.count)
+    }
+
+    @Test func aFirstPickOverTheBudgetHoldsTheNextRoundUntilTheLinkDrains() throws {
+        let (fixture, _) = try fixture(dms: 3, body: 20_000)
+        // The profiles would go first, in a round of their own.
+        let wall = fixture.clock.wallMilliseconds()
+        for entry in fixture.stores.custody.liveIndex(now: wall) where entry.type == .profile {
+            fixture.stores.custody.remove(entry.id)
+        }
+        modelsDrain(fixture)
+        fixture.engine.receiveDigest([], from: bob.nodeId)
+        let first = written(fixture, to: bob)
+        #expect(
+            served(fixture, to: bob).count == 1 && bytes(first) > CustodySync.roundBytes, "one frame past the budget: \(bytes(first)) bytes"
+        )
+        fixture.transport.unwritten[bob.nodeId] = CustodySync.roundBytes
+        fixture.advance(Self.look)
+        #expect(roundCount(fixture) == 1, "drained to a round, not under it")
+        fixture.transport.unwritten[bob.nodeId] = 0
+        fixture.advance(Self.look)
+        #expect(roundCount(fixture) == 2)
+    }
+
+    @Test func aFileStreamingDoesNotHoldAnAnswerOff() throws {
+        // The link holds a streaming file's window, which the one comparison leaves out (`queuedFrameBytes(to:)`, the
+        // contract, §2, "Unwritten").
+        let (fixture, _) = try fixture(dms: 120)
+        modelsDrain(fixture)
+        fixture.engine.receiveDigest([], from: bob.nodeId)
+        fixture.transport.unwritten[bob.nodeId] = 60_000
+        fixture.transport.fileWindow[bob.nodeId] = 60_000
+        fixture.advance(Self.look)
+        #expect(roundCount(fixture) == 2, "a link holding only a file's window takes the next round")
+        // Without the window counted out it would have waited: the same bytes, all frames, hold it.
+        fixture.transport.unwritten[bob.nodeId] = 60_000
+        fixture.transport.fileWindow[bob.nodeId] = 0
+        fixture.advance(Self.look)
+        #expect(roundCount(fixture) == 2)
+    }
+
+    @Test func aHandOffIsCreditedAtTheDrainedLookAndTheLastOneAfterTheAnswerEnded() throws {
+        let (fixture, ids) = try fixture(dms: 3)
+        modelsDrain(fixture)
+        fixture.engine.receiveDigest([], from: bob.nodeId)
+        #expect(served(fixture, to: bob).count == 3, "one round served all there was")
+        fixture.transport.unwritten[bob.nodeId] = CustodySync.roundBytes
+        fixture.advance(Self.look)
+        #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId) == nil, "nothing left: the answer ended, undrained")
+        #expect(ids.allSatisfy { fixture.engine.custody.ledger.spread(of: $0) == 0 }, "not credited before the drain")
+        #expect(fixture.engine.nextDeadline == fixture.clock.monotonicMilliseconds() + Self.look, "the credit keeps the look")
+        fixture.advance(Self.look)
+        #expect(ids.allSatisfy { fixture.engine.custody.ledger.spread(of: $0) == 0 }, "still undrained")
+        fixture.transport.unwritten[bob.nodeId] = 0
+        fixture.advance(Self.look)
+        #expect(ids.allSatisfy { fixture.engine.custody.ledger.holders(of: $0) == [bob.nodeId] }, "credited at the drained look")
+        #expect(fixture.engine.custody.ledger.creditsWaiting.isEmpty)
+    }
+
+    @Test func aNewerDigestCutsNoRound() throws {
+        let (fixture, _) = try fixture(dms: 120)
+        modelsDrain(fixture)
+        fixture.engine.receiveDigest([], from: bob.nodeId)
+        fixture.transport.unwritten[bob.nodeId] = 0
+        fixture.engine.receiveDigest([], from: bob.nodeId)
+        fixture.engine.receiveDigest([], from: bob.nodeId)
+        #expect(roundCount(fixture) == 1, "digests to an open answer cut nothing, drained or not")
+        fixture.advance(Self.look)
+        #expect(roundCount(fixture) == 2, "the look does")
     }
 
     @Test func anAnswerCutByItsLinkIsCountedCutShort() throws {
@@ -82,13 +191,13 @@ import Testing
         #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId) == nil)
         #expect(fixture.engine.custodyRoundCounts.custodyAnswersCutShort == 1)
         fixture.transport.clear()
-        fixture.advance(CustodySync.roundMilliseconds)
+        fixture.advance(Self.look)
         #expect(fixture.transport.written.isEmpty, "no round for a link that went")
     }
 
     @Test func anAnswerEndsTwoMinutesAfterItsLatestDigestAndIsCountedCutShort() throws {
         let (fixture, _) = try fixture(dms: 20)
-        fixture.transport.unwritten[bob.nodeId] = HeldDigests.lineBytes
+        fixture.transport.unwritten[bob.nodeId] = CustodySync.roundBytes
         fixture.engine.receiveDigest([], from: bob.nodeId)
         fixture.advance(CustodyAnswers.maxAgeMilliseconds - 1)
         #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId) != nil)
@@ -104,7 +213,7 @@ import Testing
         fixture.engine.receiveDigest([], from: bob.nodeId)
         fixture.transport.neighbors.removeAll()
         fixture.transport.clear()
-        fixture.advance(CustodySync.roundMilliseconds)
+        fixture.advance(Self.look)
         #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId) == nil)
         #expect(written(fixture, to: bob).isEmpty)
     }
@@ -118,23 +227,10 @@ import Testing
     @Test func anAnswerThatRanOutIsNotCountedCutShortWhenItsLinkGoes() throws {
         let (fixture, _) = try fixture(dms: 2)
         fixture.engine.receiveDigest([], from: bob.nodeId)
-        fixture.advance(CustodySync.roundMilliseconds)
+        fixture.advance(Self.look)
         #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId) == nil)
         fixture.unlink(bob)
         #expect(fixture.engine.custodyRoundCounts.custodyAnswersCutShort == 0)
-    }
-
-    @Test func theLineDelaysARoundAndNeverEnlargesIt() throws {
-        let (fixture, _) = try fixture(dms: 120)
-        fixture.engine.receiveDigest([], from: bob.nodeId)
-        let first = written(fixture, to: bob).count
-        fixture.transport.unwritten[bob.nodeId] = HeldDigests.lineBytes
-        fixture.advance(CustodySync.roundMilliseconds)
-        #expect(written(fixture, to: bob).count == first, "waits on the line")
-        fixture.transport.unwritten[bob.nodeId] = 0
-        fixture.advance(HeldDigests.recheckMilliseconds)
-        let next = Array(written(fixture, to: bob).dropFirst(first))
-        #expect(!next.isEmpty && bytes(next) <= CustodySync.roundBytes, "one round, cut fresh: \(bytes(next)) bytes")
     }
 
     @Test func anAnswerKeepsOnlyTheDigestsIdsWeHold() throws {
@@ -154,7 +250,7 @@ import Testing
         fixture.deliver(fresh, from: bob)
         #expect(fixture.stores.custody.contains(fresh.envelope.id))
         for _ in 0..<20 {
-            fixture.advance(CustodySync.roundMilliseconds)
+            fixture.advance(Self.look)
         }
         #expect(!served(fixture, to: bob).contains { $0.envelope.id == fresh.envelope.id })
     }
@@ -167,7 +263,7 @@ import Testing
         let wall = fixture.clock.wallMilliseconds()
         let mail = try carol.directMessage("for bob", to: bob, id: frameIdOf("for-bob"), sentAt: wall)
         fixture.deliver(mail, from: carol)
-        fixture.advance(CustodySync.roundMilliseconds)
+        fixture.advance(Self.look)
         let next = served(fixture, to: bob).dropFirst(first).filter(\.wire.relay)
         #expect(next.first?.envelope.id == mail.envelope.id, "tier 2, cut fresh")
     }

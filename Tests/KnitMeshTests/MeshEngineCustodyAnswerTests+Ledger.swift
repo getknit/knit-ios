@@ -15,16 +15,17 @@ extension MeshEngineCustodyAnswerTests {
         fixture.engine.receiveDigest(Array(ids.prefix(5)), from: bob.nodeId)
         #expect(fixture.engine.custody.ledger.holders(of: ids[0]) == [bob.nodeId])
         #expect(fixture.engine.custody.ledger.hasMemo(for: bob.nodeId))
-        fixture.advance(CustodySync.roundMilliseconds)
-        #expect(fixture.engine.custody.ledger.holders(of: ids[29]) == [bob.nodeId], "a hand-off credited one interval on")
+        fixture.advance(Self.look)
+        #expect(
+            fixture.engine.custody.ledger.holders(of: ids[29]) == [bob.nodeId], "a hand-off credited at the next look, the link drained")
 
         fixture.transport.unproven = [carol.nodeId]
         fixture.link(carol)
         fixture.transport.clear()
         fixture.engine.receiveDigest(Array(ids.prefix(5)), from: carol.nodeId)
-        #expect(!served(fixture, to: carol).isEmpty, "answered, at the pace")
+        #expect(!served(fixture, to: carol).isEmpty, "answered alike")
         for _ in 0..<20 {
-            fixture.advance(CustodySync.roundMilliseconds)
+            fixture.advance(Self.look)
         }
         #expect(served(fixture, to: carol).count == 25, "every frame its digest lacked")
         #expect(ids.allSatisfy { !fixture.engine.custody.ledger.holders(of: $0).contains(carol.nodeId) }, "no holder")
@@ -110,7 +111,7 @@ extension MeshEngineCustodyAnswerTests {
         fixture.transport.clear()
         fixture.engine.receiveDigest([], from: bob.nodeId)
         for _ in 0..<20 {
-            fixture.advance(CustodySync.roundMilliseconds)
+            fixture.advance(Self.look)
         }
         let keys = written(fixture, to: bob).filter { $0.envelope.type == .profile && $0.envelope.senderId == carol.nodeId.string }
         #expect(keys.count == 1, "\(keys.count) keys in \(fixture.engine.custodyRoundCounts.custodyRoundsCut) rounds")
@@ -165,16 +166,17 @@ extension MeshEngineCustodyAnswerTests {
         #expect(fixture.engine.reoffers.pace(of: carol.nodeId)?.drew == false)
     }
 
-    @Test func anAnswerKeptOpenForHoursKeepsItsSetsWithinTheCapAndItsPace() throws {
+    @Test func anAnswerKeptOpenForHoursKeepsItsSetsWithinTheCapAndGoesOnlyAsTheLinkDrains() throws {
         // Bob's empty digest every minute keeps one answer open while Carol brings fresh mail twice a second, far past the
-        // row cap: the answer's sets stay within it, and its rounds within 16 KiB each two seconds.
+        // row cap, and the link writes 8,000 bytes a second: the answer's sets stay within the cap, and a round goes only
+        // when the link holds less than one round unwritten.
         let limits = CustodyLimits(maxFrames: 50)
         let fixture = EngineFixture(alice, stores: .inMemory(custodyLimits: limits))
         try fixture.pin(carol)
         fixture.link(bob, carol)
+        modelsDrain(fixture)
         fixture.engine.receiveDigest([], from: bob.nodeId)
         var sent = fixture.engine.custodyRoundCounts.custodyRoundsCut
-        var last = fixture.clock.monotonicMilliseconds()
         for second in 0..<600 {
             let wall = fixture.clock.wallMilliseconds()
             for index in 0..<2 {
@@ -184,20 +186,19 @@ extension MeshEngineCustodyAnswerTests {
             if second.isMultiple(of: 60), second > 0 {
                 fixture.engine.receiveDigest([], from: bob.nodeId)
             }
+            let unwritten = max(0, (fixture.transport.unwritten[bob.nodeId] ?? 0) - 8000)
+            fixture.transport.unwritten[bob.nodeId] = unwritten
             fixture.advance(1000)
             let answer = try #require(fixture.engine.custodyAnswers.answer(for: bob.nodeId), "open at \(second) s")
             #expect(answer.released.count <= limits.maxFrames && answer.arrivedSince.count <= limits.maxFrames)
             #expect(answer.keysSent.count <= limits.maxFrames)
             let rounds = fixture.engine.custodyRoundCounts.custodyRoundsCut
             if rounds > sent {
-                let now = fixture.clock.monotonicMilliseconds()
-                #expect(now - last >= CustodySync.roundMilliseconds && rounds == sent + 1, "rounds two seconds apart, at \(second) s")
-                last = now
+                #expect(unwritten < CustodySync.roundBytes && rounds == sent + 1, "a round only on a drained link, at \(second) s")
                 sent = rounds
             }
         }
         #expect(sent > 250, "\(sent) rounds")
-        #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId).map { $0.released.count <= limits.maxFrames } == true)
     }
 
     @Test func aLedgerPastCustodysRowCapIsPrunedToTheLiveIds() throws {

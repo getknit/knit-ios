@@ -87,6 +87,32 @@
             return min(Int(mtu), Self.largestWrite, Int(sendMTU))
         }
 
+        /// `SO_SNDBUF` less `TIOCOUTQ`'s free space, or 0 when either call fails or answers what the kernel cannot
+        /// (``SocketBacklog``).
+        public func queuedBelow(_ descriptor: Int32) -> Int {
+            SocketBacklog.bytes(sendBuffer: Self.sendBuffer(of: descriptor), freeSpace: Self.freeSpace(of: descriptor))
+        }
+
+        /// The socket's `SO_SNDBUF`, the kernel's `sk_sndbuf`, or `nil` when the call fails or answers no `int`.
+        static func sendBuffer(of descriptor: Int32) -> Int32? {
+            var size: Int32 = 0
+            var length = socklen_t(MemoryLayout<Int32>.size)
+            guard getsockopt(descriptor, SOL_SOCKET, SO_SNDBUF, &size, &length) == 0, length == MemoryLayout<Int32>.size else {
+                return nil
+            }
+            return size
+        }
+
+        /// What `TIOCOUTQ` answers for the socket, or `nil` when the call fails. On a Bluetooth socket that is the send
+        /// buffer's free space; on any other it means something else, so only these sockets read it.
+        static func freeSpace(of descriptor: Int32) -> Int32? {
+            var free: Int32 = 0
+            guard knit_send_queue_ioctl(descriptor, &free) == 0 else {
+                return nil
+            }
+            return free
+        }
+
         public func peer(of descriptor: Int32) -> DialTarget? {
             var remote = knit_sockaddr_l2()
             var length = Self.addressLength

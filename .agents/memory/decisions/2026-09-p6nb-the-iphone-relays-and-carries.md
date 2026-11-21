@@ -106,5 +106,5 @@ back-fill fed by two holders buys no second receipt inside the floor. `SealedRec
 agree only below the row cap. The quotas, TTLs and refusals above are unchanged, and two stores under 1,000 rows that
 hold the same frames still keep the same ones. At the cap the global trim takes, from a largest sender bucket, the
 frame the most peers are believed to hold, then the oldest `(sentAt, id)`. A digest answer serves the asking peer's own
-mail and its groups' frames first, in 16 KiB rounds every 2 s. The 60 s re-offer backs off to 600 s toward a neighbour
-whose offers draw nothing.
+mail and its groups' frames first, in 16 KiB rounds released as the link drains. The 60 s re-offer backs off to 600 s
+toward a neighbour whose offers draw nothing.

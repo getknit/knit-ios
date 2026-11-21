@@ -213,7 +213,7 @@ private final class CountingCustody: CustodyStore, @unchecked Sendable {
 
     /// An answer to `peer` whose digest listed `listed`.
     private func answer(_ peer: NodeId, listed: [String] = [], released: [String] = []) -> CustodyAnswers.Answer {
-        var answer = CustodyAnswers.Answer(peer: peer, listed: Set(listed.map(ExactKey.init)), arrivedAt: 0, due: 0)
+        var answer = CustodyAnswers.Answer(peer: peer, listed: Set(listed.map(ExactKey.init)), arrivedAt: 0)
         answer.released = Dictionary(released.map { (ExactKey($0), 0) }) { first, _ in first }
         return answer
     }

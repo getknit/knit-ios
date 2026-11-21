@@ -317,9 +317,10 @@ verify.
   600 s per neighbour; a node back-fills only in answer to one. A reply serves profiles first, then the peer's own
   mail and its groups' frames oldest first, then the rest newest-received first, and sends a keyless sender's key
   ahead of its frames once per answer. A link holds at most one queued digest (ADR 2026-09.3ch7, fa87bac;
-  `bluetooth-reviewer`'s shape 4 too). This port meters a peer's digests (ADR 2026-10.f5zs) and answers in paced
-  rounds of 16 KiB every 2 s from `liveIndex`, minus what crossed the link either way and the not-kept memo, holding
-  a round while the link has 128 KiB unwritten (ADR 2026-11.3jry, shared with Android); keyreq answers draw on a byte
+  `bluetooth-reviewer`'s shape 4 too). This port meters a peer's digests (ADR 2026-10.f5zs) and answers in rounds of
+  16 KiB from `liveIndex`, minus what crossed the link either way and the not-kept memo, each cut once the link holds
+  under one round unwritten, a streaming file's records left out, and only the peer's own mail while a file streams; no
+  clock paces it (ADR 2026-11.3jry, shared with Android); keyreq answers draw on a byte
   bucket per peer.
 - **Parking** (`custody.md`, "Key recovery"). `PendingInbound` holds a frame 2 minutes, at most 512 frames and
   4 MiB, and 200 per sender. A `keyreq` goes to neighbours with a 30 s cooldown.

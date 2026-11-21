@@ -6,7 +6,7 @@ public import KnitWire
 ///
 /// The link-up and 60-second digest exchange is the whole protocol. Each side sends the ids of every live frame
 /// it carries; on receiving the other's, it serves the live frames the list omits, in paced rounds
-/// (``round(_:memo:in:now:at:crossed:key:)``, the `custody-carry-policy` contract, §1 and §2). Android serves
+/// (``round(_:memo:in:now:at:addressedOnly:crossed:key:)``, the `custody-carry-policy` contract, §1 and §2). Android serves
 /// custody only in answer to a digest, so a node that never sends one never gets back-filled (`.agents/context/custody.md`).
 ///
 /// It keeps the ``CarryLedger`` too, since every custody write passes through here: each write reads it for the global
@@ -167,12 +167,9 @@ public struct CustodySync: Sendable {
 
     /// The most bytes one round serves on Bluetooth, keys ahead included, each counted as its encoded ``WireEnvelope``, as
     /// `LinkManager.send` writes it (the `custody-carry-policy` contract, §2). The first pick always goes, so a round can
-    /// pass it by that one frame. Shared law: Android's Bluetooth round is the same.
+    /// pass it by that one frame. It is also the line a link drains under before it takes the next round. Shared law:
+    /// Android's Bluetooth round is the same.
     public static let roundBytes = 16_384 // 16 KiB
-
-    /// How long after a round the next is due at the least on Bluetooth: with ``roundBytes`` a pace of 8 KiB/s, so a link
-    /// cut at the edge of range loses about one round.
-    public static let roundMilliseconds: Int64 = 2000
 
     /// Applies a verified receipt for `ackId` from `sender` (`ForwardSync.onAck`): the carried DM is purged, and its
     /// id tombstoned, only when `sender` is that DM's recipient, so a forged receipt cannot evict an undelivered

@@ -7,6 +7,7 @@
 
 #ifdef __linux__
 #include <stdint.h>
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 
 #define KNIT_AF_BLUETOOTH 31
@@ -40,6 +41,13 @@ struct knit_bt_security {
     uint8_t level;
     uint8_t key_size;
 };
+
+// TIOCOUTQ, which Swift cannot pass to the variadic ioctl itself. On a Bluetooth socket the kernel's bt_sock_ioctl
+// answers the send buffer's free space, sk_sndbuf less sk_wmem_alloc and at least 0, not the bytes queued as TCP
+// does (net/bluetooth/af_bluetooth.c); KnitBlueZ's SocketBacklog reads it that way. Unverified on hci1.
+static inline int knit_send_queue_ioctl(int descriptor, int *value) {
+    return ioctl(descriptor, TIOCOUTQ, value);
+}
 #endif
 
 #endif

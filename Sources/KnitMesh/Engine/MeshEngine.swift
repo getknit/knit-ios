@@ -198,7 +198,7 @@ public final class MeshEngine {
         let blobs = [blobExchange.nextDeadline, blobExchange.parkPollAt]
         let ratchetSweep = configuration.ratchet ? timers.ratchetSweep : nil
         let ticks = ackSync.nextBatchDue
-        let rounds = [custodyAnswers.nextDeadline, custody.ledger.nextCredit]
+        let rounds = [custodyLookDeadline]
         let deadlines = [router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ticks, ratchetSweep] + rounds
         return (deadlines + blobs + [nextPresenceLinkUp]).compactMap(\.self).min()
     }

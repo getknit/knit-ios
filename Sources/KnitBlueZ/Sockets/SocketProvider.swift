@@ -59,4 +59,15 @@ public protocol SocketProvider: Sendable {
     /// Who is on the other end of an accepted channel, so the radio can let go of that device's link when the
     /// channel closes, or `nil` when the socket cannot say.
     func peer(of descriptor: Int32) -> DialTarget?
+
+    /// The bytes an open channel's socket has taken and not yet sent, the buffer below the link (``SocketBacklog``), or 0
+    /// when it cannot say. Called from any thread, so it must answer at once.
+    func queuedBelow(_ descriptor: Int32) -> Int
+}
+
+extension SocketProvider {
+    /// Nothing: a socket whose buffer cannot be read counts its outbox alone, as every socket did before the read.
+    public func queuedBelow(_: Int32) -> Int {
+        0
+    }
 }

@@ -38,9 +38,17 @@ public protocol MeshTransport: AnyObject {
     func sendDigest(_ ids: [String], to peer: NodeId)
 
     /// The bytes written to `peer`'s link and not yet out of the radio: frames, a FILE record's chunk and a waiting
-    /// digest alike (``Radio/outboxLevel(on:)``). 0 when unlinked. A reply round waits while it is high, so a peer that
+    /// digest alike, with what the socket below holds where the radio can read it (``Radio/outboxLevel(on:)``,
+    /// ``OutboxLevel/unwrittenBytes``). 0 when unlinked. A reply round waits while it is high, so a peer that
     /// reads slowly is not handed more than it takes (ADR 2026-10.f5zs).
     func queuedBytes(to peer: NodeId) -> Int
+
+    /// ``queuedBytes(to:)`` less the unwritten bytes of FILE records streaming to `peer`, never below zero: what waits on
+    /// its link that is not a file's (the `custody-carry-policy` contract, §2's "Unwritten"). Custody's answer to a digest
+    /// compares this, so a photo streaming to the peer never holds it off; a file's chunk still holds back the frames
+    /// behind it, which this counts. 0 when unlinked. Defaults to ``queuedBytes(to:)``, for a transport that streams no
+    /// files.
+    func queuedFrameBytes(to peer: NodeId) -> Int
 
     /// Whether the frame with `key` (`FrameKey`) crossed `peer`'s link either way inside the window, on the channel
     /// ``send(_:to:)`` would write to: a reply round leaves it out. Records nothing. False when unlinked.
@@ -76,6 +84,12 @@ public protocol MeshTransport: AnyObject {
     /// Whether a file from `peer` is streaming in now (`MeshTransport.fileArrivingFrom`, knit-next ADR 2026-10.nxfb). A
     /// link delivers in order, so whatever that peer has already sent us waits behind it: the peer, not the hash.
     func isFileArriving(from peer: NodeId) -> Bool
+
+    /// Whether a file from `peer` is streaming in now and moving: ``isFileArriving(from:)``, and its stream took its header
+    /// or a chunk within the blob plane's stall span (15 s on iOS). Only a file that is moving comes first (the
+    /// `custody-carry-policy` contract, §2): once it stalls, custody's other tiers go again, and wait again if it resumes.
+    /// False when unlinked. Defaults to ``isFileArriving(from:)``, for a transport that keeps no stream's clock.
+    func isFileArrivingLive(from peer: NodeId) -> Bool
 
     /// How long the file streaming in from `peer` has left, at the rate it has come in since its header
     /// (`MeshTransport.fileArrivingEtaMs`, `FramedLink.rxEtaMs`, knit-next ADR 2026-10.nsr7): what an asker weighs before
@@ -144,6 +158,17 @@ public protocol MeshTransport: AnyObject {
 }
 
 extension MeshTransport {
+    /// ``isFileArriving(from:)``: this transport keeps no clock of a stream's progress, so a stream arriving is taken as
+    /// moving.
+    public func isFileArrivingLive(from peer: NodeId) -> Bool {
+        isFileArriving(from: peer)
+    }
+
+    /// All of ``queuedBytes(to:)``: this transport streams no files, so nothing it queues is a file's.
+    public func queuedFrameBytes(to peer: NodeId) -> Int {
+        queuedBytes(to: peer)
+    }
+
     /// Nothing: this transport airs no tag.
     public func ownPresenceKeyChanged(_: OwnPresenceKey?) {
         // No advert of ours is blinded here.

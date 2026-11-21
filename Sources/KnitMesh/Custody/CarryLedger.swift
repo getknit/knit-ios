@@ -7,8 +7,8 @@ public import KnitWire
 ///
 /// **Holders** (§3) are what the global cap's key 2 reads (``CustodyRules/evictions(after:among:limits:carry:)``): at most
 /// ``CustodyLimits/spreadMax`` distinct peers per frame, a peer joining when its digest lists the frame (seen), when the
-/// frame arrived from it (source, counted in the frame's own write by ``carry(counting:for:)``), or one round interval after
-/// a round released it there with the link still up (handed). A digest is the peer's latest word: the peer leaves every
+/// frame arrived from it (source, counted in the frame's own write by ``carry(counting:for:)``), or when a round released it
+/// there and a later look found the link drained with the link still up (handed). A digest is the peer's latest word: the peer leaves every
 /// frame its digest lacks, but one still pending in its memo. Only a proven link feeds any of it, which the engine checks:
 /// an unproven link's node id is only a claim. Ourselves are never counted.
 ///
@@ -23,9 +23,6 @@ public import KnitWire
 /// id is written, so a returning frame never inherits holders or a roster, and ``prune(keeping:)`` against the live ids
 /// after a sweep. Times are the engine's monotonic clock.
 public struct CarryLedger: Sendable {
-    /// How long after a round's release its hand-off is credited: one Bluetooth round interval
-    /// (``CustodySync/roundMilliseconds``), the only plane this port has.
-    public static let creditMilliseconds = CustodySync.roundMilliseconds
     /// How long before a digest a release must be for that digest to judge it on Bluetooth (`JUDGE_AFTER_MS`): a digest that
     /// crossed the release in flight would otherwise judge it wrongly.
     public static let judgeAfterMilliseconds: Int64 = 20_000
@@ -55,11 +52,12 @@ public struct CarryLedger: Sendable {
         var touched: Int64
     }
 
-    /// One round's releases to a peer, credited at ``due`` unless the peer's link went first.
+    /// One round's releases to a peer, credited at the first look after it that finds the link drained, unless the peer's
+    /// link went first or ``CustodyAnswers/maxAgeMilliseconds`` passed since `releasedAt`.
     struct Credit: Sendable {
         var peer: NodeId
         var ids: [ExactKey]
-        var due: Int64
+        var releasedAt: Int64
     }
 
     /// This node, never counted among a frame's holders, or `nil` for a ledger no node owns (a test's).
@@ -122,9 +120,10 @@ public struct CarryLedger: Sendable {
         return now - released < Self.notKeptLapseMilliseconds
     }
 
-    /// When the next hand-off is credited, or `nil` when none waits: an engine deadline (ADR 2026-09.gq84).
-    public var nextCredit: Int64? {
-        credits.first?.due
+    /// The peers with a hand-off waiting for its credit: while any waits, the engine looks at their links every
+    /// ``CustodyAnswers/roundCheckMilliseconds`` (the contract, §3).
+    public var creditsWaiting: Set<NodeId> {
+        Set(credits.map(\.peer))
     }
 
     /// The carry a write of `id` reads (§5, key 2): this ledger's holders, and for `id` itself `source` alone, since the peer
@@ -248,8 +247,8 @@ public struct CarryLedger: Sendable {
     // MARK: Rounds
 
     /// A round released `ids` to the proven `peer` at `now`: each but those addressed to the peer goes pending in its memo,
-    /// and all are credited one round interval later if the link holds. `linked` are the peers holding a link now, for the
-    /// memo's bound.
+    /// and all wait for their credit (``credit(_:spreadMax:)``). `linked` are the peers holding a link now, for the memo's
+    /// bound.
     public mutating func released(_ ids: [CustodySync.Release], to peer: NodeId, now: Int64, linked: Set<NodeId>) {
         guard !ids.isEmpty else {
             return
@@ -263,17 +262,25 @@ public struct CarryLedger: Sendable {
             bound(linked: linked)
         }
         memos[peer] = memo
-        credits.append(Credit(peer: peer, ids: ids.map { ExactKey($0.id) }, due: now + Self.creditMilliseconds))
+        credits.append(Credit(peer: peer, ids: ids.map { ExactKey($0.id) }, releasedAt: now))
     }
 
-    /// Credits each hand-off due by `now`: its peer joins the holders of every id in it still held.
-    public mutating func credit(now: Int64, spreadMax: Int) {
-        while let first = credits.first, first.due <= now {
-            credits.removeFirst()
-            for id in first.ids {
-                add(first.peer, holding: id, spreadMax: spreadMax)
+    /// Credits every hand-off waiting for `peer`: a look after their rounds found its link holding less than one round
+    /// unwritten, so what those rounds released has left this phone (the contract, §3, "handed"). The peer joins the holders
+    /// of every id in them still held.
+    public mutating func credit(_ peer: NodeId, spreadMax: Int) {
+        for credit in credits where credit.peer == peer {
+            for id in credit.ids {
+                add(peer, holding: id, spreadMax: spreadMax)
             }
         }
+        credits.removeAll { $0.peer == peer }
+    }
+
+    /// Drops every hand-off still uncredited ``CustodyAnswers/maxAgeMilliseconds`` after its round was cut: it credits
+    /// nothing, as one whose link dropped (the contract, §3), and keeps no look alive.
+    public mutating func expireCredits(now: Int64) {
+        credits.removeAll { now - $0.releasedAt >= CustodyAnswers.maxAgeMilliseconds }
     }
 
     /// `peer`'s link went: its memo, pending and not-kept ids alike, and its uncredited hand-offs go. Its holders stay, since

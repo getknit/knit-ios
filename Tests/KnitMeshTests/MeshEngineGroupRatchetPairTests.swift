@@ -30,9 +30,10 @@ import Testing
         let lab = EngineLab([iphone, carrier])
         lab.link(0, 1)
         lab.advance(jitter)
-        // Until both answers to the link-up digests have found nothing more (the `custody-carry-policy` contract, §2): a round
-        // still due would serve a frame that arrives next beside the router's relay, as this lab models no link crossings.
-        lab.advance(2 * CustodySync.roundMilliseconds)
+        // Until both answers to the link-up digests have found nothing more (the `custody-carry-policy` contract, §2), a look
+        // at a time: a round still due would serve a frame that arrives next beside the router's relay, as this lab models no
+        // link crossings.
+        lab.look(5)
         return (lab, android)
     }
 

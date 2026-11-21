@@ -252,6 +252,7 @@ extension MeshEngine {
             blobExchange.forgetServe(file.hash, to: peer)
             return "no link to it"
         }
+        custodyAnswers.noteFileOut(file.hash, to: peer)
         return "serving \(tail) bytes" + (file.start > 0 ? " resumed at \(file.start)" : "")
     }
 

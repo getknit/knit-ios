@@ -360,10 +360,8 @@ extension RatchetRestoreLabTests {
         } else {
             lab.link(0, 1)
         }
-        // The rounds after the first, two seconds apart.
-        for _ in 0..<(count / 10) {
-            lab.advance(CustodySync.roundMilliseconds)
-        }
+        // The rounds after the first, one a look as the link drains.
+        lab.look(count / 5)
         if count > 10 {
             let rounds = lab[other].engine.custodyRoundCounts.custodyRoundsCut - roundsBefore
             #expect(rounds >= 2, "the back-fill took several rounds: \(rounds)")
