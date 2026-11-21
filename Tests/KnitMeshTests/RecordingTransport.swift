@@ -61,6 +61,8 @@ final class RecordingTransport: MeshTransport {
     private(set) var withdrawn: [(hash: BlobHash, to: NodeId)] = []
     /// The neighbours a link would say are streaming a file to us, as a test sets them.
     var arrivingFrom: Set<NodeId> = []
+    /// Whether each copy fed out stalled, as a test sets it apart from its feed's `live`.
+    var feedStalls: [BlobHash: Bool] = [:]
     /// The neighbours whose stream to us, still arriving, a test marked stalled.
     var stalledFrom: Set<NodeId> = []
     /// How many files a link would say it is streaming out, as a test sets it.
@@ -227,6 +229,12 @@ final class RecordingTransport: MeshTransport {
 
     func fileArrivingLeftMilliseconds(from peer: NodeId) -> Int64? {
         arrivingLeft[peer]
+    }
+
+    /// Whether the copy of `hash` to `peer` stalled: as a test set it in ``feedStalls``, else its feed's `live` turned over,
+    /// as a transport with no stall of its own reads it.
+    func isFileFeedStalled(_ hash: BlobHash, to peer: NodeId) -> Bool {
+        feedStalls[hash] ?? fileFeed(of: hash, to: peer).map { !$0.live } ?? false
     }
 
     func fileFeed(of hash: BlobHash, to peer: NodeId) -> FeedReading? {

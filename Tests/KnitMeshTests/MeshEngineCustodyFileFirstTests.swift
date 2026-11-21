@@ -85,12 +85,12 @@ import Testing
             fixture.engine.custodyAnswers.noteFileOut(hash, to: bob.nodeId)
             fixture.transport.inFlight.append((hash, bob.nodeId))
         }
-        fixture.transport.feeds = [FedCopy(Self.photo, bob.nodeId, FeedReading(etaMilliseconds: 5000, live: true))]
-        #expect(fixture.engine.fileOnLink(with: bob.nodeId), "streaming, and a copy queued with no reading yet")
+        fixture.transport.feedStalls[Self.photo] = false
+        #expect(fixture.engine.fileOnLink(with: bob.nodeId), "streaming, and a copy queued behind it")
         fixture.engine.receiveDigest([], from: bob.nodeId)
         fixture.advance(Self.look)
         #expect(onlyMailAndKeys(fixture, mail: mail))
-        fixture.transport.feeds = [FedCopy(Self.photo, bob.nodeId, FeedReading(etaMilliseconds: nil, live: false))]
+        fixture.transport.feedStalls[Self.photo] = true
         #expect(!fixture.engine.fileOnLink(with: bob.nodeId), "nothing behind a stalled stream moves either")
     }
 
@@ -171,20 +171,20 @@ import Testing
         let (fixture, mail) = try fixture(others: 40)
         fixture.engine.custodyAnswers.noteFileOut(Self.photo, to: bob.nodeId)
         fixture.transport.inFlight.append((Self.photo, bob.nodeId))
-        fixture.transport.feeds = [FedCopy(Self.photo, bob.nodeId, FeedReading(etaMilliseconds: 5000, live: true))]
+        fixture.transport.feedStalls[Self.photo] = false
         fixture.engine.receiveDigest([], from: bob.nodeId)
         fixture.advance(Self.look)
         #expect(onlyMailAndKeys(fixture, mail: mail), "a moving file: the peer's mail alone")
         #expect(Set(rounds(fixture).map(\.envelope.id)).isSuperset(of: mail), "tier 2 throughout")
-        // The blob plane counts the feed stalled: the other tiers go at the next look.
-        fixture.transport.feeds = [FedCopy(Self.photo, bob.nodeId, FeedReading(etaMilliseconds: nil, live: false))]
+        // 15 s with no progress, the blob plane's stall: the other tiers go at the next look.
+        fixture.transport.feedStalls[Self.photo] = true
         fixture.transport.unwritten[bob.nodeId] = 0
         let before = rounds(fixture).count
         fixture.advance(Self.look)
         let freed = rounds(fixture).dropFirst(before).filter { $0.envelope.type == .chat }
         #expect(!freed.isEmpty && freed.allSatisfy { !mail.contains($0.envelope.id) }, "the others go at the next look")
         // Progress resumes: they wait again.
-        fixture.transport.feeds = [FedCopy(Self.photo, bob.nodeId, FeedReading(etaMilliseconds: 5000, live: true))]
+        fixture.transport.feedStalls[Self.photo] = false
         let resumed = rounds(fixture).count
         for _ in 0..<5 {
             fixture.advance(Self.look)
@@ -241,5 +241,27 @@ import Testing
         }
         #expect(rounds(fixture).count == resumed, "held again behind the moving stream")
         #expect(fixture.engine.custodyAnswers.answer(for: bob.nodeId) != nil)
+    }
+
+    @Test func aFeedPastItsDeadlineThatStillMovesKeepsComingFirstUntilItStalls() throws {
+        let (fixture, mail) = try fixture(others: 40)
+        fixture.engine.custodyAnswers.noteFileOut(Self.photo, to: bob.nodeId)
+        fixture.transport.inFlight.append((Self.photo, bob.nodeId))
+        // Past its deadline, so its reading is not live, but reports still move it: `FeedMeter`'s stall alone (revision 18).
+        fixture.transport.feeds = [FedCopy(Self.photo, bob.nodeId, FeedReading(etaMilliseconds: nil, live: false))]
+        fixture.transport.feedStalls[Self.photo] = false
+        fixture.engine.receiveDigest([], from: bob.nodeId)
+        for _ in 0..<5 {
+            fixture.advance(Self.look)
+            fixture.transport.unwritten[bob.nodeId] = 0
+        }
+        #expect(onlyMailAndKeys(fixture, mail: mail), "late but moving: the peer's mail alone")
+        #expect(Set(rounds(fixture).map(\.envelope.id)).isSuperset(of: mail))
+        // 15 s with no progress: the other tiers go at the next look.
+        fixture.transport.feedStalls[Self.photo] = true
+        let before = rounds(fixture).count
+        fixture.advance(Self.look)
+        let freed = rounds(fixture).dropFirst(before).filter { $0.envelope.type == .chat }
+        #expect(!freed.isEmpty && freed.allSatisfy { !mail.contains($0.envelope.id) }, "stalled: the others go")
     }
 }

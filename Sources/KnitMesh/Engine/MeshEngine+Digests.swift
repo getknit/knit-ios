@@ -37,13 +37,14 @@ extension MeshEngine {
 
     /// Whether a file is moving on the link to or from `peer`: a round then serves only what is addressed to the peer, and
     /// everything else waits for the file (the contract, §2, "A file comes first", "Only a file that is moving comes first").
-    /// Outbound, a file this node handed the link, queued or streaming, until the blob plane counts its feed stalled
-    /// (``FeedReading/live``). Inbound, a stream from the peer that moved within the same 15 s
+    /// Both ways by one rule, 15 s with no progress and no deadline: outbound, a file this node handed the link, queued or
+    /// streaming, until its feed stalls (``MeshTransport/isFileFeedStalled(_:to:)``, a read that leaves the meter's
+    /// deadline alone); inbound, a stream from the peer that moved within the span
     /// (``MeshTransport/isFileArrivingLive(from:)``). Either way a stall frees the other tiers at the next look.
     func fileOnLink(with peer: NodeId) -> Bool {
         transport.isFileArrivingLive(from: peer)
             || custodyAnswers.fileMoving(
-                to: peer, inFlight: { transport.isFileInFlight($0, to: peer) }, reading: { transport.fileFeed(of: $0, to: peer) })
+                to: peer, inFlight: { transport.isFileInFlight($0, to: peer) }, stalled: { transport.isFileFeedStalled($0, to: peer) })
     }
 
     /// Whether the link to `peer` can take a round now: it holds less than one round unwritten for that peer, a streaming

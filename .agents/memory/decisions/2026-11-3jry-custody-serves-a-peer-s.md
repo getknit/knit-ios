@@ -86,10 +86,8 @@ the wire. The numbers are shared law with Android (the contract in `knit-pair`'s
    is moving comes first: once the blob plane counts a stream as stalled by its own rule, no progress for 15 s, the
    other tiers go again, and they wait again if it resumes, so a stream wedged on a live link can't hold them for good.
    Inbound this is `MeshTransport.isFileArrivingLive(from:)`, no chunk for `FeedMeter.stallMilliseconds`. Outbound it
-   is the feed's `FeedReading.live`, which also turns false once a feed runs past its deadline (its ETA × 5/4 + 30 s)
-   while still moving, so a slow photo past its deadline lets the other tiers through too. The contract's §2 reads the
-   stall alone, as Android does, so a late file that still moves keeps coming first; this port's outgoing reading moves
-   to `FeedMeter`'s stall alone in the next commit.
+   reads `MeshTransport.isFileFeedStalled`, `FeedMeter`'s stall alone, so a late file that still moves keeps coming
+   first; the read leaves the meter's deadline untouched, where reading the feed's state would move it.
 
    **A cut loses what the link held:** under two rounds, plus a first pick that passed the budget. A link that doesn't
    drain gets nothing more.
@@ -178,6 +176,11 @@ What we chose against:
   runs at P's link rate while a photo streams to Q on the same radio, and may slow it enough to trip Q's second-copy
   deadline. That is as it was before this change, when the whole difference went at once, and it is unmeasured. A rule
   for the whole radio would pause custody whenever anyone nearby sends a photo, so none is made; a device trial is owed.
+- **A peer's own mail can still slow its file.** Tier 2 goes while a file streams, and the link writes it between the
+  file's chunks. If an answer opens after the file's first ETA was measured and holds a great deal of mail for that
+  peer (about 100 KB on a Coded link, a few times that on 1M), the file can overrun the blob plane's deadline, and the
+  holder then serves a parked ask a second copy. The maintainer chose that the recipient's own mail keeps going, so
+  this stands. It is constructed, not measured; a device trial is owed.
 - **A frame released without its sender's key can arrive late.** When we hold no key to send ahead, the peer parks
   the frame outside custody, its next digest lacks it, and the memo marks it not kept for 10 minutes. If the key
   reaches the peer from elsewhere after its park lost the frame, we serve it only after the lapse. It is bounded and

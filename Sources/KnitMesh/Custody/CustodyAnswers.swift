@@ -66,7 +66,7 @@ public struct CustodyAnswers: Sendable {
     public var lookedAt: Int64 = 0
 
     /// The files this node handed its link to each peer, kept only while the link still has them queued or streaming
-    /// (``fileMoving(to:inFlight:reading:)``): the link says so for one hash, never for any, so this names the hashes to ask
+    /// (``fileMoving(to:inFlight:stalled:)``): the link says so for one hash, never for any, so this names the hashes to ask
     /// about.
     private var filesOut: [NodeId: Set<BlobHash>] = [:]
 
@@ -159,16 +159,14 @@ public struct CustodyAnswers: Sendable {
     }
 
     /// Whether the link still carries a file this node handed it for `peer`, queued or streaming, as `inFlight` says per
-    /// hash, and the file is moving: no copy's feed, as `reading` reads it, counts as stalled (``FeedReading/live`` false,
-    /// the blob plane's own 15 s with no progress). A copy queued with no reading yet counts as moving, unless the one
-    /// streaming ahead of it stalled, since nothing behind a stalled stream moves either (the contract, §2, "Only a file
-    /// that is moving comes first"). One the link no longer carries is forgotten.
-    public mutating func fileMoving(
-        to peer: NodeId, inFlight: (BlobHash) -> Bool, reading: (BlobHash) -> FeedReading?
-    ) -> Bool {
+    /// hash, and the file is moving: no copy, as `stalled` reads it, has gone 15 s with no progress (`FeedMeter`'s stall
+    /// alone, never its deadline, so a late file that still moves keeps coming first). A copy queued behind the stream
+    /// counts as moving unless that stream stalled, since nothing behind a stalled stream moves either (the contract, §2,
+    /// "Only a file that is moving comes first"). One the link no longer carries is forgotten.
+    public mutating func fileMoving(to peer: NodeId, inFlight: (BlobHash) -> Bool, stalled: (BlobHash) -> Bool) -> Bool {
         let carried = (filesOut[peer] ?? []).filter(inFlight)
         filesOut[peer] = carried.isEmpty ? nil : carried
-        return !carried.isEmpty && !carried.contains { reading($0)?.live == false }
+        return !carried.isEmpty && !carried.contains(where: stalled)
     }
 
     /// `peer`'s file-first round came up empty: its next cuts wait until the file stops moving or mail for the peer

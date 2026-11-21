@@ -107,6 +107,14 @@ public protocol MeshTransport: AnyObject {
     /// ``FeedReading/live``.
     func fileFeed(of hash: BlobHash, to peer: NodeId) -> FeedReading?
 
+    /// Whether the copy of `hash` streaming to `peer` has stalled: no progress for the blob plane's stall time
+    /// (`FeedMeter`'s, 15 s on both platforms), whatever the deadline that also ends ``FeedReading/live``. Only a file that
+    /// is moving comes first (the `custody-carry-policy` contract, revision 18, §2), and one that still moves keeps coming
+    /// first past that deadline. A read with no side effect, unlike ``fileFeed(of:to:)``. False when that copy is not
+    /// streaming to `peer`. Defaults to ``fileFeed(of:to:)``'s `live` turned over, for a transport that keeps no stall
+    /// apart from its deadline.
+    func isFileFeedStalled(_ hash: BlobHash, to peer: NodeId) -> Bool
+
     /// The rate, in bytes a second, a file fed to `peer` now would most likely go at (`MeshTransport.expectedFileRate`):
     /// a holder serves the fastest parked ask first, and one beside a slower feed only when its own copy would end
     /// first. 0 when unknown, which never goes ahead of a feed.
@@ -158,6 +166,13 @@ public protocol MeshTransport: AnyObject {
 }
 
 extension MeshTransport {
+    /// Whether ``fileFeed(of:to:)`` reads the copy not live: this transport keeps no stall apart from its deadline. A
+    /// transport backed by a `FeedMeter`, or one that wraps or forwards to ``LinkManager``, must answer this itself: this
+    /// default counts a late file that still moves as stalled, and its read moves the meter's deadline.
+    public func isFileFeedStalled(_ hash: BlobHash, to peer: NodeId) -> Bool {
+        fileFeed(of: hash, to: peer).map { !$0.live } ?? false
+    }
+
     /// ``isFileArriving(from:)``: this transport keeps no clock of a stream's progress, so a stream arriving is taken as
     /// moving.
     public func isFileArrivingLive(from peer: NodeId) -> Bool {

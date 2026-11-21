@@ -8,6 +8,8 @@ import Testing
 /// A transport that streams no files and states only what it has queued: every other requirement answers nothing.
 private final class QueueOnlyTransport: MeshTransport {
     let queued: Int
+    /// The one reading every copy's feed answers.
+    var feed: FeedReading?
 
     init(queued: Int) {
         self.queued = queued
@@ -41,7 +43,7 @@ private final class QueueOnlyTransport: MeshTransport {
 
     func isFileArriving(from _: NodeId) -> Bool { false }
     func fileArrivingLeftMilliseconds(from _: NodeId) -> Int64? { nil }
-    func fileFeed(of _: BlobHash, to _: NodeId) -> FeedReading? { nil }
+    func fileFeed(of _: BlobHash, to _: NodeId) -> FeedReading? { feed }
     func expectedFileRate(to _: NodeId) -> Int64 { 0 }
 
     func acceptFiles(_: Set<BlobHash>, resumable _: Set<BlobHash>, photoOnly _: Set<BlobHash>) {
@@ -72,5 +74,16 @@ private final class QueueOnlyTransport: MeshTransport {
     @Test func aTransportWithNoStreamClockReadsAnArrivingFileAsLiveOnlyWhileOneArrives() {
         // `RecordingTransport` states its own liveness, so the default is read here.
         #expect(!QueueOnlyTransport(queued: 0).isFileArrivingLive(from: fixtureNodeId(2)))
+    }
+
+    @Test func aTransportWithNoStallOfItsOwnReadsAFeedNotLiveAsStalled() {
+        // `RecordingTransport` states its own stalls, so the default is read here.
+        let transport = QueueOnlyTransport(queued: 0)
+        let hash = BlobHash(of: [1])
+        #expect(!transport.isFileFeedStalled(hash, to: fixtureNodeId(2)), "nothing fed")
+        transport.feed = FeedReading(etaMilliseconds: 1000, live: true)
+        #expect(!transport.isFileFeedStalled(hash, to: fixtureNodeId(2)))
+        transport.feed = FeedReading(etaMilliseconds: nil, live: false)
+        #expect(transport.isFileFeedStalled(hash, to: fixtureNodeId(2)))
     }
 }

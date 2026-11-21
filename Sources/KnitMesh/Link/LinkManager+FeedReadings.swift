@@ -20,6 +20,17 @@ extension LinkManager {
         return reading
     }
 
+    /// Whether the copy of `hash` streaming to `peer` has stalled: nothing moved for ``FeedMeter/stallMilliseconds``,
+    /// whatever its deadline (``FeedMeter/isStalled(wroteAt:now:)``). Unlike ``fileFeed(of:to:)``, which sets and moves
+    /// the deadline as it reads, this reads nothing into the meter, so custody may look as often as it likes. False when
+    /// that copy is not streaming to `peer`, or `peer` is unlinked.
+    public func isFileFeedStalled(_ hash: BlobHash, to peer: NodeId) -> Bool {
+        guard let id = liveChannel(to: peer), let feed = feeds[id], let streaming = feed.streaming, streaming.file.hash == hash else {
+            return false
+        }
+        return feed.meter.isStalled(wroteAt: streaming.wroteAt, now: clock.monotonicMilliseconds())
+    }
+
     /// How fast a file to `peer` would most likely go now, in bytes a second (`BluetoothMeshTransport.expectedFileRate`,
     /// `BleFeedPolicy.expectedRate`): a windowed link's last measured drain, shared with the other windowed feeds going
     /// now, else the share its pace would give it beside the paced feeds already going, times the share of its pace the

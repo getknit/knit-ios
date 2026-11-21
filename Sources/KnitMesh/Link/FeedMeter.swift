@@ -220,15 +220,35 @@ internal struct FeedMeter {
         let delivered = lastHeld >= 0 ? lastHeld - offset : whole - left
         let remaining = max(whole - delivered, 0)
         let eta = etaNow(now, remaining: remaining, pace: pace, settled: settled)
-        let asleep = pauseAt < 0 ? 0 : max(now - pauseAt - pauseMilliseconds, 0)
-        let quiet = lastHeld >= 0 ? now - advancedAt - sleptSinceAdvance : now - wroteAt
-        let stallIn = Self.stallMilliseconds - (quiet - asleep)
+        let asleep = asleep(now)
+        let stallIn = stallIn(wroteAt: wroteAt, now: now)
         let due = hasRate || (settled && lastHeld < 0 && now - startedAt >= Self.stallMilliseconds)
         setDeadline(now, eta: eta, remaining: remaining, pace: pace, due: due)
         let deadlineIn = deadlineAt == 0 ? nil : deadlineAt + asleep - now
         let live = stallIn >= 0 && (deadlineIn.map { $0 >= 0 } ?? true)
         let recheck = [stallIn > 0 ? stallIn : nil, deadlineIn.flatMap { $0 > 0 ? $0 : nil }].compactMap(\.self).min()
         return FeedReading(etaMilliseconds: eta, live: live, measured: hasRate, recheckMilliseconds: recheck)
+    }
+
+    /// Whether the stream has stalled: nothing moved for ``stallMilliseconds``, the stall half of ``reading(left:wroteAt:pace:settled:now:)``'s
+    /// `live`, whatever its deadline says. Reads nothing into the meter, so a reader that looks every 100 ms, as custody's
+    /// rounds do, never moves the deadline the blob plane's `live` is judged by (the `custody-carry-policy` contract,
+    /// revision 18, §2: a file that still moves keeps coming first past that deadline). `wroteAt` is the stream's last
+    /// write, which the stall counts from before its first report.
+    func isStalled(wroteAt: Int64, now: Int64) -> Bool {
+        stallIn(wroteAt: wroteAt, now: now) < 0
+    }
+
+    /// How long until the stream stalls, below 0 once it has: from the receiver's last advance once it has reported, its
+    /// last write before, with what the writer overslept in its pace wait taken out.
+    private func stallIn(wroteAt: Int64, now: Int64) -> Int64 {
+        let quiet = lastHeld >= 0 ? now - advancedAt - sleptSinceAdvance : now - wroteAt
+        return Self.stallMilliseconds - (quiet - asleep(now))
+    }
+
+    /// What the pace wait under way has run past what it asked for at `now`: the app asleep, not the feed's time.
+    private func asleep(_ now: Int64) -> Int64 {
+        pauseAt < 0 ? 0 : max(now - pauseAt - pauseMilliseconds, 0)
     }
 
     /// The ETA of `remaining` bytes at the measured rate, counted from the last report, or at `pace` before one
