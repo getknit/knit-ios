@@ -2105,3 +2105,66 @@ Android too.
   just after a re-open's adoption commits skips the backlog, whose DMs then wait in our custody for the next start's
   replay; a retry at the next re-offer is a follow-up. A reset the sender declines inside the peer's minute is left to
   the sender's next trigger, the heuristic or a person, as in Kotlin.
+
+**Amended 2026-11-22, the P9 device trials:** the lab iPhone 12 on a Debug build of P9a and P9b, `e1630ee` (built as
+`2735267`, before its rebase onto the 1.0.1 changelog cut, which moved no code), against the Pixel 9 on knit-next
+2.12.0-alpha, a debug build with sfms, with the maintainer's go-ahead. Before the install the
+iPhone's database recorded `v1` to `v24` and nothing from another branch. `v25-own-profile-frame` and
+`v26-prev-root-own-init` then applied, with no store refused. The new runs are `interop.py iphone-ratchet-floor`; each
+trial ran at least twice, first from a scratch driver and then as the script, and the counts below are the first run's.
+
+- **`interop.py iphone-ratchet`:** 38 of 38 steps passed, the only drops three duplicates.
+- **The sender (`sender`):**
+  - The Pixel adopted our reset in 5 s.
+  - Our second reset at once was declined as `replacedInit`, with Kotlin's words, and the root stayed.
+  - A third, a minute later, was adopted.
+- **The hold (`receiver`).** Android 2.12 declines a second reset inside the minute itself, so a resetter on 2.12 never
+  meets our floor. The trial restarts Knit on the Pixel between its two resets, which drops the `replacedAt` Android
+  holds in memory and keeps its database.
+  - The second reset reached the iPhone 19 s after the first was adopted, and the iPhone held it.
+  - The re-offer re-opened and adopted it 55 s later.
+  - The DM the Pixel sent during the hold arrived, the pair agreed on the Pixel's reset, and a DM went each way.
+- **Across a restart (`start-replay`).**
+  - The iPhone held the second reset 23 s after the adoption, and Knit was ended and started again from the Mac's
+    devicectl.
+  - At launch the start's replay held the reset again, and the first re-offer, 61 s later, adopted it.
+  - The DM sent during the hold arrived, and the pair agreed.
+  - In one of three runs that reached the hold, the restart dropped the link, and the Pixel served the reset again at
+    the relink, 4 s after the launch. With the floor gone with the process, the open path adopted it there, and the
+    re-offer dropped the hold as the root moved. The backlog replay runs only after a re-open, and our own custody
+    holds the follow-ups so nobody serves them again, so the DM sent during the hold arrived 7 min 49 s late, when a
+    later reset made the Pixel seal it again (knit-ios #60).
+- **Our reset over the hold (`over-the-hold`, round 2's C1).**
+  - After the hold, the iPhone's own reset dropped it as the root moved.
+  - The Pixel answered our reset, and Knit restarted on the iPhone.
+  - For 76 s after the launch nothing was held or adopted, and the session stayed on our root.
+  - The DM sent during the hold arrived through the Pixel's re-seal, and the iPhone sent no reset of its own.
+- **A missed reset (`missed-reset`, #15).**
+  - The Pixel's mesh paused, and it sent three DMs under the old root while the iPhone reset twice, 63 s apart. The
+    second reset restarted the drain.
+  - Within 15 s of the Pixel resuming, all three DMs opened on the iPhone, with no failed open.
+  - The script judges this by the DMs' ids against the iPhone's log, since the Pixel's re-seal keeps each id. None of
+    the three failed in the run that checked them, and another run counted no failed open at all. In a third, with no
+    log running, the iPhone counted 8 failed opens of frames nobody identified, and between runs it counted others with
+    no trial running.
+  - The pair settled on our second reset in 5 s.
+- **Custody** on the two phones held the same 303 ids at the end.
+- **Failed opens that are no fault.**
+  - The resetter's follow-ups carry the held reset's init without its flag. The iPhone counts each that arrives before
+    the adoption as `ratchetAeadFail`, and each opens once the reset is adopted.
+  - Each launch's replay retries the custody frames to us that left no row (ticks, presence keys), sealed under eras
+    we have left, as `ratchetAeadFail`. main's start replay picks the same frames.
+  - So those trials judge the iPhone by the reset it never sent, and print its drops.
+- **A residue the trials found** (knit-ios #59, knit/knit-next#357).
+  - At link-up the Pixel served at least one follow-up ahead of the reset in every run, and all three in one.
+  - A follow-up opened before the hold exists counts toward the heuristic, since the evidence gate needs the hold.
+  - With three ahead, only the six-hour floor since the trial's own forced reset kept the iPhone from resetting over
+    the hold. Kotlin's gate is the same.
+  - A reset held at start and then adopted live skips the backlog replay (knit-ios #60, above), this port's own.
+- **The lab, not the ratchet.** One run lost the link for good after the Pixel restarted: the iPhone held no link,
+  as with knit-ios #53, and a relaunch of Knit brought it back in 7 s. The receiver trials' first reset can also meet
+  the sender's own floor, started by an answer no stamp shows, so the script waits a minute and asks once more.
+- **Not run.**
+  - The device form of #49: it needs an Android restore, which wipes a Pixel's data. It stays with the two-engine
+    trace above.
+  - A carrier between the iPhone and the Pixel: the direct runs and the custody check stand in for it.

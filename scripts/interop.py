@@ -25,6 +25,8 @@ driven through knit-next's debug bridge on the other (.agents/specs/mvp.md, .age
     scripts/interop.py iphone-typing --device SERIAL [--udid UDID]
     scripts/interop.py iphone-mention --device SERIAL [--udid UDID]
     scripts/interop.py iphone-ratchet --device SERIAL [--udid UDID]
+    scripts/interop.py iphone-ratchet-floor --device SERIAL [--trials sender,receiver,start-replay,over-the-hold,missed-reset]
+                                [--udid UDID]
     scripts/interop.py iphone-forgets [--stages dialed,quiet,accepted] [--udid UDID]
     scripts/interop.py iphone-soak --device SERIAL [--peer] [--extras] [--udid UDID] [--minutes 60] [--per-minute 20]
     scripts/interop.py iphone-wake [--sender phone|peer] [--device SERIAL] [--expect-wakes] [--udid UDID] [--minutes 10]
@@ -64,6 +66,9 @@ every thread, and checks a replacement, a retraction, an emoji outside the iPhon
 `ratchet` runs the forward-secrecy ratchet against the phone, knit-peer with `--ratchet` (ADR 2026-10.5sk9): DMs, ticks,
 reactions, a profile and a group in the group form, the pair's agreement on one session, a reinstall's recovery and a
 forced reset from each side, and `iphone-ratchet` runs it with the iPhone, a Debug build launched with `-ratchet on`;
+`iphone-ratchet-floor` runs the resets the ratchet's floors refuse against the iPhone (ADR 2026-10.5sk9's P9a and P9b,
+knit-ios #15 and #38): a second reset declined inside the minute, a reset held and adopted at the floor's end, across a
+restart of Knit, under our own reset, and a missed reset whose old root still opens; it restarts Knit on the phone;
 `ratchet-group` runs the group form among the peer and two phones, a departure's fresh mint included;
 `iphone-soak` is item 11's hour on the iPhone, with the peer as a third author when asked;
 `iphone-wake` is item 9's wake test, with someone to lock the iPhone and unlock it again; `android-keeps-iphone` checks that
@@ -546,13 +551,19 @@ def _front(udid: str | None) -> dict:
     return KnitFront("devicectl", 60, udid)._open(KnitFront.KNIT)  # noqa: SLF001 - the one devicectl call this script has
 
 
+def _relaunch_knit(udid: str | None) -> dict:
+    """Ends Knit on the iPhone and starts it afresh through the Mac's devicectl, as iOS ending it in the background does
+    (`KnitFront._open` with `terminate`). The database stays."""
+    return KnitFront("devicectl", 60, udid)._open(KnitFront.KNIT, terminate=True)  # noqa: SLF001 - the same devicectl call
+
+
 # The runs that drive the iPhone and judge ids, which `IPhoneAdvert` holds clear. `bridge` and `record-pull` read or fix
 # by hand, `iphone-reboot` restarts the phone under the guard's connection, and `iphone-rotate` wants the switch on.
 IPHONE_LEGACY_RUNS = frozenset(
     {
         "iphone", "iphone-wake", "android-keeps-iphone", "iphone-photos", "iphone-resume", "iphone-block", "iphone-contact",
         "iphone-delete", "iphone-react", "iphone-reply", "iphone-typing", "iphone-mention", "iphone-ratchet", "iphone-rings",
-        "iphone-peer", "iphone-forgets", "iphone-soak", "iphone-scan", "iphone-seek", "iphone-relay", "iphone-group",
+        "iphone-ratchet-floor", "iphone-peer", "iphone-forgets", "iphone-soak", "iphone-scan", "iphone-seek", "iphone-relay", "iphone-group",
     }
 )
 
@@ -1718,11 +1729,12 @@ class KnitFront:
         only = f"KNIT_DEVICE_TESTS={self.TESTS}/{test}"
         return ["env", f"KNIT_DEVICE={self.udid}", "KNIT_DEVICE_KEEP_KNIT=1", only, "scripts/check.sh", "devicetest"]
 
-    def _open(self, bundle: str) -> dict:
+    def _open(self, bundle: str, terminate: bool = False) -> dict:
         """Brings `bundle` to the iPhone's front through the Mac's devicectl, which needs no automation mode. Without
-        `--terminate-existing` it brings a running app forward in the same process, as Knit's pid showed (2026-10-10)."""
+        `--terminate-existing` it brings a running app forward in the same process, as Knit's pid showed (2026-10-10);
+        `terminate` passes it, which ends the running process and starts a fresh one."""
         started = time.monotonic()
-        command = ["xcrun", "devicectl", "device", "process", "launch", "--device", self.udid, bundle]
+        command = ["xcrun", "devicectl", "device", "process", "launch", *(["--terminate-existing"] if terminate else []), "--device", self.udid, bundle]
         result = subprocess.run(
             [str(ROOT / "scripts" / "mac.sh"), "run", *command], capture_output=True, text=True, env={**os.environ, "KNIT_MAC_SYNC": "0"}, check=False
         )
@@ -9405,6 +9417,404 @@ def _not_declined(reply: dict) -> dict:
     return {"forcedReset": reply["forcedReset"][:6]}
 
 
+class RatchetDropLog:
+    """The iPhone's `mesh ratchet drop <id> from <peer>: <failure> …` lines from its unified log, kept as they come, so a
+    run can say which frames failed to open where `status` only counts them. A launch's replay and a re-served frame of
+    an era the iPhone has left count there too, so a count alone cannot judge a trial."""
+
+    def __init__(self, udid: str, path: Path) -> None:
+        self.path = path
+        self.file = open(path, "a", encoding="utf-8")  # noqa: SIM115 - lives with the run
+        self.process = subprocess.Popen(
+            ["stdbuf", "-oL", "idevicesyslog", "-u", udid, "-m", "mesh ratchet drop", "--no-colors"],
+            stdout=self.file,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+        )
+
+    def mark(self) -> int:
+        """Where the file ends now, for `failed`."""
+        self.file.flush()
+        return self.path.stat().st_size
+
+    def failed(self, mark: int) -> dict[str, str]:
+        """Each frame id that failed to open since `mark`, but as a duplicate, with its failure."""
+        time.sleep(2)  # the log's own lag
+        self.file.flush()
+        with open(self.path, encoding="utf-8", errors="replace") as log:
+            log.seek(mark)
+            found = re.findall(r"mesh ratchet drop (\S+) from \S+: (\w+)", log.read())
+        return {frame: failure for frame, failure in found if failure != "duplicate"}
+
+    def stop(self) -> None:
+        if self.process.poll() is None:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                self.process.kill()
+        self.file.close()
+
+
+# The trials `iphone-ratchet-floor` runs, in the order it runs them when none are named.
+FLOOR_TRIALS = ("sender", "receiver", "start-replay", "over-the-hold", "missed-reset")
+# How long both sides' last re-root or adoption must lie behind a trial's start, on this machine's wall clock: the
+# one-minute floor and a margin for the phones' clocks.
+FLOOR_SETTLE_MILLISECONDS = 70_000
+# The decline a reset meets for a minute after the peer adopted our last one (`Rule.replacedInit`, knit-next ADR
+# 2026-09.qerd's 2026-11-01 amendment), on both platforms.
+DECLINE_REPLACED = "the peer adopted our reset under a minute ago"
+# What a DM sealed under the root the iPhone kept would fail with, which #15's trial prints beside its own DMs' verdicts.
+FAILED_OPENS = ("ratchetNoSession", "ratchetEpochGone", "ratchetAeadFail")
+
+
+def iphone_ratchet_floor(arguments: argparse.Namespace) -> int:
+    """The device trials of the resets the ratchet's floors refuse (ADR 2026-10.5sk9's P9a and P9b amendments, knit-ios
+    #15 and #38), with the iPhone under test, a Debug build, and the phone as the resetter, on a knit-next build with
+    knit-next ADR 2026-11.sfms. Each trial first waits out both sides' one-minute floors, and ends with a DM each way.
+
+    - `sender`: the iPhone resets and the phone adopts it. A second reset inside the minute is declined as
+        `replacedInit`, the root stays, and a third after the minute is adopted.
+    - `receiver`: the phone resets and the iPhone adopts. Knit restarts on the phone, which forgets the `replacedAt` it
+        holds in memory and would decline with, and the phone resets again inside the iPhone's floor. The iPhone holds
+        it, re-opens it at the floor's end and adopts it, and a DM the phone sent meanwhile arrives from the backlog.
+    - `start-replay`: `receiver` up to the hold, then Knit restarts on the iPhone, from the Mac's devicectl, inside the
+        floor. The start's replay holds the reset again, and it is adopted, by the re-open or by a live copy at the
+        relink. Only the re-open replays the backlog, so the backlog's step fails after a live adoption (knit-ios #60).
+    - `over-the-hold`: `receiver` up to the hold, then the iPhone resets. The hold drops as the root moves, the phone
+        answers our reset, and after Knit restarts on the iPhone no hold is taken and the session stays on our root
+        (the crypto review's C1).
+    - `missed-reset` (#15): the phone's mesh pauses and it keeps sending, and the iPhone resets twice a minute apart.
+        Once the phone resumes, its DMs sealed under the old root open on the iPhone with no failed open, and the pair
+        settles.
+
+    A floored reset's follow-ups carry its init but not its flag, so the iPhone counts each that arrives before the
+    reset is adopted as `ratchetAeadFail`, and each launch's replay counts its old custody frames the same way: those
+    trials judge the iPhone by the reset it never sends and print its drops. 2.12's phone refuses a second reset inside
+    the minute on its own, which is why the receiver trials restart Knit on it (`force-stop` keeps its data)."""
+    phone = Phone(arguments.device)
+    ios = IPhone(arguments.udid, arguments.host)
+    trials = [trial for trial in arguments.trials.split(",") if trial]
+    unknown = [trial for trial in trials if trial not in FLOOR_TRIALS]
+    if unknown:
+        sys.exit(f"unknown trials {unknown}: pick from {','.join(FLOOR_TRIALS)}")
+    run = Run()
+    nonce = secrets.token_hex(3)
+    ios.start()
+    drops = RatchetDropLog(ios.udid, ROOT / ".build" / "iphone-ratchet-drops.log")
+    try:
+        phone_id = phone.state()["self"]["nodeId"]
+        print(json.dumps({"run": "iphone-ratchet-floor", "phone": phone_id, "iphone": ios.node_id, "nonce": nonce, "trials": trials}))
+        ios.command(cmd="accept", conv=phone_id)
+        run.step("link", lambda: _ios_linked(ios, phone, phone_id))
+        ended = 0.0
+        for trial in trials:
+            if trial == "sender":
+                _floor_sender(run, ios, phone, phone_id, nonce, ended)
+            elif trial == "missed-reset":
+                try:
+                    _floor_missed_reset(run, ios, phone, phone_id, nonce, ended, drops)
+                finally:
+                    _paused(phone, False)
+            else:
+                _floor_receiver(run, ios, phone, phone_id, nonce, ended, then=trial)
+            # A floor can start as late as the trial's last answer, which a hold puts a minute past the reset's own stamp.
+            ended = time.monotonic()
+    finally:
+        drops.stop()
+        ios.stop()
+    print(json.dumps({"summary": "iphone-ratchet-floor", "steps": run.steps, "failed": run.failed}))
+    return run.failed
+
+
+def _floor_entry(node: Node, phone_id: str) -> dict:
+    return _ratchet_peer_entry(node.command(cmd="ratchet", timeout=30), phone_id) or {}
+
+
+def _floored(node: Node) -> dict:
+    """`node`'s `flooredResets` group: what its hold took, dropped, re-opened and adopted since the process started."""
+    return node.command(cmd="ratchet", timeout=30).get("flooredResets", {})
+
+
+def _floor_settled(ios: IPhone, phone: Phone, phone_id: str, ended: float) -> dict:
+    """Waits until both sides last re-rooted or adopted FLOOR_SETTLE_MILLISECONDS ago, and as long past `ended`, the
+    previous trial's end on the monotonic clock: a floor runs from the answer, which a hold delays past both stamps."""
+    ours, theirs = _floor_entry(ios, phone_id), _ratchet_peer_entry(phone.bridge("RATCHET"), ios.node_id) or {}
+    last = max(entry.get(key, 0) for entry in (ours, theirs) for key in ("establishedAt", "lastResetSentAt"))
+    since_end = FLOOR_SETTLE_MILLISECONDS / 1000 - (time.monotonic() - ended) if ended else 0.0
+    wait = max(0.0, (last + FLOOR_SETTLE_MILLISECONDS - time.time() * 1000) / 1000, since_end)
+    time.sleep(wait)
+    return {"waited": round(wait, 1)}
+
+
+def _iphone_relaunch(ios: IPhone) -> dict:
+    """Ends Knit on the iPhone and starts it afresh from the Mac's devicectl, then reconnects the bridge."""
+    started = time.monotonic()
+    ios.stop()
+    _relaunch_knit(ios.udid)
+    deadline = time.monotonic() + 60
+    while True:
+        try:
+            ios.start()
+            break
+        except (OSError, TimeoutError, RuntimeError):
+            ios.stop()
+            if time.monotonic() > deadline:
+                raise
+            time.sleep(1)
+    return {"seconds": round(time.monotonic() - started, 1)}
+
+
+def _phone_relaunch(phone: Phone, ios_id: str) -> dict:
+    """Force-stops Knit on the phone and opens it again, which keeps its database and forgets what it holds in memory,
+    then waits for its bridge to answer for the iPhone."""
+    started = time.monotonic()
+    phone.shell(f"am force-stop {PACKAGE}")
+    time.sleep(1.5)
+    phone.shell(f"am start -n {PACKAGE}/.MainActivity")
+
+    def ready() -> bool:
+        try:
+            return bool((_ratchet_peer_entry(phone.bridge("RATCHET"), ios_id) or {}).get("hasSession"))
+        except (RuntimeError, subprocess.TimeoutExpired, json.JSONDecodeError):
+            return False
+
+    poll(ready, 60, every=1)
+    return {"seconds": round(time.monotonic() - started, 1)}
+
+
+def _phone_forced_reset(phone: Phone, ios_id: str, timeout: float = 30) -> dict:
+    """The phone's forced reset toward the iPhone, asked again while its mesh is still starting."""
+    deadline = time.monotonic() + timeout
+    while True:
+        reply = phone.bridge("RATCHET", reset=ios_id)
+        if reply.get("declined") != "mesh not running" or time.monotonic() > deadline:
+            return reply
+        time.sleep(1)
+
+
+# The declines a sender's floor answers, on both platforms: its own reset still unanswered, or our answer under a minute old.
+FLOOR_DECLINES = frozenset({DECLINE_REPLACED, "our reset is still on its way"})
+
+
+def _first_reset(send) -> dict:
+    """A trial's first forced reset, `send()`'s reply, asked once more past the floor when the sender's own floor
+    declined it: a floor can start at an answer no stamp shows, such as a relink's adoption just before the run."""
+    reply = send()
+    if reply.get("declined") in FLOOR_DECLINES:
+        time.sleep(RESET_FLOOR_SECONDS)
+        reply = send()
+    return reply
+
+
+def _floored_grew(ios: IPhone, before: dict, key: str, timeout: float) -> dict:
+    """Waits for the iPhone's `flooredResets[key]` to pass its count in `before`."""
+    started = time.monotonic()
+    now = poll(lambda: (lambda counts: counts if counts.get(key, 0) > before.get(key, 0) else None)(_floored(ios)), timeout)
+    return {"seconds": round(time.monotonic() - started, 1), "flooredResets": now}
+
+
+def _thread_shows(ios: IPhone, phone_id: str, body: str, timeout: float) -> dict:
+    """The iPhone's thread with the phone shows `body`, read from its store, so a restart in between loses nothing."""
+    started = time.monotonic()
+    poll(lambda: _has(ios.command(cmd="messages", conv=phone_id, limit=40, timeout=30), body), timeout, every=3)
+    return {"seconds": round(time.monotonic() - started, 1)}
+
+
+def _floor_check(ok: bool, detail: dict) -> dict:
+    if not ok:
+        raise RuntimeError(json.dumps(detail))
+    return detail
+
+
+def _floor_drops(ios: IPhone, phone: Phone, ios_before: dict, phone_before: dict, allowed: dict) -> dict:
+    """The DM ratchet drops either side counted since the counts given: any but a duplicate, or past `allowed`, which
+    names a side's key as `iphone.<key>` or `phone.<key>`, fails. The group form's are printed beside."""
+    grown, refused = {}, {}
+    sides = (("iphone", _ratchet_drops(ios), ios_before), ("phone", _phone_ratchet_drops(phone), phone_before))
+    for side, now, before in sides:
+        for key, count in now.items():
+            delta = count - before.get(key, 0)
+            if delta <= 0:
+                continue
+            grown[f"{side}.{key}"] = delta
+            # The group form rides other sessions: printed, never judged by a DM trial.
+            group = key.lower().startswith("group")
+            if key not in RATCHET_DUPLICATES and not group and delta > allowed.get(f"{side}.{key}", 0):
+                refused[f"{side}.{key}"] = delta
+    if refused:
+        raise RuntimeError(f"ratchet drops: {refused}; all: {grown}")
+    return {"grown": grown}
+
+
+def _no_reset_of_ours(ios: IPhone, phone_id: str, sent: int | None) -> dict:
+    """The iPhone sent no reset of its own since `lastResetSentAt` read `sent`, so nothing it failed to open fired its
+    heuristic; its drops are printed beside, since a floored reset's follow-ups count there."""
+    now = _floor_entry(ios, phone_id).get("lastResetSentAt")
+    return _floor_check(now == sent, {"lastResetSentAt": now, "before": sent, "iphoneDrops": _ratchet_drops(ios)})
+
+
+def _floor_sender(run: Run, ios: IPhone, phone: Phone, phone_id: str, nonce: str, ended: float) -> None:
+    run.step("sender-floors-settled", lambda: _floor_settled(ios, phone, phone_id, ended))
+    root = (run.step("sender-agree-before", lambda: _ratchet_agreement(ios, phone, phone_id, 120)) or {}).get("rootHash")
+    ios_drops, phone_drops = _ratchet_drops(ios), _phone_ratchet_drops(phone)
+    first = _first_reset(lambda: ios.command(cmd="ratchet", reset=phone_id, timeout=30))
+    if not run.step("sender-iphone-resets", lambda: _not_declined(first)):
+        return
+    root = (run.step("sender-phone-adopts", lambda: _ratchet_agreement(ios, phone, phone_id, 120, other_than=root)) or {}).get("rootHash")
+    answered = time.monotonic()
+    second = ios.command(cmd="ratchet", reset=phone_id, timeout=30)
+    run.step("sender-second-reset-declined-as-replaced", lambda: _floor_check(
+        second.get("declined") == DECLINE_REPLACED, {"declined": second.get("declined"), "afterAnswer": round(time.monotonic() - answered, 1)}))
+    run.step("sender-root-stays", lambda: _ratchet_agreement(ios, phone, phone_id, 30, same_as=root))
+    time.sleep(max(0.0, RESET_FLOOR_SECONDS - (time.monotonic() - answered)))
+    third = ios.command(cmd="ratchet", reset=phone_id, timeout=30)
+    run.step("sender-third-reset-after-the-minute", lambda: _not_declined(third))
+    run.step("sender-phone-adopts-the-third", lambda: _ratchet_agreement(ios, phone, phone_id, 120, other_than=root))
+    _ratchet_round_trip(run, ios, phone, phone_id, nonce, "after-sender")
+    run.step("sender-no-ratchet-drops-but-duplicates", lambda: _floor_drops(ios, phone, ios_drops, phone_drops, {}))
+
+
+def _floor_receiver(run: Run, ios: IPhone, phone: Phone, phone_id: str, nonce: str, ended: float, then: str) -> None:
+    """`receiver`, `start-replay` and `over-the-hold`, which share the run up to the hold (`iphone_ratchet_floor`)."""
+    ios_id = ios.node_id
+    run.step(f"{then}-floors-settled", lambda: _floor_settled(ios, phone, phone_id, ended))
+    root = (run.step(f"{then}-agree-before", lambda: _ratchet_agreement(ios, phone, phone_id, 120)) or {}).get("rootHash")
+    floored, phone_drops = _floored(ios), _phone_ratchet_drops(phone)
+    sent = _floor_entry(ios, phone_id).get("lastResetSentAt")
+    first = _first_reset(lambda: _phone_forced_reset(phone, ios_id))
+    if not run.step(f"{then}-phone-resets", lambda: _not_declined(first)):
+        return
+    adopted = run.step(f"{then}-iphone-adopts", lambda: _ratchet_agreement(ios, phone, phone_id, 120, other_than=root)) or {}
+    adopted_at, root = time.monotonic(), adopted.get("rootHash")
+    run.step(f"{then}-the-phone-opened-the-era", lambda: _floor_check(adopted.get("nodeInitiated") is False, adopted))
+    run.step(f"{then}-phone-restarts", lambda: _phone_relaunch(phone, ios_id))
+    second = _phone_forced_reset(phone, ios_id)
+    if not run.step(f"{then}-phone-resets-again", lambda: _not_declined(second), sinceAdoption=round(time.monotonic() - adopted_at, 1)):
+        return
+    backlog = f"interop ratchet floor backlog {then} {nonce}"
+    _phone_sends(phone, backlog, ios_id)
+
+    def held() -> dict:
+        try:
+            detail = _floored_grew(ios, floored, "flooredResetsHeld", 75)
+        except TimeoutError:
+            if (_floor_entry(ios, phone_id).get("rootHash") or root) != root:
+                raise Inconclusive(f"the second reset was adopted unheld, {round(time.monotonic() - adopted_at)} s after the first") from None
+            raise
+        return {**detail, "sinceAdoption": round(time.monotonic() - adopted_at, 1)}
+
+    if not run.step(f"{then}-iphone-holds-the-second", held):
+        return
+    if then == "over-the-hold":
+        _floor_over_the_hold(run, ios, phone, phone_id, nonce, floored, phone_drops, backlog, root)
+        return
+    if then == "start-replay":
+        run.step("start-replay-iphone-restarts", lambda: _iphone_relaunch(ios), sinceAdoption=round(time.monotonic() - adopted_at, 1))
+        floored = {}  # the counts start again with the process
+        run.step("start-replay-holds-it-again", lambda: _floored_grew(ios, floored, "flooredResetsHeld", 60))
+        run.step("start-replay-adopted", lambda: _adopted_after_restart(ios, phone_id, root))
+    else:
+        run.step(f"{then}-re-opened", lambda: _floored_grew(ios, floored, "flooredResetsReopened", 150))
+        run.step(f"{then}-adopted", lambda: _floored_grew(ios, floored, "flooredResetsAdopted", 30))
+    run.step(f"{then}-backlog-arrives", lambda: _thread_shows(ios, phone_id, backlog, 120))
+    agreed = run.step(f"{then}-pair-agrees-on-the-second", lambda: _ratchet_agreement(ios, phone, phone_id, 120, other_than=root)) or {}
+    run.step(f"{then}-the-phone-opened-it", lambda: _floor_check(agreed.get("nodeInitiated") is False, agreed))
+    _ratchet_round_trip(run, ios, phone, phone_id, nonce, f"after-{then}")
+    run.step(f"{then}-iphone-sent-no-reset", lambda: _no_reset_of_ours(ios, phone_id, sent))
+    run.step(f"{then}-phone-drops-but-duplicates", lambda: _floor_drops(ios, phone, _ratchet_drops(ios), phone_drops, {}))
+
+
+def _adopted_after_restart(ios: IPhone, phone_id: str, root: str | None) -> dict:
+    """The reset the start's replay held, adopted: by the re-open, or live. The floor died with the process, so a copy the
+    phone serves at the relink can be adopted before the first re-offer, which then drops the hold as the root moved.
+    Only the re-open replays the backlog (knit-ios #60), which the next step then waits on."""
+    started = time.monotonic()
+
+    def adopted() -> dict | None:
+        counts = _floored(ios)
+        if counts.get("flooredResetsAdopted", 0):
+            return {"by": "re-open", "flooredResets": counts}
+        if counts.get("flooredResetsDropped", 0) and (_floor_entry(ios, phone_id).get("rootHash") or root) != root:
+            return {"by": "live", "flooredResets": counts}
+        return None
+
+    return {**poll(adopted, 150), "seconds": round(time.monotonic() - started, 1)}
+
+
+def _floor_over_the_hold(
+    run: Run, ios: IPhone, phone: Phone, phone_id: str, nonce: str, floored: dict, phone_drops: dict, backlog: str, root: str | None
+) -> None:
+    """`over-the-hold` past the hold: our reset drops it, the phone answers ours, and no restart brings it back."""
+    ours = ios.command(cmd="ratchet", reset=phone_id, timeout=30)
+    run.step("over-the-hold-iphone-resets", lambda: _not_declined(ours))
+    run.step("over-the-hold-hold-dropped", lambda: _floored_grew(ios, floored, "flooredResetsDropped", 90))
+    agreed = run.step("over-the-hold-phone-answers-ours", lambda: _ratchet_agreement(ios, phone, phone_id, 150, other_than=root)) or {}
+    run.step("over-the-hold-we-opened-the-era", lambda: _floor_check(agreed.get("nodeInitiated") is True, agreed))
+    sent = _floor_entry(ios, phone_id).get("lastResetSentAt")
+    run.step("over-the-hold-iphone-restarts", lambda: _iphone_relaunch(ios))
+
+    def no_hold() -> dict:
+        started = time.monotonic()
+        while time.monotonic() - started < 75:
+            counts = _floored(ios)
+            if counts.get("flooredResetsHeld", 0) or counts.get("flooredResetsAdopted", 0):
+                raise RuntimeError(f"a hold after our reset and a restart: {counts}")
+            time.sleep(3)
+        return {"flooredResets": _floored(ios)}
+
+    run.step("over-the-hold-no-hold-at-start", no_hold)
+    run.step("over-the-hold-stays-on-our-root", lambda: _ratchet_agreement(ios, phone, phone_id, 60, same_as=agreed.get("rootHash")))
+    run.step("over-the-hold-backlog-arrives", lambda: _thread_shows(ios, phone_id, backlog, 240))
+    _ratchet_round_trip(run, ios, phone, phone_id, nonce, "after-over-the-hold")
+    run.step("over-the-hold-iphone-sent-no-reset", lambda: _no_reset_of_ours(ios, phone_id, sent))
+    run.step("over-the-hold-phone-drops-but-duplicates", lambda: _floor_drops(ios, phone, _ratchet_drops(ios), phone_drops, {}))
+
+
+def _floor_missed_reset(run: Run, ios: IPhone, phone: Phone, phone_id: str, nonce: str, ended: float, drops: RatchetDropLog) -> None:
+    run.step("missed-reset-floors-settled", lambda: _floor_settled(ios, phone, phone_id, ended))
+    root = (run.step("missed-reset-agree-before", lambda: _ratchet_agreement(ios, phone, phone_id, 120)) or {}).get("rootHash")
+    ios_drops, phone_drops, mark = _ratchet_drops(ios), _phone_ratchet_drops(phone), drops.mark()
+    run.step("missed-reset-phone-pauses", lambda: _paused(phone, True))
+    bodies = [f"interop ratchet floor old root {index} {nonce}" for index in range(3)]
+    _phone_sends(phone, bodies[0], ios.node_id)
+    first = _first_reset(lambda: ios.command(cmd="ratchet", reset=phone_id, timeout=30))
+    if not run.step("missed-reset-iphone-resets", lambda: _not_declined(first)):
+        return
+    drained = _floor_entry(ios, phone_id).get("prevRootExpiresAt", 0)
+    _phone_sends(phone, bodies[1], ios.node_id)
+    time.sleep(RESET_FLOOR_SECONDS + 1)
+    second = ios.command(cmd="ratchet", reset=phone_id, timeout=30)
+    run.step("missed-reset-iphone-resets-a-minute-later", lambda: _not_declined(second))
+    run.step("missed-reset-drain-restarted", lambda: _floor_check(
+        _floor_entry(ios, phone_id).get("prevRootExpiresAt", 0) > drained > 0, {"first": drained, "now": _floor_entry(ios, phone_id)}))
+    _phone_sends(phone, bodies[2], ios.node_id)
+    run.step("missed-reset-phone-resumes", lambda: _paused(phone, False))
+    for index, body in enumerate(bodies):
+        run.step(f"missed-reset-old-root-dm-{index}-opens", lambda body=body: _thread_shows(ios, phone_id, body, 240))
+
+    def never_failed() -> dict:
+        # The phone's re-seal after it adopts our reset keeps each DM's id, so a DM opened only from that copy shows here.
+        ids = {_phone_message_id(phone, ios.node_id, body) for body in bodies}
+        failed = drops.failed(mark)
+        counts = {key: _ratchet_drops(ios).get(key, 0) - ios_drops.get(key, 0) for key in FAILED_OPENS}
+        return _floor_check(not ids & failed.keys(), {"ids": sorted(ids), "theirsFailed": sorted(ids & failed.keys()), "failedOpens": counts})
+
+    run.step("missed-reset-old-root-dms-never-failed", never_failed)
+    run.step("missed-reset-pair-settles-on-ours", lambda: _ratchet_agreement(ios, phone, phone_id, 300, other_than=root))
+    _ratchet_round_trip(run, ios, phone, phone_id, nonce, "after-missed-reset")
+    run.step("missed-reset-phone-drops-but-duplicates", lambda: _floor_drops(
+        ios, phone, _ratchet_drops(ios), phone_drops, {"phone.RATCHET_RESET_FLOORED": 1}))
+
+
+def _phone_message_id(phone: Phone, conversation: str, body: str) -> str:
+    """The id of the phone's message `body` in `conversation`, from its bridge's `STATE`."""
+    for message in phone.state(conversation, limit=50).get("messages", []):
+        if message.get("body") == body and message.get("id"):
+            return message["id"]
+    raise RuntimeError(f"the phone has no message {body!r} in {conversation}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument(
@@ -9538,6 +9948,11 @@ def main() -> int:
     ios_mention.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_ratchet = commands.add_parser("iphone-ratchet")
     ios_ratchet.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
+    ios_floor = commands.add_parser("iphone-ratchet-floor")
+    ios_floor.add_argument(
+        "--device", required=True, help="the adb serial of a phone the maintainer approved for this session, on a knit-next build with sfms"
+    )
+    ios_floor.add_argument("--trials", default=",".join(FLOOR_TRIALS), help=f"which trials, comma-separated, from {','.join(FLOOR_TRIALS)}")
     ios_soak = commands.add_parser("iphone-soak")
     ios_soak.add_argument("--device", required=True, help="the adb serial of a phone the maintainer approved for this session")
     ios_soak.add_argument("--peer", action="store_true", help="knit-peer on hci0 joins as a third author, linked to the iPhone alone")
@@ -9668,6 +10083,7 @@ def main() -> int:
         ios_typing,
         ios_mention,
         ios_ratchet,
+        ios_floor,
         ios_soak,
         ios_forgets,
         ios_rotate,
@@ -9700,8 +10116,8 @@ def dispatch(arguments: argparse.Namespace) -> int:
     if arguments.command in (
         "iphone", "iphone-wake", "android-keeps-iphone", "iphone-reboot", "iphone-photos", "iphone-resume", "iphone-block",
         "iphone-contact", "iphone-delete",
-        "iphone-react", "iphone-reply", "iphone-typing", "iphone-mention", "iphone-ratchet", "iphone-blind-reads", "bridge",
-        "record-pull",
+        "iphone-react", "iphone-reply", "iphone-typing", "iphone-mention", "iphone-ratchet", "iphone-ratchet-floor", "iphone-blind-reads",
+        "bridge", "record-pull",
     ):
         return {
             "iphone": iphone,
@@ -9718,6 +10134,7 @@ def dispatch(arguments: argparse.Namespace) -> int:
             "iphone-typing": iphone_typing,
             "iphone-mention": iphone_mention,
             "iphone-ratchet": iphone_ratchet,
+            "iphone-ratchet-floor": iphone_ratchet_floor,
             "iphone-blind-reads": iphone_blind_reads,
             "bridge": bridge,
             "record-pull": record_pull,

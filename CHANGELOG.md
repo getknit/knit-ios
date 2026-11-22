@@ -27,6 +27,9 @@ document:
 
 ### Fixed
 
+- Direct messages could stop opening for hours when two people started a chat at the same moment, or when one
+  phone was restored or reset its encryption twice in a row. Your iPhone now brings both sides back in step on
+  its own, and messages sent in the meantime still arrive.
 - Editing your name or photo while your iPhone briefly couldn't read your saved profile could send everyone a
   profile with no name. Knit now skips that edit instead, so people keep seeing your name, and you can make
   the change again.
@@ -55,9 +58,6 @@ document:
 
 ### Fixed
 
-- Direct messages could stop opening for hours when two people started a chat at the same moment, or when one
-  phone was restored or reset its encryption twice in a row. Your iPhone now brings both sides back in step on
-  its own, and messages sent in the meantime still arrive.
 - Knit refused to send a Nearby post with a lone "x" in it, like "2 x 3" or a kiss at the end, and hid one
   that someone else sent. Those posts now go through.
 

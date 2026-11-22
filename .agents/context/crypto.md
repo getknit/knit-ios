@@ -740,6 +740,10 @@ epoch export             "knit/dm/v2/export/epoch": reserved for a spool seal ve
     (`RatchetInbound.Route.mayBeEvidence`). This port's own departure: the start's replay judges the floored predicate
     whatever the dead floor says, under an era the peer opened only (never one we initiated, whose `establishedAt` is our
     clock), and holds such a reset, re-opened as non-evidence, so a restart inside the minute no longer loses it.
+    The gate on evidence needs the hold, so a follow-up opened before its reset still counts toward the heuristic; the
+    device trials saw all three lead once (knit-ios #59, knit/knit-next#357). The backlog replay runs only after a
+    re-open, so a reset held at start that a live copy adopts first leaves its follow-ups unread until the resetter
+    seals them again (knit-ios #60). `interop.py iphone-ratchet-floor` runs these on the iPhone.
 
   A reset is always v2, with the plaintext `{"body": "", "ctl": 1}`.
 - **After a reset we receive,** we re-seal our unacked DMs of the last 24 h under their original id and `sentAt`,

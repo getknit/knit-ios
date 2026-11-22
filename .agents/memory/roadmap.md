@@ -614,7 +614,9 @@ explicit direction.** Update this file in the change that ships an item.
     reader), and add the `link` frame type, never flooded and spending no key request (#44); the once-per-era receipt
     re-seal (knit-next #176, the item below; #48), the race loser's reclaim (4mjm, #49; done 2026-11-22, phase P9a of
     ADR 2026-10.5sk9, schema `v26-prev-root-own-init`) and the floored reset (sfms, #38; done 2026-11-22, phase P9b of
-    ADR 2026-10.5sk9, with qerd's 2026-11-01 sender decline).
+    ADR 2026-10.5sk9, with qerd's 2026-11-01 sender decline). Their device trials passed on 2026-11-22
+    (`interop.py iphone-ratchet-floor`); a follow-up served ahead of its floored reset still counts toward our reset
+    (#59, knit-next #357), and a reset held at start but adopted live skips the backlog (#60).
   - **Blobs** (`blobs-owner`): the file feed's report clamp (`85f80c22a`, #45), group frames served to any peer (hr9f,
     #46, which should close #35), the member-first serve across every conversation (`c39177b66`) and qu98's echo door;
     and a judgment on 4ckq's face re-want (#47).
