@@ -9,7 +9,7 @@ product:
   platforms: [ios]
   category: Communication
 document:
-  updated: 2026-09-25T00:00:00Z
+  updated: 2026-11-21T00:00:00Z
   coverage: complete
   canonical: https://github.com/getknit/knit-ios/blob/main/CHANGELOG.md
   locale: en
@@ -18,6 +18,42 @@ document:
 # Knit for iOS changelog
 
 ## Unreleased
+
+### Added
+
+- Tap a web address in a message to open it, even one the sender started with www rather than https://. A Knit
+  contact link goes straight to Add contact instead of Safari.
+- Your iPhone keeps linking with Android phones once they stop broadcasting who they are over Bluetooth,
+  just as it does with any other phone, and still recognizes your contacts among them before they connect.
+  Your iPhone's own Bluetooth signal names it, as before.
+- Your iPhone now gives each contact a private key that will let their phone recognize yours once Knit stops
+  showing your ID to Bluetooth scanners. Only people you've accepted, verified or written to get one, and
+  blocking someone gives everyone else a new key.
+- Bluetooth connections between phones on this version, or on the matching Knit for Android update, are
+  encrypted, so a radio listening nearby can't read what crosses them, such as who messages whom (knit-next
+  #286). Connections with older Android versions stay unencrypted, as before.
+- With Content filtering on, someone whose name or status uses slurs or profanity now shows under their
+  alias, and a group whose name has a slur shows its members' names instead. Knit won't let you set such a
+  name or status for yourself either.
+
+### Changed
+
+- Your iPhone now sends far less repeat traffic, which saves airtime and battery on every phone nearby.
+  Outside a busy group, it stops resending the members old messages their phones had dropped, and it no longer
+  answers a message you already have with a fresh delivery tick every ten minutes.
+
+### Fixed
+
+- Knit refused to send a Nearby post with a lone "x" in it, like "2 x 3" or a kiss at the end, and hid one
+  that someone else sent. Those posts now go through.
+- Editing your name or photo while your iPhone briefly couldn't read your saved profile could send everyone a
+  profile with no name. Knit now skips that edit instead, so people keep seeing your name, and you can make
+  the change again.
+
+## 1.0.0 — 2026-11-21
+
+> The first release of Knit for iPhone: message the people around you over Bluetooth, with no cell service,
+> account or server.
 
 ### Added
 
@@ -94,8 +130,6 @@ document:
   you mention stand out in the message, and a message that mentions you gets a notification of its own.
 - Pick @everyone when you type @ in a group to mention every other member at once. Each of them sees the name
   stand out and gets a mention notification, on Android phones too.
-- Tap a web address in a message to open it, even one the sender started with www rather than https://. A Knit
-  contact link goes straight to Add contact instead of Safari.
 - Each chat in your list now shows how many messages you haven't read, and opening the chat clears the count.
   Knit's icon adds up your direct messages and groups, while Nearby keeps its count on its own row.
 - Direct and group messages now have forward secrecy between phones running Knit for iPhone or Knit for
@@ -105,18 +139,6 @@ document:
   it or open a GitHub bug form filled in from it, and nothing leaves the phone unless you send it.
 - Try sample chats, on the chat list's first-run card and in Settings, shows Knit with made-up people when
   nobody's nearby. A banner stays above them, and nothing you send there reaches anyone.
-- Your iPhone keeps linking with Android phones once they stop broadcasting who they are over Bluetooth,
-  just as it does with any other phone, and still recognizes your contacts among them before they connect.
-  Your iPhone's own Bluetooth signal names it, as before.
-- Your iPhone now gives each contact a private key that will let their phone recognize yours once Knit stops
-  showing your ID to Bluetooth scanners. Only people you've accepted, verified or written to get one, and
-  blocking someone gives everyone else a new key.
-- Bluetooth connections between phones on this version, or on the matching Knit for Android update, are
-  encrypted, so a radio listening nearby can't read what crosses them, such as who messages whom (knit-next
-  #286). Connections with older Android versions stay unencrypted, as before.
-- With Content filtering on, someone whose name or status uses slurs or profanity now shows under their
-  alias, and a group whose name has a slur shows its members' names instead. Knit won't let you set such a
-  name or status for yourself either.
 
 ### Changed
 
@@ -155,17 +177,6 @@ document:
 - Android phones set to ask before large Bluetooth downloads now ask before fetching a photo from your iPhone
   that's over their limit, as they already do for photos from Android. A big photo in Nearby also spreads more
   slowly between those phones.
-- Your iPhone now sends far less repeat traffic, which saves airtime and battery on every phone nearby.
-  Outside a busy group, it stops resending the members old messages their phones had dropped, and it no longer
-  answers a message you already have with a fresh delivery tick every ten minutes.
-
-### Fixed
-
-- Knit refused to send a Nearby post with a lone "x" in it, like "2 x 3" or a kiss at the end, and hid one
-  that someone else sent. Those posts now go through.
-- Editing your name or photo while your iPhone briefly couldn't read your saved profile could send everyone a
-  profile with no name. Knit now skips that edit instead, so people keep seeing your name, and you can make
-  the change again.
 
 ## About this file
 
