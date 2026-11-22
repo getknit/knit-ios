@@ -9,8 +9,10 @@ topics: [custody, convergence, mesh, security]
 # ADR 2026-11.3jry — custody serves a peer's mail first, in rounds as the link drains, and evicts the most widely carried at the cap
 
 Status: Accepted (2026-11-20). A paired change with knit-next, `custody-carry-policy`, with Android leading, for
-knit-next's issues #352, #349, #276 and #64. It mirrors knit-next's `feat/custody-carry-policy` at `711adae4e`, ahead
-of the pin (see `.agents/context/knit-next.md`). Amends ADR 2026-09.p6nb, ADR 2026-10.9e7g and ADR 2026-10.f5zs.
+knit-next's issues #352, #349, #276 and #64. It mirrors knit-next ADR 2026-11.bmks on knit-next's
+`feat/custody-carry-policy` at `9828710c1`, ahead of the pin (see `.agents/context/knit-next.md`), which amends
+knit-next ADR 006, ADR 2026-10.7mqm, ADR 2026-10.hr9f, ADR 2026-10.a5yj and the wording of ADR 2026-09.tjfb on the
+digest slot. Amends ADR 2026-09.p6nb, ADR 2026-10.9e7g and ADR 2026-10.f5zs.
 
 **Context:** custody aimed for identical stores: the same held set gave the same kept set on every node (knit-next ADR
 006, ADR 2026-09.p6nb). The maintainer decided that what counts is frames reaching their recipients, after knit-next's
@@ -60,19 +62,24 @@ the wire. The numbers are shared law with Android (the contract in `knit-pair`'s
    report would hide a round of frames for a moment. Both production radios report FILE writes; only the demo radio
    and test radios don't, and they count nothing queued. knit-peer's BlueZ radio adds what its L2CAP socket holds below
    the outbox (`OutboxLevel.belowBytes`, `SO_SNDBUF` less `TIOCOUTQ`), read on the caller's thread under the lock the
-   loop takes before a close, and failing safe to the outbox alone. That reading of the kernel is unverified until a run
-   on a real socket. It reads high: the kernel charges each L2CAP segment's whole buffer, plausibly several times its
-   payload at a small MPS, so the line may wait longer than the link needs, and the `hci1` trial measures that ratio
-   before anything scales it. A FILE record's bytes still in the socket after its report count as the file's until the
-   socket has sent them. The stall close
-   still reads the outbox alone, so a socket draining slowly is never closed as stalled. Two slivers are uncounted: a
+   loop takes before a close, and failing safe to the outbox alone. A FILE record's bytes still in the socket after its
+   report count as the file's until the socket has sent them. The stall close still reads the outbox alone, so a socket
+   draining slowly is never closed as stalled. Two slivers are uncounted: a
    file's header, about 200 bytes, written with no report, counts as frames, and a waiting digest replaced by a
    smaller one ahead of a chunk undercounts by the difference.
 
-   **The iPhone doesn't count the buffer below its link yet.** CoreBluetooth's L2CAP stream says nothing of what it
-   holds, its size is unmeasured, and custody has no drain rate for it while no file streams. Until a device trial
-   sizes it, the iPhone counts its outbox alone, which amounts to feeding until the stream blocks. If the stream holds
-   more than a round, an estimate from the stream's own accepted-bytes rate is owed.
+   **The iPhone counts its outbox alone.** Both iOS radios count a byte as written when the stream or socket takes it,
+   and CoreBluetooth's L2CAP stream says nothing of what it holds. A device trial on 2026-11-20 put what sits below the
+   iPhone's outbox at about a round: 15.9 KB at worst on a 1M link, 10.7 KB typically, measured as the bytes the stream
+   accepted less those the far end read while the iPhone's outbox held up to 137 KB waiting. That bound includes bytes
+   in the air. So no estimate is built, and on the iPhone a cut can lose up to about three rounds, and a credit can run
+   a round ahead.
+
+   **knit-peer's line is cautious.** The same trials ran the BlueZ reading on a real socket: 20 relinks and two floods,
+   over 8,000 reads, none on a closed descriptor and none failing, and the backlog fell back to 0 as the link drained.
+   The reading charges about 7.6 times the payload at 247 bytes a segment, so the one-round line trips at about 2 KB of
+   payload, and a link faster than about 21 KB/s would idle between looks. No 1M link is, and nothing scales the
+   reading until one is seen to. The trials' logs are kept outside the repository.
 
    **How soon.** There is no drain event on either radio, so the engine looks every 100 ms
    (`CustodyAnswers.roundCheckMilliseconds`) while an answer is open or a hand-off waits for its credit, and not at all
@@ -199,8 +206,17 @@ What we chose against:
 - **Two carriers serve one newcomer the same first rounds,** because the tiers order alike everywhere. The overlap is
   about a round per extra carrier, and the receiver drops the repeats.
 - **A newcomer below the cap still converges,** now in 16 KiB rounds inside one answer, where it took a digest per
-  slice: 1,000 frames of about 600 bytes take as long as the link takes to write 600 KB. A convergence check by exact sets, such as `interop.py`'s
-  `custody-converges` and the soak's parity check, holds only while the union of the two stores stays under the cap.
+  slice: 1,000 frames of about 600 bytes take as long as the link takes to write 600 KB. A convergence check by exact
+  sets, such as `interop.py`'s `custody-converges` and the soak's parity check, holds only while the union of the two
+  stores stays under the cap.
+- **A paced file feed never stalls while the radio holds its record unreported** (knit/knit-ios#57, which predates
+  this change). While that gap stands, a paced feed to a reader that has stopped never counts as stalled, so "a file
+  comes first" keeps holding the other tiers for that peer until the link goes. Android ends the same wait on its own
+  clock (`FramedLink.pauseFor`).
+- **Trials that flood wait for an allow-only switch** (knit/knit-ios#58). knit-peer can't yet refuse every link but its
+  target, and a phone in range can dial it, so no trial floods, or sends frames a stranger's phone would have to drop,
+  until knit-peer has one. A trial that only links knit-peer and a named lab device may refuse the known phones one by
+  one and check its links first.
 - **The trap:** reading a contact, a sighting or the block list into rule 4 to keep a friend's mail. See "What we chose
   against".
 - **Kept true by:**

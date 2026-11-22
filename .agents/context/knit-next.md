@@ -631,14 +631,15 @@ Kotlin wins.
     updates it. Reading the change turned up knit/knit-next#323: Android screens a group's stored name but draws it
     cleaned.
   - **Mirrored ahead of the pin, unmerged** (ADR 2026-11.3jry, the paired change `custody-carry-policy`, knit-next
-    #352, #349, #276 and #64): custody serves the asking peer's mail and its groups' frames first, in paced rounds,
-    with a not-kept memo and a re-offer back-off, and at the cap evicts the frame most peers are believed to hold. It
-    mirrors knit-next's branch `feat/custody-carry-policy` at `711adae4e` (on `main` `8a78db55d`):
+    #352, #349, #276 and #64): custody serves the asking peer's mail and its groups' frames first, in rounds released
+    as the link drains, with a not-kept memo and a re-offer back-off, and at the cap evicts the frame most peers are
+    believed to hold. It mirrors knit-next ADR 2026-11.bmks on its branch `feat/custody-carry-policy` at `9828710c1`
+    (on `main` `8a78db55d`; the vector's commit is `711adae4e`, with the ledger at `2e6848401`, the rounds and memo at
+    `41af3214d`, release on drain at `9177f0865`):
     `CapEviction.choose` over `ForwardDao.largestBucketRows`, the snapshot read once per write and only when the cap
     binds, counting the newcomer's source, behind the `CarryReader` interface. `vectors/custody-v1.json` was copied
     with `sync-vectors.py --only custody-v1.json` from `711adae4e`: 46 steps, the first 33 unchanged. No wire field,
-    capability bit or schema moves. The branch's later commits carry the ledger, the rounds and the memo on Android,
-    and its ADR ids are recorded here once that half lands. The pin stays.
+    capability bit or schema moves. The branch isn't merged, so the pin stays.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `f018bc8ce`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

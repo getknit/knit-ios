@@ -63,7 +63,7 @@ reports:
   person is detectable by comparing safety numbers or scanning each other's code, not prevented.
 - **A full phone's choice of what to drop can be steered.** Your phone carries messages for other people, and
   once it holds as many as it can, it makes room by dropping one sent by whoever it carries the most from,
-  preferring a message nearby phones say they already hold. A nearby phone with identities of its own can steer
+  preferring a message nearby phones say they already hold. A nearby phone with proven identities of its own can steer
   that choice to a particular message, even the newest. It can't make your phone drop more, or drop from
   someone it carries fewer messages from.
 

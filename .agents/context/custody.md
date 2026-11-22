@@ -153,7 +153,8 @@ A node carries frames for people who are not in range yet. This is store-and-for
   on knit-peer what the BlueZ socket holds, less a streaming file's unwritten records). The engine looks every 100 ms
   while an answer is open or a credit waits. A fixed pace of a round every 2 s came first and was dropped by the
   maintainer's ruling that custody must not cap how fast linked phones sync. The iPhone can't see what CoreBluetooth's
-  L2CAP stream holds below the outbox, so it feeds until the stream blocks, until a device trial sizes that buffer.
+  L2CAP stream holds below the outbox; a device trial put it at about a round (15.9 KB at worst), so it counts its
+  outbox alone. knit-peer's socket reading charges about 7.6 times the payload, which makes its line cautious.
   While a file streams to or from the peer, a round carries only the peer's own mail. Each round is cut fresh from `CustodyStore.liveIndex`, which decodes nothing, in four tiers:
   1. profiles, newest received first;
   2. frames whose `recipientId` is the asking peer, oldest `(sentAt, id)` first;
