@@ -17,7 +17,9 @@ public import KnitWire
 ///
 /// **The memo** (§6) keeps a released id from going to the same peer again until a digest judges it, and an id the peer
 /// did not keep from going again for ``notKeptLapseMilliseconds``. A frame addressed to the peer is never pending and never
-/// marked. Android's is `LinkPushRounds` generalised (`ForwardSync.kt:280-356`, knit-next #235).
+/// marked. An id goes pending at its round's credit, not its cut (the contract, §6, revision 21), so the judging delay and
+/// the lapse run from when the round left this phone; until then the answer keeps it from going again. Android's is
+/// `LinkPushRounds` generalised (`ForwardSync.kt:280-356`, knit-next #235).
 ///
 /// Every entry dies with its row: ``forget(_:)`` for what a write evicted and what a receipt purged, ``clear(_:)`` before an
 /// id is written, so a returning frame never inherits holders or a roster, and ``prune(keeping:)`` against the live ids
@@ -53,11 +55,13 @@ public struct CarryLedger: Sendable {
     }
 
     /// One round's releases to a peer, credited at the first look after it that finds the link drained, unless the peer's
-    /// link went first or ``CustodyAnswers/maxAgeMilliseconds`` passed since `releasedAt`.
+    /// link went first or ``CustodyAnswers/maxAgeMilliseconds`` passed since `cutAt`. Over a proven link (`memo`) the credit
+    /// counts the peer a holder and makes the releases pending; over any link it times them (the contract, §6, revision 21).
     struct Credit: Sendable {
         var peer: NodeId
-        var ids: [ExactKey]
-        var releasedAt: Int64
+        var releases: [CustodySync.Release]
+        var cutAt: Int64
+        var memo: Bool
     }
 
     /// This node, never counted among a frame's holders, or `nil` for a ledger no node owns (a test's).
@@ -126,6 +130,11 @@ public struct CarryLedger: Sendable {
         Set(credits.map(\.peer))
     }
 
+    /// The ids released to `peer` whose round's credit still waits.
+    public func uncredited(for peer: NodeId) -> Set<ExactKey> {
+        Set(credits.filter { $0.peer == peer }.flatMap { $0.releases.map { ExactKey($0.id) } })
+    }
+
     /// The carry a write of `id` reads (§5, key 2): this ledger's holders, and for `id` itself `source` alone, since the peer
     /// it arrived from holds it whether or not we keep it (§3, "source"), and any entry of an id custody does not hold is
     /// stale. A write of an id custody holds evicts nothing and reads no carry.
@@ -153,7 +162,7 @@ public struct CarryLedger: Sendable {
         holders[key] = nil
         rosters[key] = nil
         for index in credits.indices {
-            credits[index].ids.removeAll { $0 == key }
+            credits[index].releases.removeAll { ExactKey($0.id) == key }
         }
     }
 
@@ -163,7 +172,7 @@ public struct CarryLedger: Sendable {
         holders = holders.filter { live.contains($0.key) }
         rosters = rosters.filter { live.contains($0.key) }
         for index in credits.indices {
-            credits[index].ids.removeAll { !live.contains($0) }
+            credits[index].releases.removeAll { !live.contains(ExactKey($0.id)) }
         }
     }
 
@@ -246,9 +255,18 @@ public struct CarryLedger: Sendable {
 
     // MARK: Rounds
 
-    /// A round released `ids` to the proven `peer` at `now`: each but those addressed to the peer goes pending in its memo,
-    /// and all wait for their credit (``credit(_:spreadMax:)``). `linked` are the peers holding a link now, for the memo's
-    /// bound.
+    /// A round cut at `cutAt` released `ids` to `peer`: they wait for their credit (``credit(_:spreadMax:now:linked:)``), which
+    /// times them, and over a proven link (`memo`) counts the peer a holder and makes them pending.
+    public mutating func awaitCredit(_ ids: [CustodySync.Release], to peer: NodeId, cutAt: Int64, memo: Bool) {
+        guard !ids.isEmpty else {
+            return
+        }
+        credits.append(Credit(peer: peer, releases: ids, cutAt: cutAt, memo: memo))
+    }
+
+    /// Releases to the proven `peer` timed at `now`, their round's credit (the contract, §6, revision 21): each but those
+    /// addressed to the peer goes pending in its memo, so the judging delay and the pending lapse run from the credit, never
+    /// the cut. `linked` are the peers holding a link now, for the memo's bound.
     public mutating func released(_ ids: [CustodySync.Release], to peer: NodeId, now: Int64, linked: Set<NodeId>) {
         guard !ids.isEmpty else {
             return
@@ -262,29 +280,47 @@ public struct CarryLedger: Sendable {
             bound(linked: linked)
         }
         memos[peer] = memo
-        credits.append(Credit(peer: peer, ids: ids.map { ExactKey($0.id) }, releasedAt: now))
     }
 
-    /// Credits every hand-off waiting for `peer`: a look after their rounds found its link holding less than one round
-    /// unwritten, so what those rounds released has left this phone (the contract, §3, "handed"). The peer joins the holders
-    /// of every id in them still held.
-    public mutating func credit(_ peer: NodeId, spreadMax: Int) {
+    /// Credits every hand-off waiting for `peer` at `now`: a look after their rounds found its link holding less than one
+    /// round unwritten, so what those rounds released has left this phone (the contract, §3, "handed"). Over a proven link
+    /// the peer joins the holders of every id in them still held, and the releases go pending from `now`
+    /// (``released(_:to:now:linked:)``). Answers every id credited, which the answer times from `now` too.
+    ///
+    /// Android's `ForwardSync.settleHandoffs` (`ForwardSync.kt:711-747`), its `Verdict.Credit`.
+    public mutating func credit(_ peer: NodeId, spreadMax: Int, now: Int64, linked: Set<NodeId>) -> [ExactKey] {
+        var ids: [ExactKey] = []
         for credit in credits where credit.peer == peer {
-            for id in credit.ids {
+            let keys = credit.releases.map { ExactKey($0.id) }
+            ids += keys
+            guard credit.memo else {
+                continue
+            }
+            for id in keys {
                 add(peer, holding: id, spreadMax: spreadMax)
             }
+            released(credit.releases, to: peer, now: now, linked: linked)
         }
         credits.removeAll { $0.peer == peer }
+        return ids
     }
 
-    /// Drops every hand-off still uncredited ``CustodyAnswers/maxAgeMilliseconds`` after its round was cut: it credits
-    /// nothing, as one whose link dropped (the contract, §3), and keeps no look alive.
-    public mutating func expireCredits(now: Int64) {
-        credits.removeAll { now - $0.releasedAt >= CustodyAnswers.maxAgeMilliseconds }
+    /// Drops every hand-off still uncredited ``CustodyAnswers/maxAgeMilliseconds`` after its round was cut, on a link still
+    /// up: it credits no holder and makes nothing pending, and keeps no look alive. Answers each peer's ids, which stay
+    /// released in its answer, timed from the drop, so the first digest past the judging delay from then forgets them and
+    /// they are owed again rather than queued behind themselves (the contract, §6, revision 21; `Verdict.Aged`,
+    /// `ForwardSync.kt:725-731`, and `ForwardSyncTest.aRoundAgedOnAFullLinkIsWrittenAtItsDropAndJudgedFromThere`).
+    public mutating func expireCredits(now: Int64) -> [NodeId: [ExactKey]] {
+        var aged: [NodeId: [ExactKey]] = [:]
+        for credit in credits where now - credit.cutAt >= CustodyAnswers.maxAgeMilliseconds {
+            aged[credit.peer, default: []] += credit.releases.map { ExactKey($0.id) }
+        }
+        credits.removeAll { now - $0.cutAt >= CustodyAnswers.maxAgeMilliseconds }
+        return aged
     }
 
-    /// `peer`'s link went: its memo, pending and not-kept ids alike, and its uncredited hand-offs go. Its holders stay, since
-    /// it still holds what it held.
+    /// `peer`'s link went: its memo, pending and not-kept ids alike, and its uncredited hand-offs go, so what they released
+    /// is owed again at once, never pending (`Verdict.LinkGone`). Its holders stay, since it still holds what it held.
     public mutating func linkDown(_ peer: NodeId) {
         memos[peer] = nil
         credits.removeAll { $0.peer == peer }

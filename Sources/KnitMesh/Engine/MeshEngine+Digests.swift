@@ -30,6 +30,8 @@ extension MeshEngine {
                 listing: listed, from: neighbor, live: live, now: now, spreadMax: stores.custody.limits.spreadMax)
         }
         if custodyAnswers.receive(listed, from: neighbor, now: now) {
+            // An earlier answer's rounds still waiting for their credit stay out of this one's, as they would of their own.
+            custodyAnswers.awaitCredit(custody.ledger.uncredited(for: neighbor), for: neighbor)
             custodyAnswers.lookedAt = now
             serveCustodyRound(to: neighbor, now: now)
         }
@@ -91,10 +93,14 @@ extension MeshEngine {
             return
         }
         custodyAnswers.lookedAt = now
-        custody.ledger.expireCredits(now: now)
-        for peer in custody.ledger.creditsWaiting.sorted() where transport.isLinked(peer) && linkTakesARound(to: peer) {
-            custody.ledger.credit(peer, spreadMax: stores.custody.limits.spreadMax)
+        for (peer, ids) in custody.ledger.expireCredits(now: now) {
+            custodyAnswers.credited(ids, to: peer, now: now)
         }
+        for peer in custody.ledger.creditsWaiting.sorted() where transport.isLinked(peer) && linkTakesARound(to: peer) {
+            let ids = custody.ledger.credit(peer, spreadMax: stores.custody.limits.spreadMax, now: now, linked: Set(neighborIds))
+            custodyAnswers.credited(ids, to: peer, now: now)
+        }
+        custodyAnswers.keepUncredited { custody.ledger.uncredited(for: $0) }
         // By peer, never over a copy of the answers, whose sets a round's write would then copy whole.
         for timing in custodyAnswers.timings {
             if CustodyAnswers.isAged(arrivedAt: timing.arrivedAt, now: now) {
@@ -174,10 +180,8 @@ extension MeshEngine {
         for wire in reply.frames {
             transport.send(wire, to: peer)
         }
-        custodyAnswers.released(reply, to: peer, now: now)
-        if proven {
-            custody.ledger.released(reply.released, to: peer, now: now, linked: Set(neighborIds))
-        }
+        custodyAnswers.released(reply, to: peer)
+        custody.ledger.awaitCredit(reply.released, to: peer, cutAt: now, memo: proven)
         custodyRounds.custodyRoundsCut += 1
     }
 

@@ -72,21 +72,24 @@ import Testing
 
     @Test func aCreditedHandOffAddsThePeerWhenItsLinkDrained() {
         var ledger = CarryLedger(own: alice)
-        ledger.released([CustodySync.Release(id: "a", addressed: false)], to: bob, now: 1000, linked: [])
-        ledger.released([CustodySync.Release(id: "c", addressed: false)], to: carol, now: 1000, linked: [])
+        ledger.awaitCredit([CustodySync.Release(id: "a", addressed: false)], to: bob, cutAt: 1000, memo: true)
+        ledger.awaitCredit([CustodySync.Release(id: "c", addressed: false)], to: carol, cutAt: 1000, memo: true)
         #expect(ledger.creditsWaiting == [bob, carol])
         #expect(ledger.spread(of: "a") == 0, "not before a look found the link drained")
-        ledger.credit(bob, spreadMax: 8)
+        #expect(!ledger.isPending(ExactKey("a"), for: bob, now: 1000), "nor pending before its credit")
+        #expect(ledger.credit(bob, spreadMax: 8, now: 30_000, linked: []) == [ExactKey("a")])
         #expect(ledger.holders(of: "a") == [bob])
+        #expect(ledger.memos[bob]?.pending[ExactKey("a")] == 30_000, "pending from its credit")
         #expect(ledger.spread(of: "c") == 0, "only that peer's")
         #expect(ledger.creditsWaiting == [carol])
     }
 
     @Test func aRoundWhoseLinkWentFirstCreditsNothing() {
         var ledger = CarryLedger(own: alice)
-        ledger.released([CustodySync.Release(id: "a", addressed: true)], to: bob, now: 1000, linked: [])
+        ledger.awaitCredit([CustodySync.Release(id: "a", addressed: false)], to: bob, cutAt: 1000, memo: true)
         ledger.linkDown(bob)
-        ledger.credit(bob, spreadMax: 8)
+        #expect(ledger.credit(bob, spreadMax: 8, now: 2000, linked: []).isEmpty)
+        #expect(!ledger.hasMemo(for: bob), "nothing pending: owed again")
         #expect(ledger.spread(of: "a") == 0)
         #expect(ledger.creditsWaiting.isEmpty)
     }
@@ -104,10 +107,10 @@ import Testing
         var ledger = CarryLedger(own: alice)
         let group = frame("g", members: [alice, bob]).envelope
         ledger.noteWrite(CustodyStoreResult(held: true, changed: true), of: group, from: bob, spreadMax: 8)
-        ledger.released([CustodySync.Release(id: "g", addressed: false)], to: carol, now: 0, linked: [])
+        ledger.awaitCredit([CustodySync.Release(id: "g", addressed: false)], to: carol, cutAt: 0, memo: true)
         #expect(ledger.roster(of: ExactKey("g")) != nil)
         ledger.forget("g")
-        ledger.credit(carol, spreadMax: 8)
+        _ = ledger.credit(carol, spreadMax: 8, now: 0, linked: [])
         #expect(ledger.spread(of: "g") == 0, "an uncredited hand-off dies with the row")
         #expect(ledger.roster(of: ExactKey("g")) == nil)
         // A write that evicts it says so too.
@@ -125,9 +128,9 @@ import Testing
     @Test func aPruneKeepsOnlyTheLiveIds() {
         var ledger = CarryLedger(own: alice)
         _ = ledger.noteDigest(listing: keys("a", "b"), from: bob, live: keys("a", "b"), now: 0, spreadMax: 8)
-        ledger.released([CustodySync.Release(id: "b", addressed: false)], to: carol, now: 0, linked: [])
+        ledger.awaitCredit([CustodySync.Release(id: "b", addressed: false)], to: carol, cutAt: 0, memo: true)
         ledger.prune(keeping: keys("a"))
-        ledger.credit(carol, spreadMax: 8)
+        _ = ledger.credit(carol, spreadMax: 8, now: 0, linked: [])
         #expect(ledger.spread(of: "a") == 1)
         #expect(ledger.spread(of: "b") == 0)
     }
@@ -137,6 +140,7 @@ import Testing
         _ = ledger.noteDigest(listing: keys("a"), from: alice, live: keys("a"), now: 0, spreadMax: 8)
         #expect(ledger.spread(of: "a") == 0)
         ledger.released([], to: bob, now: 0, linked: [])
+        ledger.awaitCredit([], to: bob, cutAt: 0, memo: true)
         #expect(!ledger.hasMemo(for: bob) && ledger.creditsWaiting.isEmpty)
     }
 

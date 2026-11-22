@@ -108,16 +108,16 @@ import Testing
         let answer = try #require(holder.engine.custodyAnswers.answer(for: newcomer.nodeId))
         pipe.cut()
         let crossed = Set(pipe.frames.filter { $0.from == holder.nodeId && ids.contains($0.id) }.map(\.id))
-        let released = Set(answer.released.keys.compactMap { key in ids.first { ExactKey($0) == key } })
+        let released = Set(answer.uncredited.union(answer.released.keys).compactMap { key in ids.first { ExactKey($0) == key } })
         let lost = released.subtracting(crossed)
         #expect(crossed.isSubset(of: released))
         #expect(!lost.isEmpty, "a round was in flight")
         let lostBytes = frames.filter { lost.contains($0.envelope.id) }.reduce(0) { $0 + $1.wire.encoded.count }
         let largest = frames.map(\.wire.encoded.count).max() ?? 0
         #expect(lostBytes < 2 * CustodySync.roundBytes + largest, "under two rounds lost: \(lostBytes) bytes")
-        // The last round cut is credited at a look that finds the link drained after it, which the cut came before.
-        let last = answer.released.values.max() ?? 0
-        let lastRound = Set(answer.released.filter { $0.value == last }.keys.compactMap { key in ids.first { ExactKey($0) == key } })
+        // The last round cut is credited at a look that finds the link drained after it, which the cut came before: its
+        // releases are still uncredited in the answer.
+        let lastRound = Set(answer.uncredited.compactMap { key in ids.first { ExactKey($0) == key } })
         #expect(!lastRound.isEmpty && lastRound.isSubset(of: lost))
         #expect(lastRound.allSatisfy { !holder.engine.custody.ledger.holders(of: $0).contains(newcomer.nodeId) }, "no credit for it")
         let handed = crossed.filter { holder.engine.custody.ledger.holders(of: $0).contains(newcomer.nodeId) }

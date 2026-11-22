@@ -15,7 +15,9 @@ public import KnitWire
 /// links: the engine ends a peer's answer at its link-down.
 ///
 /// A release is remembered only until a digest can speak to it (the contract, §2, revision 7): a digest forgets every id
-/// the answer released at least `JUDGE_AFTER_MS` before it (``CarryLedger/digestSpeaks(to:at:)``). From then the digest
+/// the answer released at least `JUDGE_AFTER_MS` before it (``CarryLedger/digestSpeaks(to:at:)``). A release is timed at
+/// its round's credit, or at the credit's drop on a live link (§6, revision 21); until then it is uncredited, never cut
+/// again and never forgotten. From then the digest
 /// and the memo decide: an id it lists is not owed; a frame addressed to the peer, or any frame on an unproven link, is
 /// owed again; any other frame waits out its not-kept mark. So an answer that digests keep open never withholds a lost
 /// frame past the lapse §6 and §9 promise.
@@ -38,7 +40,11 @@ public struct CustodyAnswers: Sendable {
         /// When that digest arrived.
         public var arrivedAt: Int64
         /// The ids this answer released, each with when, until a digest that can speak to it arrives (``CustodyAnswers/receive(_:from:now:)``).
+        /// A release is timed at its round's credit, or at the credit's drop on a live link (``CustodyAnswers/credited(_:to:now:)``).
         public var released: [ExactKey: Int64] = [:]
+        /// The ids this answer's rounds released whose credit still waits: not cut again, and no digest forgets them, since
+        /// one that arrives meanwhile may have crossed them still below the link (the contract, §6, revision 21).
+        public var uncredited: Set<ExactKey> = []
         /// The senders whose key this answer sent ahead: a key goes to a peer at most once per answer, since the peer's
         /// digest never shows one.
         public var keysSent: Set<ExactKey> = []
@@ -54,7 +60,7 @@ public struct CustodyAnswers: Sendable {
 
         /// Whether `id` is out of this answer's rounds for what the answer knows: listed, released, or arrived since.
         public func skips(_ id: ExactKey) -> Bool {
-            listed.contains(id) || released[id] != nil || arrivedSince.contains(id)
+            listed.contains(id) || released[id] != nil || uncredited.contains(id) || arrivedSince.contains(id)
         }
     }
 
@@ -121,26 +127,59 @@ public struct CustodyAnswers: Sendable {
         answers[index].arrivedSince.insert(ExactKey(id))
     }
 
-    /// `round` went to `peer` at `now`: what it released joins the answer's, stamped `now`, and so do the keys it sent. The
-    /// next round goes once the link drains.
+    /// `round` went to `peer`: what it released joins the answer's, uncredited until a look finds the link drained
+    /// (``credited(_:to:now:)``), and so do the keys it sent. The next round goes once the link drains.
     ///
     /// The answer's sets are trimmed to what custody held as the round read it (``CustodySync/DigestReply/live`` and
     /// ``CustodySync/DigestReply/senders``), which keeps each within custody's row cap however long digests keep the answer
     /// open. A pick and a key only ever come from a live row, so within a round the trim changes nothing. Across rounds it
     /// forgets a released frame that custody evicted: if that frame comes back while the answer is still open, the link's
     /// crossings keep it from going to the peer a second time for 10 minutes, and the digest and the memo decide after.
-    public mutating func released(_ round: CustodySync.DigestReply, to peer: NodeId, now: Int64) {
+    public mutating func released(_ round: CustodySync.DigestReply, to peer: NodeId) {
         guard let index = answers.firstIndex(where: { $0.peer == peer }) else {
             return
         }
-        for release in round.released {
-            answers[index].released[ExactKey(release.id)] = now
-        }
+        answers[index].uncredited.formUnion(round.released.map { ExactKey($0.id) })
+        answers[index].uncredited.formIntersection(round.live)
         answers[index].released = answers[index].released.filter { round.live.contains($0.key) }
         answers[index].arrivedSince.formIntersection(round.live)
         answers[index].keysSent.formUnion(round.keysAhead.map { ExactKey($0.string) })
         answers[index].keysSent.formIntersection(round.senders)
         answers[index].lastCapped = round.isCapped
+    }
+
+    /// `ids`, released to `peer` by an earlier answer's rounds whose credit still waits, wait in `peer`'s answer too: not
+    /// cut again before their credit, which times them here (the contract, §6, revision 21: "Until then the answer remembers
+    /// the release, so the frame isn't cut again"). An answer can end before its last round's credit, and the next digest
+    /// would otherwise find the frame owed, its memo not yet pending.
+    public mutating func awaitCredit(_ ids: Set<ExactKey>, for peer: NodeId) {
+        guard let index = answers.firstIndex(where: { $0.peer == peer }) else {
+            return
+        }
+        answers[index].uncredited.formUnion(ids)
+    }
+
+    /// Keeps of each answer's uncredited ids only those a waiting credit still names, as `waiting` reads the ledger per peer:
+    /// a credit's id dies with its row (``CarryLedger/forget(_:)``, ``CarryLedger/prune(keeping:)``), and a frame written
+    /// again would otherwise be withheld for the rest of the answer, no credit left to time it.
+    public mutating func keepUncredited(_ waiting: (NodeId) -> Set<ExactKey>) {
+        for index in answers.indices where !answers[index].uncredited.isEmpty {
+            answers[index].uncredited.formIntersection(waiting(answers[index].peer))
+        }
+    }
+
+    /// The rounds that released `ids` to `peer` were credited at `now`, or their credit dropped then on a live link: each
+    /// still uncredited in the peer's answer is released as of `now`, so a digest forgets it only past the judging delay
+    /// from then (the contract, §6, revision 21; Android's `Released.at`, `ForwardSync.kt:158-169`). An answer opened after
+    /// the round holds its ids from the opening (``awaitCredit(_:for:)``, revision 22), so the credit stamps them there. An
+    /// id the answer no longer holds, or a peer with no answer, is left alone.
+    public mutating func credited(_ ids: [ExactKey], to peer: NodeId, now: Int64) {
+        guard let index = answers.firstIndex(where: { $0.peer == peer }) else {
+            return
+        }
+        for id in ids where answers[index].uncredited.remove(id) != nil {
+            answers[index].released[id] = now
+        }
     }
 
     /// `peer`'s next round waits for its link to drain. Answers whether it was the answer's first wait.

@@ -14,8 +14,8 @@ extension MeshEngineCustodyAnswerTests {
         let (fixture, ids) = try fixture(dms: 30)
         fixture.engine.receiveDigest(Array(ids.prefix(5)), from: bob.nodeId)
         #expect(fixture.engine.custody.ledger.holders(of: ids[0]) == [bob.nodeId])
-        #expect(fixture.engine.custody.ledger.hasMemo(for: bob.nodeId))
         fixture.advance(Self.look)
+        #expect(fixture.engine.custody.ledger.hasMemo(for: bob.nodeId), "pending from the credit")
         #expect(
             fixture.engine.custody.ledger.holders(of: ids[29]) == [bob.nodeId], "a hand-off credited at the next look, the link drained")
 
@@ -53,8 +53,9 @@ extension MeshEngineCustodyAnswerTests {
         fixture.transport.clear()
         fixture.engine.receiveDigest(held, from: bob.nodeId)
         #expect(Set(served(fixture, to: bob).map(\.envelope.id)) == both)
-        // Bob kept neither: past the judging delay his next digest still lacks both, and only the frame not addressed to him
-        // is marked, while his own mail goes again in the new answer.
+        // Bob kept neither: past the judging delay from the round's credit, at the next look, his next digest still lacks
+        // both, and only the frame not addressed to him is marked, while his own mail goes again in the new answer.
+        fixture.advance(Self.look)
         fixture.advance(CarryLedger.judgeAfterMilliseconds)
         fixture.transport.clear()
         fixture.engine.receiveDigest(held, from: bob.nodeId)
@@ -76,6 +77,7 @@ extension MeshEngineCustodyAnswerTests {
         let (fixture, ids) = try fixture(dms: 1)
         fixture.engine.receiveDigest([], from: bob.nodeId)
         #expect(served(fixture, to: bob).map(\.envelope.id) == ids)
+        fixture.advance(Self.look)
         let released = fixture.clock.monotonicMilliseconds()
         // No digest judges it for ten minutes.
         fixture.advance(CarryLedger.notKeptLapseMilliseconds - 1)
