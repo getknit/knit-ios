@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import importlib.util
 import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -110,6 +111,7 @@ ticketInvite = u "wss://lab.example.org/spool/v1?k=fixture-token", no c, no n,
 """
 
 
+@unittest.skipUnless(shutil.which("git"), "the fixture is a git repository, and the CI image for script tests has no git")
 class SpoolVectorTests(unittest.TestCase):
     def setUp(self) -> None:
         self.directory = tempfile.TemporaryDirectory()

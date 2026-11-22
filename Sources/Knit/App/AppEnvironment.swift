@@ -49,8 +49,6 @@
         private(set) var crashes: CrashStore?
         /// The CoreBluetooth radio, which a demo has none of.
         private let radio: BLERadio?
-        /// The mesh, which hears whether Knit is in the background so its links seek peers there (ADR 2026-10.mueg).
-        private let mesh: Mesh
         /// The one serial stream into the mesh: Knit going to the background and coming back, and the relays' gate and list,
         /// in order, so a quick toggle cannot overtake the one before it (ADR 2026-11.adrq, P6).
         let phases: MeshPhases
@@ -69,7 +67,6 @@
 
         private init(
             session: AppSession,
-            mesh: Mesh,
             phases: MeshPhases,
             radio: BLERadio?,
             preferences: any AppPreferences,
@@ -83,7 +80,6 @@
             replaceIdentity: IdentityReplacer?
         ) {
             self.session = session
-            self.mesh = mesh
             self.phases = phases
             self.radio = radio
             self.preferences = preferences
@@ -274,7 +270,6 @@
             app.director = parts.director
             let environment = AppEnvironment(
                 session: app,
-                mesh: node,
                 phases: MeshPhases(target: parts.demoRelays ? DemoRelays(over: node) : node),
                 radio: parts.radio as? BLERadio,
                 preferences: parts.preferences,

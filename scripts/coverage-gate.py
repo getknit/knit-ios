@@ -22,6 +22,7 @@ import json
 import math
 import os
 import platform
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -49,16 +50,24 @@ def find_inputs(scratch: Path) -> tuple[Path, list[Path]]:
     return Path(profiles[0]), binaries
 
 
-def measure(scratch: Path, threads: int) -> dict[str, tuple[int, int]]:
+def objects(binaries: list[Path]) -> list[str]:
+    """llvm-cov's arguments for every test binary: the first bare, the rest after -object."""
+    arguments = [str(binaries[0])]
+    for binary in binaries[1:]:
+        arguments += ["-object", str(binary)]
+    return arguments
+
+
+def measure(scratch: Path, threads: int) -> tuple[dict[str, tuple[int, int]], dict[str, dict[str, int]]]:
+    """Each target's covered and counted lines, and each target's files with the lines they miss."""
     profile, binaries = find_inputs(scratch)
-    command = [*llvm_cov(), "export", "-summary-only", "-instr-profile", str(profile), str(binaries[0])]
+    command = [*llvm_cov(), "export", "-summary-only", "-instr-profile", str(profile), *objects(binaries)]
     if threads:
         command.append(f"--num-threads={threads}")
-    for binary in binaries[1:]:
-        command += ["-object", str(binary)]
     report = json.loads(subprocess.check_output(command))
     sources = f"{ROOT}{os.sep}Sources{os.sep}"
     totals: dict[str, tuple[int, int]] = {}
+    missed: dict[str, dict[str, int]] = {}
     for entry in report["data"][0]["files"]:
         name = entry["filename"]
         if not name.startswith(sources):
@@ -67,7 +76,41 @@ def measure(scratch: Path, threads: int) -> dict[str, tuple[int, int]]:
         lines = entry["summary"]["lines"]
         covered, count = totals.get(target, (0, 0))
         totals[target] = (covered + lines["covered"], count + lines["count"])
-    return totals
+        if lines["covered"] < lines["count"]:
+            missed.setdefault(target, {})[name] = lines["count"] - lines["covered"]
+    return totals, missed
+
+
+def demangler() -> list[str]:
+    """llvm-cov's flag for swift-demangle, which sits beside it; none when it is missing."""
+    if platform.system() == "Darwin":
+        return ["-Xdemangler", "xcrun", "-Xdemangler", "swift-demangle"]
+    tool = Path(llvm_cov()[0]).with_name("swift-demangle")
+    return ["-Xdemangler", str(tool)] if tool.exists() else []
+
+
+def explain(scratch: Path, files: dict[str, int], limit: int = 10) -> list[str]:
+    """The functions in `files` that miss lines, so a failure on one runner names them. The export's line counts take each
+    implicit closure as a line, the never-run right side of a `??` among them, and `report -show-functions` lists those
+    closures too, where `show` and lcov call the line hit."""
+    worst = sorted(files.items(), key=lambda item: (-item[1], item[0]))[:limit]
+    profile, binaries = find_inputs(scratch)
+    command = [*llvm_cov(), "report", "-show-functions", *demangler(), "-instr-profile", str(profile), *objects(binaries)]
+    report = subprocess.run([*command, *(name for name, _ in worst)], capture_output=True, text=True)
+    out = []
+    current = ""
+    for row in report.stdout.splitlines():
+        if row.startswith("File '"):
+            current = row[len("File '"):].rstrip("':")
+            out.append(f"  {os.path.relpath(current, ROOT)}: {files.get(current, '?')} missed")
+            continue
+        # Name, then regions, miss and cover, lines, miss and cover, branches, miss and cover, apart by two spaces or more.
+        columns = re.split(r"\s{2,}", row.strip())
+        if current and len(columns) == 10 and columns[0] != "TOTAL" and columns[5].isdigit() and int(columns[5]) > 0:
+            out.append(f"    {columns[5]} in {columns[0]}")
+    if len(files) > limit:
+        out.append(f"  and {len(files) - limit} more files")
+    return out
 
 
 def main() -> int:
@@ -79,8 +122,9 @@ def main() -> int:
     args = parser.parse_args()
 
     floors: dict[str, int] = json.loads(args.floors.read_text()) if args.floors.exists() else {}
-    totals = measure(args.scratch_path, args.threads)
+    totals, missed = measure(args.scratch_path, args.threads)
     failures = []
+    short = []
     for target in sorted(set(floors) | set(totals)):
         covered, count = totals.get(target, (0, 0))
         percent = 100.0 * covered / count if count else None
@@ -93,6 +137,7 @@ def main() -> int:
             failures.append(f"{target} has {count} lines but no floor in {args.floors.name}")
         elif percent < floor:
             failures.append(f"{target} is at {percent:.1f}%, under its floor of {floor}%")
+            short.append(target)
         if args.ratchet:
             floors[target] = max(floor or 0, math.floor(percent))
 
@@ -108,6 +153,10 @@ def main() -> int:
         return 0
     for failure in failures:
         print(f"coverage-gate: {failure}", file=sys.stderr)
+    for target in short:
+        print(f"coverage-gate: what {target} misses, by file and function:", file=sys.stderr)
+        for line in explain(args.scratch_path, missed.get(target, {})):
+            print(line, file=sys.stderr)
     return 1 if failures else 0
 
 

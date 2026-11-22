@@ -43,7 +43,8 @@ import subprocess
 import sys
 from pathlib import Path
 
-ROOT = Path(subprocess.check_output(["git", "rev-parse", "--show-toplevel"], text=True).strip())
+# The repository root, from this file rather than git, which the CI image for script tests lacks.
+ROOT = Path(__file__).resolve().parent.parent
 VECTORS = ROOT / "Tests" / "Vectors"
 WIRE = "wire-v1.json"
 KEYED = "keyed-v1.json"

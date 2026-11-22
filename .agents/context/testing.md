@@ -124,6 +124,9 @@ ladder, not the first.
   `-Xswiftc` reaches host tools alone. A test that covers a line only through a dictionary's order is the other
   way coverage differs between machines: the order follows the process and its heap, so make the test hold one
   path.
+- **A target under its floor names what it misses:** the gate lists the target's files with misses, and the
+  functions in each that miss lines, `??` defaults among them as implicit closures. A miss on one runner and not
+  another is read from that CI log, since no run keeps its profile.
 
 ## Conventions
 
