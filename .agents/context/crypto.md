@@ -323,6 +323,7 @@ Swift must count `utf16`, not `Character`s.
 | `RatchetSessions` | KnitMesh's `RatchetSessions`: `sealDm`, `open`, `noteUndecryptable`, `retiredBase`, `sealResetDm`, `sweep`, `forget`, `settle`, `confirmedPeers` (`exportedRoots`' filter) and `dmScopes` (`exportedRoots`, as scope keys); the reset's pure rules in `RatchetResetPolicy` (`isRetiredBase` among them) |
 | `ScopeCrypto` (the DM half), `SpoolPow`, `RatchetCrypto.exportRoot` | `ScopeCrypto`: `dmScope`, `seal`, `open`, `blobId`, `digest`, `fnv64`, `digestBytes`, `digestValue`, over `ScopeKeys`; `SpoolPow`: `utcDay`, `reusable`, `digest`, `leadingZeroBits`, `verify`, `mine`; and `RatchetCrypto.exportRoot` ("Spool scopes", below) |
 | `InboundPipeline`'s ratchet arm, `sendSessionReset` | `MeshEngine.handleRatchetDirect` and `sendSessionReset`, over `RatchetInbound`'s pure rules; the replay of a failed open in `RatchetReplay` |
+| `FlooredResets`, `InboundPipeline.holdFlooredReset` and `dueFlooredResets`, `MeshManager.reopenFlooredResets` and `replayFlooredResetBacklog` | `FlooredResets`; `MeshEngine.holdFlooredReset`, `reopenFlooredResets` and `replayFlooredResetBacklog`; `RatchetSessions.rootGeneration(of:)` and `resetFloorOpen(for:now:)` (phase P9b) |
 | `MeshManager.sealEnvelopeFor`'s DM arm, `flushPendingFor`, `resealRecentDmsTo`, `resealSecondPass` | `MeshEngine.sendRatchet`, `flushPendingDirect`, `resealRecentDirectMessages` and `resealSecondPass` (`ResetReseal` records the pass owed), over `RatchetOutbound`'s pure rules; Android's seal counts in `RatchetSealCounts` |
 | `InboundPipeline.sealDmReceipt`, `MeshManager.sealDeliveryTick`, `originateDeliveryTick`, `canSealTickTo`, `inlineAcksFor` | `MeshEngine.sendSealedReceipt`, `sealLiveTick`, `originateTick` and `canSealTick` behind `RatchetTickSeals`, and `sendRatchet`'s riders, over `RatchetOutbound.receiptPlan` and `inlineAckRoom` |
 | `MeshManager.sendReaction`, `sealDmReaction`, `broadcastSealedProfile`, `currentProfilePayload`, `sendCtlDm`, `sendIntroTo` | `MeshEngine.sendReaction`, `broadcastSealedProfile` and `answerInit` over `sealControl`, every ctl's one seal, with `RatchetOutbound`'s `reactionTarget`, `profile(of:)` and `answerPlan` |
@@ -395,8 +396,9 @@ ADR 2026-11.adrq carries text DMs through knit-next's spools; `.agents/context/s
 - **`RatchetSessions.dmScopes(now:)`** is the only reader, in a unit of its own: per confirmed session, the live scope
   from `root` and, while `prevRootExpiresAt` is past `now`, the retiring one from `prevRoot`. No root or
   `pairwiseRoot` leaves `KnitMesh/Ratchet`. `nil` means a store could not answer, which a caller reads as no change.
-  Kotlin's exception for our own unanswered reset (knit-next ADR 2026-10.j67x) is deferred until the reset's slot and
-  race rules are ported, so such a reset exports nothing. Each scope pair says when its retiring scope's drain ends
+  Kotlin's exception for our own unanswered reset (knit-next ADR 2026-10.j67x's rule 1) is deferred, so such a reset
+  exports nothing; the slot and race rules it stands on, rules 2 and 3, are ported (ADR 2026-10.5sk9's P9a amendment,
+  `RatchetSessions.pendingResetInit`). Each scope pair says when its retiring scope's drain ends
   (`retiringUntil`), and `RatchetSessions.generation` moves at every settlement that may move a row's scopes
   (`Settlement.movesScopes`: a replacement adopted, our reset sealed, our init answered, a root, previous root or
   confirmation an open moved, every row forgotten), once the unit commits, so the plane reads `dmScopes` again only after
@@ -593,7 +595,8 @@ epoch export             "knit/dm/v2/export/epoch": reserved for a spool seal ve
   - `root`, `confirmed`, `weAreInitiator`, `establishedAt` (our clock exactly when we initiated, else the peer's
     `init.at`);
   - the pending init (`initEphPub`, `initPkid`) and the peer's init anchor (`peerInitEphPub`);
-  - `prevRoot` with its role and expiry;
+  - `prevRoot` with its role and expiry, and `prevRootOwnInitAt`, set only while it is our own init lost to a race
+    (knit-next ADR 2026-10.4mjm; schema `v26-prev-root-own-init`, null on every row an earlier build wrote);
   - the DH base (`peerBasePub`, `peerBaseEpoch`);
   - the send chain (`sendEpoch`, its key pair, `sendChainKey`, `sendCount`, when it started, its base);
   - `highestPeAcked` and `lastResetSentAt`.
@@ -653,11 +656,15 @@ epoch export             "knit/dm/v2/export/epoch": reserved for a spool seal ve
   - The loser adopts the winner's root.
   - The winner stays unconfirmed, keeps sealing against the loser's SPK, and reads the loser's root read-only.
   - The loser's late opening DM gets a read-only candidate and is never anchored (#83).
-  - Since knit-next `d9993ed51` (its ADR 2026-10.4mjm, #189) the loser stamps its own abandoned init
-    (`prevRootOwnInitAt`, `RatchetEngine.kt:816`) and moves back onto it when the peer answers under it
-    (`reclaimsPrevRoot`, `:935-949`), so a race and then a restore no longer split the pair onto two roots. This
-    port's `resolveRace` keeps no stamp and reclaims nothing (`RatchetEngine+Resolve.swift:69`), which is owed
-    (knit-next.md, "Owed here").
+  - The loser stamps its own abandoned init (`prevRootOwnInitAt`, its own `establishedAt`, our clock, read before the
+    winner's `at` replaces it) and moves back onto it when the peer seals under it as responder, `sentAt` strictly more
+    than the skew bound past the session's `establishedAt`, both the peer's clock (knit-next ADR 2026-10.4mjm,
+    `RatchetEngine.kt:813-816`, `:926-969` at `f018bc8ce`; phase P9a). The session layer judges the freshness on the raw
+    signed stamp (`RatchetSessions.sealedSinceLostRace`), and it holds on every rung. The reclaim restores
+    `establishedAt` from the stamp, restarts the DH base and `highestPeAcked`, drops the send chain, drains the left root
+    for a fresh 48 h, purges every other root's receive state (`OpenDelta.keepRecvTag`), and stamps the answer floor
+    (`confirmedAt`) as an answered init does. Every other write of `prevRoot` clears the stamp. The start's replay may
+    reclaim too. A race and then a restore no longer split the pair onto two roots.
 - **An open that holds the era** is this port's own (`OpenContext.allowEraChange`, phase P5a), for the start's replay
   out of our own custody: an init the session has not resolved neither races nor replaces it, flagged or not, and the
   frame reads under the roots held, the read-only remnant included. With no session, an init still establishes one.
@@ -667,29 +674,38 @@ epoch export             "knit/dm/v2/export/epoch": reserved for a spool seal ve
   whose root the session does not drain as `prevRoot`. Such a frame establishes, races and replaces nothing, is read
   under the roots held, and with no session is `NO_SESSION`. This is Kotlin's anchor rule (`RatchetEngine.kt:575-578`
   at `4f3cd995`), carried past the lost session row and keyed by the ephemeral. An init of our draining `prevRoot`
-  keeps this port's rules, the race included. Kotlin's j67x (`6d9627b7`) stops that race for a frame that predates our
-  session; this port has not followed it yet. Nor has it followed j67x's third rule: a re-root over our own reset,
-  still unanswered and still draining, keeps the drained root as `prevRoot` (`reRoot`, `RatchetSessions.kt:491-501` at
-  `e63f15f4`), where `sealReset` here always takes the held root. So a peer that never got our first reset, and goes on
-  sealing under the original root, is read by Android for the 48 h drain and not by this port.
+  keeps Kotlin's rules, so it is never answered-before. Since phase P9a that includes j67x's rule 2: in the race branch,
+  such an init on a frame whose raw signed `sentAt` is more than the skew bound before our `establishedAt` is read
+  under the drained root, read-only, with no remnant and no purge (`OpenContext.predatesSession`,
+  `RatchetSessions.predates`, `RatchetEngine.kt:659-668` at `f018bc8ce`); one sealed since still races. And j67x's
+  rule 3: a re-root over our own reset, still unanswered and still draining (`RatchetSessions.pendingResetInit`), keeps
+  that reset's `prevRoot`, with its role, and restarts its 48 h (`reRoot`, `RatchetSessions.kt:750-786` at `f018bc8ce`).
+  So a peer that never got our first reset, and goes on sealing under the original root, is read for the drain.
 - **Opening, in three passes, per candidate root:**
   1. the skipped key;
   2. the live chain;
   3. a fresh derivation, with one DH shared across candidates.
 
   Each candidate stops at the first pass where it holds something of its own.
-  - **The verdict** when nothing opens: `DUPLICATE`, then `AEAD_FAIL`, then `BAD_HEADER`, then `EPOCH_GONE`.
+  - **The verdict** when nothing opens: `RESET_FLOORED`, then `DUPLICATE`, then `AEAD_FAIL`, then `BAD_HEADER`, then
+    `EPOCH_GONE`. `RESET_FLOORED` is a flagged init the replacement floor alone refused whose root derives to none the
+    session holds, active, `prevRoot` live or past its drain, or a race's other root (knit-next ADR 2026-11.sfms, which
+    amends gcrd's ranking; `RatchetEngine.kt:575-603` at `f018bc8ce`). Its one X3DH runs in `RatchetEngine.open` after the
+    ladder, which does not throw, so an ephemeral X25519 refuses is a throw, never `AEAD_FAIL` or `DUPLICATE`.
     `DUPLICATE` never stops the ladder early.
   - **A resolution that purges** reads nothing stored.
 - **Era effects** apply only on a fresh derivation under the active root (knit-next ADR 2026-09.pz9g): adopting the
-  peer's epoch as our base, raising `highestPeAcked`, and confirming an initiator.
+  peer's epoch as our base, raising `highestPeAcked`, and confirming an initiator. The one exception is the race
+  loser's reclaim (above), on any rung: the root it opened under becomes the active one in the same delta.
 - **Receive rows and skipped keys** carry the tag of the root that derived them, and a candidate reads only its own
   (knit-next ADR 2026-10.gcrd).
 - **The exists-gate** acknowledges a signed frame whose id is a stored message and never opens it. That is what
   makes deleting spent keys safe under custody's re-serves. A ctl frame has no row, so its re-serves reach the
   ratchet.
 - **The reset heuristic** (`InboundPipeline.kt:1816-1900`, `RatchetSessions.kt:295-311`):
-  - It counts authenticated `NO_SESSION`, `EPOCH_GONE` and `AEAD_FAIL` only, never `DUPLICATE` or `BAD_HEADER`.
+  - It counts authenticated `NO_SESSION`, `EPOCH_GONE` and `AEAD_FAIL` only, never `DUPLICATE`, `BAD_HEADER` or
+    `RESET_FLOORED`. While a floored reset is held for a peer, a failed frame of that peer's carrying the held init's
+    ephemeral is its follow-up and counts nothing either (`explains`, `InboundPipeline.kt:2961-2967`).
   - It needs three distinct ids from the era it would abandon, and 6 h since our last reset.
   - An `EPOCH_GONE` sealed against one of our epochs that retention retired, `pe ≥ 1` below both the lowest local epoch
     number we hold and `highestPeAcked`, is doomed and never counts (knit-next ADR 2026-10.9wvr,
@@ -703,14 +719,27 @@ epoch export             "knit/dm/v2/export/epoch": reserved for a spool seal ve
     at once nor calls `unreadable()` for it. The source rides `ratchetReplay.keep` and a seed's wait (`PendingGroupKeys`);
     `PendingInbound` never holds a spool frame, since the spool's door verifies without parking.
 - **Reset plans** (knit-next ADR 2026-09.qerd; `RatchetSessions.kt:393-469`):
-  - **Re-root:** a fresh init flagged `FLAG_RESET`, numbering again from 1.
+  - **Re-root:** a fresh init flagged `FLAG_RESET`, numbering again from 1. Over our own unanswered reset, still
+    draining, the slot keeps the drained root (j67x's rule 3, above).
   - **Mark:** flag our own init that is still unanswered.
   - **Decline:** inside the peer's 60 s floor.
-  - Since knit-next `57b2a85c6` (its ADR 2026-11.sfms, amending qerd, #251) a reset the receiver's replacement floor
-    refuses is held (`RESET_FLOORED`, `FlooredResets.kt`, `InboundPipeline.kt:2678-2732`) and opened again when the
-    floor ends, and a sender declines every cause but after-wipe for a minute after a replacement answer
-    (`replacedAt`, `RatchetSessions.kt:305`, `:708`). This port has neither, and exempts an on-demand reset
-    (`RatchetResetPolicy.swift:134-139`): owed. sfms says "knit-ios has no DM ratchet", which is stale.
+  - **Decline after a replacement answered** (qerd's 2026-11-01 amendment, phase P9b): `RatchetSessions.replacedAt`,
+    in memory, is stamped beside `confirmedAt` when the peer answered an init of ours that replaced a session of its own:
+    a reset or a marker, a reclaim, or a race we won (`peerReplacedWith`, `RatchetSessions.kt:642-650`). For a minute from
+    it, `RatchetResetPolicy.plan` declines every cause but after-wipe, whatever our role is now, as `replacedInit` ("the
+    peer adopted our reset under a minute ago"), after the heuristic's `answeredInit` rule, so a case that rule decides
+    keeps the `decidedBy` the vectors pin. A first contact stamps nothing. Only a forget clears it; our own re-root keeps it.
+  - **A reset the receiver's floor refused** (knit-next ADR 2026-11.sfms, #251; phase P9b): dropped as
+    `DropReason.ratchetResetFloored`, never evidence, and held whole in memory if signed, one per peer, the newest by the
+    sender's `sentAt` (`FlooredResets`), with the per-peer root generation read before the open. Any root change since
+    (`RatchetSessions.rootGeneration(of:)`: a replacement or race adopted, a reclaim, our re-root, a forget, never the
+    global `generation`) drops the hold. The 60-second re-offer re-opens each hold whose floor is open
+    (`resetFloorOpen(for:now:)`, the open path's wall clock), verified again, past the router, custody and the flood, as a
+    first verdict of its original source, so the adoption's recovery runs. Adopted, it replays the peer's rowless ratchet
+    DMs in our custody whose header carries that init, oldest first, as non-evidence
+    (`RatchetInbound.Route.mayBeEvidence`). This port's own departure: the start's replay judges the floored predicate
+    whatever the dead floor says, under an era the peer opened only (never one we initiated, whose `establishedAt` is our
+    clock), and holds such a reset, re-opened as non-evidence, so a restart inside the minute no longer loses it.
 
   A reset is always v2, with the plaintext `{"body": "", "ctl": 1}`.
 - **After a reset we receive,** we re-seal our unacked DMs of the last 24 h under their original id and `sentAt`,
@@ -718,7 +747,8 @@ epoch export             "knit/dm/v2/export/epoch": reserved for a spool seal ve
   the one exception to "signed once" (ADR 2026-09.2ved, amended): each committed first verdict of a reset from that
   peer within the day signs each DM still unacked once more, with no per-id guard, in Kotlin as here. This port
   re-seals from phase P5b, once the reset's first verdict commits and never from the start's replay, and flushes its group
-  seeds from phase P6b, right after the re-seal, forced past the outbox's ack but floored.
+  seeds from phase P6b, right after the re-seal, forced past the outbox's ack but floored. A floored reset the start's
+  replay held gets its first verdict at its re-open, which then re-seals, flushes and answers its init (phase P9b).
 - **The re-seal goes out twice** (knit-next ADR 2026-10.dmgw, #171; phase P7f, `ResetReseal`): `ResetReseal` records
   the ids the first pass takes, per peer and in memory, before the first copy leaves. The 60-second re-offer, as its
   first step and whoever is linked, seals once more those still unacked `SeenSet.defaultWindowMilliseconds` + 60 s

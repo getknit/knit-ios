@@ -1958,3 +1958,150 @@ to ten. #171's second pass (phase P7f) is bounded with it. The reset is a new er
 receipt under the new root, and the second pass eleven minutes later finds that receipt held, in the same era and inside
 its floor, and seals nothing. At a peer that already read the first copy, the two passes now buy one receipt where they
 bought two.
+
+**Amended 2026-11-22, phase P9a (the race and reset rules knit-next fixed, knit-ios #15 and #49):** this port takes
+knit-next ADR 2026-10.j67x's rules 2 and 3 and ADR 2026-10.4mjm's reclaim, as the Kotlin has them at the pin `f018bc8ce`
+(`RatchetEngine.kt:659-668`, `:795-852`, `:907-969`, `:1011-1019`; `RatchetSessions.kt:265-318`, `:750-786`, `:1040-1097`).
+Without them two honest phones can sit on two roots after a reset or a race until a heuristic reset fires.
+
+- **Rule 2, the replaced era's own init is no race.** In `resolveSession`'s race branch, after this port's
+  `allowEraChange` and `initAnsweredBefore` guard, an init that derives our draining `prevRoot`, on a frame that predates
+  our session, is read under that root, read-only, with no remnant and no purge. "Predates" is `RatchetSessions.predates`:
+  the frame's raw signed `sentAt`, never `clampFuture`'s, more than five minutes before our `establishedAt`, our clock since
+  we initiated. A frame sealed since still races. The guard ahead of it already reads such an init under the held roots,
+  so the start's replay gets the same answer, and such an init is never answered-before, since `isAnsweredBefore` already
+  excludes an init that derives the draining `prevRoot`. A frame with no stamp, a vector replay's, qualifies for neither
+  judgement.
+- **Rule 3, the drained root kept.** A re-root over our own reset, still unanswered and still draining
+  (`RatchetSessions.pendingResetInit`, one helper rule 1 can reuse), keeps that reset's `prevRoot` with its role and
+  restarts its 48 h. Before, `sealReset` always took the held root, which the peer may never have derived.
+- **Rule 1 stays out.** Our unanswered reset's spool scopes are still deferred with ADR 2026-11.adrq's other items, so
+  `dmScopes` exports nothing for such a reset.
+- **The reclaim.** The race loser's branch stamps its abandoned init's own `establishedAt` as `prevRootOwnInitAt`, read
+  before the winner's `at` replaces it. Every other write of `prevRoot` clears it: the replacement, the winner's branch,
+  the drain running out, the reclaim itself and the re-root. A frame that opens under that `prevRoot`, on any rung,
+  sealed by the peer as its responder with `sentAt` strictly more than five minutes past the session's `establishedAt`
+  (both the peer's clock, `RatchetSessions.sealedSinceLostRace`), moves the session back onto it as its confirmed
+  initiator. The swap restores `establishedAt` from the stamp, restarts the DH base and `highestPeAcked`, drops the send
+  chain and drains the left root for a fresh 48 h. The plan left `highestPeAcked` out; left set, the retired-base gate
+  would read the reclaimed era's `EPOCH_GONE`s as doomed. The purge keeps the reclaimed root's receive state
+  (`OpenDelta.keepRecvTag`, in both stores). The usual root-change floors follow: `lastReplacementAt`, the heuristic's ids,
+  `movesScopes`, and the re-ack ledger (ADR 2026-10.2ehy), which compares `rootTag(of:)`.
+- **The reclaim stamps the answer floor** (the design pass's blocking finding). `Settlement.initAnsweredAt` is set when
+  `answeredOurInit` or the delta says `reclaimed` (`commitOpen`, `RatchetSessions.kt:300-306`). A race loser is a confirmed
+  responder, which `answeredOurInit` never matches, so without it our heuristic re-rooted inside the minute the peer
+  started when it adopted our init, and Android before 2.12 drops that as `DUPLICATE`. Kotlin also stamps `replacedAt` on
+  the same flag; that is knit-next ADR 2026-11.sfms's, owed with knit-ios #38.
+- **The start's replay may reclaim.** The stamp guards itself, since every other write of the slot clears it. A stamp held
+  at start means no era has changed since the race was lost, and a replayed frame sealed past the margin is the same
+  evidence as a live one. A responder's frame carries no init, so the start's guard has nothing to hold back.
+- **The schema.** `v26-prev-root-own-init` adds a nullable `ratchet_sessions.prevRootOwnInitAt` (knit-next's
+  `MIGRATION_28_29`). A row an earlier build wrote reads null, so a session that lost its race before the update never
+  reclaims, as before. The stamp stays out of the ratchet vectors' state digest, which knit-next pins without it. No wire
+  byte, vector, capability bit, ratchet label or `decidedBy` string moves, and nothing is paired: only the loser acts, on
+  its own row.
+- **What shows it.** A log line, `mesh reclaimed our own init with <peer>`, new, so no harness pattern moves; the control
+  surface's `answers` adds `ratchetSwappedBack` beside `introsAnswered`; and each peer's `ratchet` dump adds
+  `prevRootOwnInitAt`, under Android's names.
+- **The test trace.** knit-next's own trace restores the race's loser. This port's restore keeps the Keychain, and with it
+  the inits the loser answered (ADR 2026-10.wcex), so the loser's restored engine reads the winner's re-served init as
+  answered and the pair converges even with the reclaim forced off. That trace cannot fail here. So
+  `RatchetRestoreLabTests.aRaceAndThenTheWinnersRestoreFromABackupMeetOnOneRoot` restores the winner instead,
+  Android-style, from a backup of its identity and prekeys taken before the race, with no answered init. The winner
+  establishes from the loser's re-served abandoned init and answers past the margin, and only the reclaim puts the pair
+  on one root. With the restored node the larger id it is a no-regression pin. There the restored node re-derives the
+  stayer's root as a fresh responder, and the stayer's base names an epoch the restore lost, which only a reset heals. That
+  is the restore's, not the reclaim's: this port's reinstall resets at once, and so does Android's restore.
+- **A pin that moved.** `RatchetSessionLabTests`' knit-next #89 defection, both resets apart with the larger id's released
+  last, now heals within the hour. The larger id's reset is the init it lost the race on, and the smaller id seals under it
+  as its responder. Once it seals past the margin the larger id reclaims it, so the pair meets on the larger id's reset.
+  It stays split, and pinned as a known issue, until then. The other #89 order, the smaller id's pre-reset DMs lost, is
+  unchanged.
+- **Limits, Kotlin's own.**
+  - A peer clock slow by more than five minutes makes its live frames sealed soon after our reset look predating, so they
+    are read read-only and nobody confirms until the gap passes. A fast one lets its stale frames race, the old bug, for
+    that window.
+  - 4mjm's cross-clock replacement door is not built: the restored side confirmed on its reset before the re-serve, with
+    the winner's clock ahead.
+  - A clock stepped back across a restore defeats the freshness half, and the heuristic heals that pair as before.
+
+**Amended 2026-11-22, phase P9b (a reset the receiver's floor refuses, knit-ios #38):** this port takes knit-next ADR
+2026-11.sfms and the 2026-11-01 amendment to its ADR 2026-09.qerd, as the Kotlin has them at the pin `f018bc8ce`
+(`RatchetEngine.kt:222-233`, `:438-443`, `:575-603`, `:670-695`; `RatchetSessions.kt:133-168`, `:293-311`, `:642-723`,
+`:787`, `:929-930`; `FlooredResets.kt`; `InboundPipeline.kt:1809`, `:2816-2915`, `:2961-2967`; `MeshManager.kt:4206-4207`,
+`:6165-6240`). Without it a resetter that resets twice inside the receiver's minute sits unconfirmed until its six-hour
+heuristic, every confirmed-only path shut, and a forced reset right after an answered one is refused silently. No wire
+byte, vector, schema, capability bit, ratchet label or floor moves, and nothing is paired: both halves are in memory, on
+Android too.
+
+- **The verdict.** `resolveSession` splits the old combined test into Kotlin's order: stale, then refused by the floor or
+  with no prekey, then the race remnant, then the replacement. A flagged init the floor alone refused is remembered
+  (`ResolvedSession.flooredReset`), only past this port's `allowEraChange` and `initAnsweredBefore` guard. Only when
+  nothing opens does `RatchetEngine.open` derive its root and answer `RESET_FLOORED` for a root the session does not hold:
+  the candidates', the active root, or `prevRoot`, live or past its drain and not retired. It outranks `DUPLICATE`. The
+  derivation runs after the ladder, which does not throw, so an ephemeral X25519 refuses throws out of the open, which
+  the session layer answers `rejected`, counting nothing. `DropReason.ratchetResetFloored` is new, never evidence.
+- **The hold.** `FlooredResets`, in memory, one per peer, the newest by the sender's `sentAt`, holds the signed frame as it
+  came: its signature and signed bytes, its envelope, the route's source (a link, our custody or a spool), the init's
+  ephemeral and the peer's root generation read before the open. It is taken inside the failure. The signed bytes ride
+  the frame's route (`RatchetInbound.Route.wire`), set by every door that has them: a link's, a spool's, the start's
+  replay and the custody replays. An unsigned frame is never held, and nor is one on a route with no bytes, as Kotlin's
+  `source` is null on such a path. A failed unit's kept copy (`RatchetReplay`) keeps its route, so those bytes now count toward
+  the replay's 4 MiB bound.
+- **The per-peer root counter** (the design pass's blocking finding). `RatchetSessions.rootGeneration(of:)` moves in
+  `settle` at Kotlin's sites alone: a replacement or race adopted (`replacementAdoptedAt`, which a reclaim's purge sets
+  too), our own re-root, a forget (`Settlement.movesRoot`). Never the global `generation`, which moves at any peer's
+  settlement and would drop every hold with it. Any move drops the hold, logged and counted.
+- **The evidence gate.** While a hold stands at the generation read before a frame's open, that peer's failed frame
+  carrying the held init's ephemeral never reaches `noteUndecryptable`.
+- **The re-open.** A step of the 60-second re-offer, beside the reset re-seal's second pass, with no task of its own (ADR
+  2026-09.gq84). It takes each hold whose floor is open on the open path's wall clock (`resetFloorOpen(for:now:)`),
+  verifies it again against the pin, read in a store unit of its own (a read that fails puts the hold back for the next
+  re-offer, never reading as a pin gone), and hands it to the chat door past the router's seen set, custody and the
+  flood, as a first verdict of its original source; the session it leaves is read in a unit too. So the init is answered, which confirms the resetter, and an adoption runs every
+  adoption's recovery: the purge, the re-seal, the forced seed flush. The envelope's raw `sentAt` reaches
+  `RatchetSessions.open`, whose `sentAt` now has no default, so no door leaves rule 2 and the reclaim off by leaving it out.
+- **The backlog replay, non-evidence.** Adopted, the session anchored on the held init, the re-open replays that peer's
+  rowless ratchet DMs to us in our custody whose header carries that init, by the sender's stamp. Each opens as a first
+  verdict, adopted and delivered, but none is reset evidence (`RatchetInbound.Route.mayBeEvidence`): custody keeps a frame
+  a spool served without saying so, and a spool's frame never is (ADR 2026-11.adrq). Kotlin's are first verdicts in full.
+- **The start replay's hold, this port's departure.** The start's replay out of our custody judges the floored predicate
+  whatever the floor said, since it died with the process: a flagged init under an era the peer opened (we are its
+  responder, so `establishedAt` is the peer's own `init.at` and the comparison reads one sender's stamps), newer than the
+  session held, never answered before a reinstall, our prekey held, and a root never held. The frame is held, and the
+  re-open runs it as a first verdict with its original source, as non-evidence: custody keeps a frame a spool served
+  without saying so, and a spool's frame never is (ADR 2026-11.adrq), so `FlooredResets.Held.mayBeEvidence` is false for
+  a hold the start's replay took. The replay itself still moves no era. iOS ends a suspended Knit often, and the hold and
+  the floor die with it; without this, in one node-id order, the pair would wait for the resetter's next reset, up to six
+  hours. Kotlin replays nothing from its own custody.
+  - **Why only under the peer's era** (round 2's blocking finding). Under an era we opened, a re-root or a reclaim of ours,
+    `R.at > establishedAt` compares the peer's clock with ours, and the root-generation drop that retired a hold taken
+    before our own re-root died with the process too. A peer clock ahead would let the re-open adopt a root the peer has
+    left: a silent confirmed split, 48 h of read-only drains and then up to six hours dark.
+  - **What keeps an adopted reset out.** The answered-inits ledger (ADR 2026-10.wcex) holds every init we adopted for 48 h,
+    eight a peer, past custody's 24 h, so a reset we once adopted never comes back at a start. That holds for adopted
+    resets only; one never adopted is kept out by the era rule above.
+  - **No window on the sender's stamp.** Holding at start only for an `init.at` within the floor and the skew of our wall
+    clock was considered and refused: it is a cross-clock gate, and it would cut the case this departure exists for, a
+    hold before a long suspension. The superseded reset it would guard against needs us to be the era's initiator, which
+    the era rule already excludes.
+- **The sender.** `RatchetSessions.replacedAt`, in memory, is stamped beside `confirmedAt` when the answer to an init of
+  ours that replaced a session of the peer's commits: a reset or a marker (`lastResetSentAt > 0`, at or past
+  `establishedAt`), a reclaim (P9a's `Settlement.reclaimed`), or a race we won (`peerInitEphPub` set). For a minute from
+  it, `RatchetResetPolicy.plan` declines every cause but after-wipe, whatever our role is now, as the new rule
+  `replacedInit`, with Kotlin's words. It runs after the heuristic's `answeredInit`, so the `decidedBy` the ratchet vectors
+  pin is unchanged. A first contact stamps nothing, so an on-demand reset right after it still goes. A forget clears it;
+  our own re-root does not.
+- **What shows it.** New log lines: `mesh holding floored reset <id> from <peer> until our replacement floor ends`, `mesh
+  dropped floored reset <id> from <peer>: <why>`, `mesh no hold for floored reset …`, `mesh re-opening floored reset …`,
+  `mesh re-opened floored reset <id> from <peer>: adopted|held again|not adopted`, and `mesh reset gate: <id> from <peer>
+  rides the reset we hold floored`. No harness pattern moves. The control surface's `ratchet` reply adds `flooredResets`
+  (`flooredResetsHeld`, `flooredResetsDropped`, `flooredResetsReopened`, `flooredResetsAdopted`, this port's names, since
+  Android counts only the drop), and `status`'s `dropped` shows `ratchetResetFloored`.
+- **The residue.** Android accepts that a restart inside the minute loses the re-open. Here the start's replay holds the
+  reset again, so what is left is a reset a restart found nowhere in our custody: one handed us point to point, or one
+  custody's quota or byte cap evicted; and, by the era rule, a reset floored under a reclaim or right after our confirmed
+  re-root and then lost to a restart, which waits for the resetter's next reset, as on Android. A session read that fails
+  just after a re-open's adoption commits skips the backlog, whose DMs then wait in our custody for the next start's
+  replay; a retry at the next re-offer is a follow-up. A reset the sender declines inside the peer's minute is left to
+  the sender's next trigger, the heuristic or a person, as in Kotlin.

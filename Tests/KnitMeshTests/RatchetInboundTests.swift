@@ -113,6 +113,13 @@ import Testing
             replay.keep(relay("big-\(index)", payload: third), route: live)
         }
         #expect(replay.take().map(\.envelope.id) == ["big-1", "big-2", "big-3"], "past the bytes, the oldest goes first")
+
+        // The signed bytes a route carries for a floored reset's hold count too.
+        let wired = RatchetInbound.Route(source: .custody, signed: true, origin: .firstVerdict, wire: WireEnvelope(sig: [1], signed: third))
+        for index in 0..<2 {
+            replay.keep(relay("wired-\(index)", payload: third), route: wired)
+        }
+        #expect(replay.take().map(\.envelope.id) == ["wired-1"], "a payload and its signed copy, twice, pass the bound")
     }
 
     @Test func theReplayKeepsASignedCopyAgainstAnUnsignedOneAndLetsACommittedIdGo() {

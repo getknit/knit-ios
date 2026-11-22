@@ -82,8 +82,13 @@ public struct RatchetOpenDelta: Sendable, Equatable {
     public var skippedInserts: [RatchetSkippedKeyRecord]
     /// The tag of the skipped key the frame spent at the header's `(se, n)`, or `nil`.
     public var consumedSkippedTag: Int64?
-    /// Whether a root change was adopted: every receive chain and skipped key held for the peer goes first.
+    /// Whether a root change was adopted: every receive chain and skipped key held for the peer goes first, but
+    /// ``keepRecvTag``'s.
     public var purgePeerRecvState: Bool
+    /// With ``purgePeerRecvState``, the root tag whose chains and skipped keys the purge keeps: a reclaim's, whose rows are
+    /// the era it moves back to (`keepRecvTag`, knit-next `RatchetRepository.kt:62-70` and `RatchetDao.kt:87-92`,
+    /// `:132-137` at `f018bc8ce`). `nil` purges everything.
+    public var keepRecvTag: Int64?
 
     /// An open's changes.
     public init(
@@ -91,13 +96,15 @@ public struct RatchetOpenDelta: Sendable, Equatable {
         recvEpoch: RatchetRecvEpochRecord?,
         skippedInserts: [RatchetSkippedKeyRecord] = [],
         consumedSkippedTag: Int64? = nil,
-        purgePeerRecvState: Bool = false
+        purgePeerRecvState: Bool = false,
+        keepRecvTag: Int64? = nil
     ) {
         self.session = session
         self.recvEpoch = recvEpoch
         self.skippedInserts = skippedInserts
         self.consumedSkippedTag = consumedSkippedTag
         self.purgePeerRecvState = purgePeerRecvState
+        self.keepRecvTag = keepRecvTag
     }
 }
 

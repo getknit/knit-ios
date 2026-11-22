@@ -274,16 +274,20 @@ public struct RatchetSealCounts: Sendable, Equatable {
     }
 }
 
-/// The init answers we sent, under the name of Android's metric (`introsAnswered`, `MeshMetrics.Keys`, `MeshMetrics.kt:1466-1474`,
-/// at `cbf2a487`): the one of that group's seven this port counts, since it sends no contact-card intro and reports its
-/// key recovery elsewhere (phase P5e).
+/// The init answers we sent, and our own inits reclaimed, under the names of Android's metrics (`introsAnswered` and
+/// `ratchetSwappedBack`, `MeshMetrics.Keys`, knit-next `MeshMetrics.kt:2209-2218` at `f018bc8ce`): the two of that group
+/// this port counts, since it sends no contact-card intro and reports its key recovery elsewhere (phase P5e, P9a).
 public struct RatchetAnswerCounts: Sendable, Equatable {
     /// Sealed frames we sent to confirm a still-unconfirmed peer's session, each an answer to an init its frame carried
     /// (`introsAnswered`, `onIntroAnswered`, `IntroSync.kt:239`).
     public internal(set) var introsAnswered = 0
+    /// Sessions moved back onto our own init, lost to a race, because the peer sealed under it as responder
+    /// (``RatchetSessions/reclaims``; `ratchetSwappedBack`, knit-next ADR 2026-10.4mjm).
+    public internal(set) var ratchetSwappedBack = 0
 
-    /// Counts as stated, zero unless given: nothing answered yet.
-    public init(introsAnswered: Int = 0) {
+    /// Counts as stated, zero unless given: nothing answered or reclaimed yet.
+    public init(introsAnswered: Int = 0, ratchetSwappedBack: Int = 0) {
         self.introsAnswered = introsAnswered
+        self.ratchetSwappedBack = ratchetSwappedBack
     }
 }

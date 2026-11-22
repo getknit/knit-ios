@@ -20,14 +20,14 @@ final class RatchetSessionSide {
     private var heldPeer: RatchetSessionSide?
     private weak var linkedPeer: RatchetSessionSide?
 
-    /// A side over a fresh memory store, or over `refusing`, which fails what it is told to.
-    init(engine: RatchetEngine = RatchetEngine(), refusing: RefusingRatchetStore? = nil) throws {
+    /// A side over a fresh memory store, or over `refusing`, which fails what it is told to, logging to `log`.
+    init(engine: RatchetEngine = RatchetEngine(), refusing: RefusingRatchetStore? = nil, log: any KnitLog = SilentLog()) throws {
         identity = IdentityKeys.generate()
         prekeys = [1: try SignedPrekey.mint(id: 1, signedBy: identity, createdAt: 0)]
         let memory = MemoryRatchetStore()
         store = refusing ?? memory
         transactor = refusing?.transactor ?? MemoryTransactor(stores: [memory])
-        sessions = RatchetSessions(identity: identity, store: store, transactor: transactor, engine: engine)
+        sessions = RatchetSessions(identity: identity, store: store, transactor: transactor, engine: engine, log: log)
     }
 
     var nodeId: NodeId { identity.nodeId }
@@ -67,10 +67,26 @@ final class RatchetSessionSide {
         return sealing
     }
 
-    /// Opens `envelope` from the peer, committing it as the pipeline would.
-    func open(_ envelope: EncEnvelope, now: Int64) throws -> RatchetSessions.Answer<RatchetSessions.Opening<Void>> {
+    /// Opens `envelope` from the peer, committing it as the pipeline would, its envelope signed at `sentAt` on the peer's
+    /// clock when given, and read as the start's replay does when `allowEraChange` is false.
+    func open(
+        _ envelope: EncEnvelope,
+        now: Int64,
+        sentAt: Int64? = nil,
+        allowEraChange: Bool = true,
+        answeredBefore: ([UInt8]) -> Bool = { _ in false }
+    ) throws -> RatchetSessions.Answer<RatchetSessions.Opening<Void>> {
         let frame = try #require(RatchetSessions.Frame(envelope: envelope, aad: Self.aad))
-        return sessions.open(frame, from: peer.identity.bundle, now: now, prekeys: { [prekeys] in prekeys[$0] }, alongside: { _ in () })
+        return sessions.open(
+            frame,
+            from: peer.identity.bundle,
+            now: now,
+            sentAt: sentAt,
+            allowEraChange: allowEraChange,
+            answeredBefore: answeredBefore,
+            prekeys: { [prekeys] in prekeys[$0] },
+            alongside: { _ in () }
+        )
     }
 
     var session: RatchetEngine.SessionState? {
@@ -86,13 +102,14 @@ final class RatchetSessionSide {
 }
 
 extension RatchetSessionSide {
-    /// Two linked sides, the first over `refusing` when given.
+    /// Two linked sides, the first over `refusing` when given, both logging to `log`.
     static func pair(
         engine: RatchetEngine = RatchetEngine(),
-        refusing: RefusingRatchetStore? = nil
+        refusing: RefusingRatchetStore? = nil,
+        log: any KnitLog = SilentLog()
     ) throws -> (RatchetSessionSide, RatchetSessionSide) {
-        let one = try RatchetSessionSide(engine: engine, refusing: refusing)
-        let two = try RatchetSessionSide(engine: engine)
+        let one = try RatchetSessionSide(engine: engine, refusing: refusing, log: log)
+        let two = try RatchetSessionSide(engine: engine, log: log)
         one.heldPeer = two
         two.linkedPeer = one
         return (one, two)

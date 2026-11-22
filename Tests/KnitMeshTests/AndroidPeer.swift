@@ -156,7 +156,7 @@ final class AndroidPeer {
         let held = prekey
         let opening = try #require(RatchetSessions.Frame(envelope: enc, aad: aad))
         return sessions.open(
-            opening, from: sender.keys.bundle, now: now, prekeys: { $0 == held.id ? held : nil }, alongside: { _ in () })
+            opening, from: sender.keys.bundle, now: now, sentAt: nil, prekeys: { $0 == held.id ? held : nil }, alongside: { _ in () })
     }
 
     /// What `frame`, a DM-form frame from `sender` addressed to this phone, says, opened as this phone would open it with
@@ -179,7 +179,8 @@ final class AndroidPeer {
             bytes = opened.plaintext
             return nil
         }
-        _ = sessions.open(opening, from: sender.keys.bundle, now: envelope.sentAt, prekeys: { $0 == held.id ? held : nil }, alongside: read)
+        _ = sessions.open(
+            opening, from: sender.keys.bundle, now: envelope.sentAt, sentAt: nil, prekeys: { $0 == held.id ? held : nil }, alongside: read)
         guard let bytes else {
             return nil
         }

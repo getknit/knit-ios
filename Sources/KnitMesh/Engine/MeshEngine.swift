@@ -36,6 +36,8 @@ public final class MeshEngine {
     var presentation = RatchetPresentationState()
     /// The second pass each peer's reset owes its re-seal, in memory (knit-next ADR 2026-10.dmgw).
     var resetReseal = ResetReseal()
+    /// The peer resets our replacement floor refused, held until it ends, in memory (knit-next ADR 2026-11.sfms).
+    var flooredResets = FlooredResets()
     /// What the presence key feed keeps between listings, and its counts (ADR 2026-11.sv5t, ``feedPresenceKeys()``).
     var presenceKeyFeed = PresenceKeyFeed()
     /// Where our presence keys' bytes come from: the system's generator (``KnitCrypto/PresenceKey/generate()``), never the
@@ -89,6 +91,8 @@ public final class MeshEngine {
     var receiptCounts = RatchetReceiptCounts()
     /// How the group form's receive side went so far (phase P6a2).
     public internal(set) var groupCounts = RatchetGroupCounts()
+    /// How the floored resets went so far: held, dropped, opened again and adopted (knit-next ADR 2026-11.sfms).
+    public internal(set) var flooredCounts = RatchetFlooredCounts()
     /// Bumped whenever custody may have changed, so the driver knows to re-read ``digestCue``.
     public private(set) var custodyRevision = 0
     /// Whole files dropped here: their bytes did not match their hash, a pushed photo was not the one its pusher's

@@ -22,6 +22,10 @@ extension Mesh {
     /// surface since P7d).
     public var groupCounts: RatchetGroupCounts { engine.groupCounts }
 
+    /// How the resets our replacement floor refused went so far: held, dropped, opened again and adopted (knit-next ADR
+    /// 2026-11.sfms; ADR 2026-10.5sk9's P9b amendment).
+    public var flooredResets: RatchetFlooredCounts { engine.flooredCounts }
+
     /// Seals a DM ratchet reset toward `peer` past the heuristic and floods it, for the control surface's `ratchet` with
     /// `reset`, as Android's debug bridge does (``MeshEngine/sendSessionReset(to:now:cause:)``). The reset is carried as
     /// our own, so it settles the mesh as every other send does, and the advert's digest cue moves with it.

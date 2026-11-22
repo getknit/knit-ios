@@ -24,6 +24,11 @@ public struct RatchetSessionRecord: Sendable, Equatable {
     public var prevRootWeAreInitiator: Bool
     /// When ``prevRoot`` stops opening frames, on our clock.
     public var prevRootExpiresAt: Int64
+    /// While ``prevRoot`` is our own init, abandoned unconfirmed on a race we lost, that init's own ``establishedAt``, our
+    /// clock; `nil` otherwise (`prevRootOwnInitAt`, knit-next `RatchetEntities.kt:27` at `f018bc8ce`, its ADR 2026-10.4mjm).
+    /// Schema `v26-prev-root-own-init` added it, null on every row an earlier build wrote, so a session that lost its race
+    /// before the update never reclaims, as before.
+    public var prevRootOwnInitAt: Int64?
     /// When the session started: our clock when we initiated, else the peer's `init.at`.
     public var establishedAt: Int64
     /// Our pending init's ephemeral.
@@ -63,6 +68,7 @@ public struct RatchetSessionRecord: Sendable, Equatable {
         prevRoot: [UInt8]? = nil,
         prevRootWeAreInitiator: Bool = false,
         prevRootExpiresAt: Int64 = 0,
+        prevRootOwnInitAt: Int64? = nil,
         establishedAt: Int64,
         initEphPub: [UInt8]? = nil,
         initPkid: Int = 0,
@@ -85,6 +91,7 @@ public struct RatchetSessionRecord: Sendable, Equatable {
         self.prevRoot = prevRoot
         self.prevRootWeAreInitiator = prevRootWeAreInitiator
         self.prevRootExpiresAt = prevRootExpiresAt
+        self.prevRootOwnInitAt = prevRootOwnInitAt
         self.establishedAt = establishedAt
         self.initEphPub = initEphPub
         self.initPkid = initPkid

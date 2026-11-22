@@ -66,6 +66,7 @@ import Testing
             weAreInitiator: false,
             root: [UInt8](repeating: 1, count: 32),
             prevRootExpiresAt: 5,
+            prevRootOwnInitAt: 3,
             establishedAt: 6,
             peerInitEphPub: [2],
             highestPeAcked: 4,
@@ -76,6 +77,7 @@ import Testing
         #expect(state.rootHash == "72cd6e84")
         #expect(state.name == "Bob" && !state.capRatchet && state.confirmed && !state.weAreInitiator && state.hasPeerInitAnchor)
         #expect(state.highestPeAcked == 4 && state.prevRootExpiresAt == 5 && state.establishedAt == 6 && state.lastResetSentAt == 7)
+        #expect(state.prevRootOwnInitAt == 3, "the stamp of our own init lost to a race, shown as it is (knit-next ADR 2026-10.4mjm)")
         #expect(state.localEpochs.map(\.epoch) == [2, 1])
     }
 

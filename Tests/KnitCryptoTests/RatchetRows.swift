@@ -39,7 +39,7 @@ struct RatchetRows {
     /// inserted if absent, then the spent key at the header's `(se, n)` deleted by its own tag.
     mutating func apply(_ delta: RatchetEngine.OpenDelta, se: Int, n: Int) {
         if delta.purgePeerRecvState {
-            purgeReceiveState()
+            purgeReceiveState(keeping: delta.keepRecvTag)
         }
         session = delta.session
         if let chain = delta.recvEpoch {
@@ -56,10 +56,11 @@ struct RatchetRows {
         }
     }
 
-    /// Every receive chain and skipped key held for the peer, gone (`purgePeerRecvState`).
-    mutating func purgeReceiveState() {
-        chains = [:]
-        skippedKeys = [:]
+    /// Every receive chain and skipped key held for the peer, gone (`purgePeerRecvState`), but `keeping`'s, a root tag, when
+    /// given: a reclaim's (`deleteRecvEpochsForExcept`, knit-next ADR 2026-10.4mjm).
+    mutating func purgeReceiveState(keeping tag: Int64? = nil) {
+        chains = chains.filter { $0.key.rootTag == tag }
+        skippedKeys = skippedKeys.filter { $0.key.rootTag == tag }
     }
 
     /// What `RatchetSessions.contextFor` reads for a frame (`RatchetSessions.kt:124-140`): every chain for its `se`,
@@ -111,6 +112,8 @@ extension RatchetEngine.OpenOutcome {
             "BAD_HEADER"
         case .failed(.aeadFail):
             "AEAD_FAIL"
+        case .failed(.resetFloored):
+            "RESET_FLOORED"
         }
     }
 }

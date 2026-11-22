@@ -42,6 +42,9 @@ public struct RatchetPeerState: Sendable, Equatable {
     public let rootHash: String?
     /// When the previous root stops draining.
     public let prevRootExpiresAt: Int64
+    /// Set while the previous root is our own init, lost to a race and reclaimable once the peer answers it: that init's
+    /// own stamp (`prevRootOwnInitAt`, knit-next `MeshController.kt:329-333` at `f018bc8ce`, its ADR 2026-10.4mjm).
+    public let prevRootOwnInitAt: Int64?
     /// Whether the resolved-init anchor is set (`peerInitEphPub`).
     public let hasPeerInitAnchor: Bool
     /// Our surviving epochs for it, the most recently minted first: the ground truth for an `EPOCH_GONE` diagnosis.
@@ -73,6 +76,7 @@ public struct RatchetPeerState: Sendable, Equatable {
         // `sha256Hex(root).take(8)`: `BlobHash(of:)` is SHA-256 as lowercase hex, what knit-next's `sha256Hex` writes.
         rootHash = session.map { String(BlobHash(of: $0.root).string.prefix(Self.rootHashLength)) }
         prevRootExpiresAt = session?.prevRootExpiresAt ?? 0
+        prevRootOwnInitAt = session?.prevRootOwnInitAt
         hasPeerInitAnchor = session?.peerInitEphPub != nil
         self.localEpochs = localEpochs.map { LocalEpoch(epoch: $0.epoch, createdAt: $0.createdAt) }
     }

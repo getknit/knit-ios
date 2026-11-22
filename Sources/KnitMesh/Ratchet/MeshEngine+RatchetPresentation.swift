@@ -16,8 +16,13 @@ import KnitWire
 /// With the switch off, a reaction is today's cleartext frame from the same draws, and nothing here seals, reads the
 /// ratchet's tables or draws a frame id.
 extension MeshEngine {
-    /// How our init answers went so far, under the name of Android's metric (``RatchetAnswerCounts``, phase P5e).
-    public var answers: RatchetAnswerCounts { presentation.counts }
+    /// How our init answers went so far, and how many of our own inits we reclaimed, under the names of Android's metrics
+    /// (``RatchetAnswerCounts``, phases P5e and P9a).
+    public var answers: RatchetAnswerCounts {
+        var counts = presentation.counts
+        counts.ratchetSwappedBack = ratchet.reclaims
+        return counts
+    }
 
     // MARK: Our reactions
 

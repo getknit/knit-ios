@@ -38,6 +38,7 @@ import Testing
             prevRoot: fixtureBytes(32, seed: 2),
             prevRootWeAreInitiator: true,
             prevRootExpiresAt: 3,
+            prevRootOwnInitAt: 20,
             establishedAt: 4,
             initEphPub: fixtureBytes(32, seed: 5),
             initPkid: 6,

@@ -612,8 +612,9 @@ explicit direction.** Update this file in the change that ships an item.
       registration. iOS does not wait for it.
   - **Wire and crypto** (`crypto-owner`): type `lang`, `reads`, `md` and `pk` as kotlinx does (#43, done with the
     reader), and add the `link` frame type, never flooded and spending no key request (#44); the once-per-era receipt
-    re-seal (knit-next #176, the item below; #48), the race loser's reclaim (4mjm, #49) and the floored reset (sfms,
-    #38).
+    re-seal (knit-next #176, the item below; #48), the race loser's reclaim (4mjm, #49; done 2026-11-22, phase P9a of
+    ADR 2026-10.5sk9, schema `v26-prev-root-own-init`) and the floored reset (sfms, #38; done 2026-11-22, phase P9b of
+    ADR 2026-10.5sk9, with qerd's 2026-11-01 sender decline).
   - **Blobs** (`blobs-owner`): the file feed's report clamp (`85f80c22a`, #45), group frames served to any peer (hr9f,
     #46, which should close #35), the member-first serve across every conversation (`c39177b66`) and qu98's echo door;
     and a judgment on 4ckq's face re-want (#47).
@@ -627,8 +628,8 @@ explicit direction.** Update this file in the change that ships an item.
   here"), filed as knit-ios #13 to #17. The decoder and typed-field ones show only with a sender's buggy or hostile
   bytes; j67x's rule can bite between honest phones. Each goes to its plane's owner and reviewer:
   - **Wire and crypto** (`crypto-owner`; knit-ios #15 for j67x):
-    - j67x, all three rules: the race rule, the drained root kept over our own reset, and the spool's scopes, which
-      this port leaves out (`6d9627b7`).
+    - j67x, all three rules: the race rule and the drained root kept over our own reset, done 2026-11-22 (phase P9a of
+      ADR 2026-10.5sk9), and the spool's scopes, rule 1, still deferred with the spool's other items (`6d9627b7`).
 
     knit-ios #13's decoder items are done: the negative `ttl`/`hops` refusal and the typed fields shipped with
     knit-ios #14, which also brought KnitWire's decoding in line with kotlinx 1.12.0's, and on 2026-10-28 a code point
@@ -699,10 +700,11 @@ explicit direction.** Update this file in the change that ships an item.
   - P7, the device trials: an iPhone and a Pixel with Bluetooth apart, over `public-1`.
 
   Deferred, each with an amendment of its own:
-  - our own unanswered reset's scopes (knit-next ADR 2026-10.j67x), with the two ratchet rules they need: the slot a
-    second re-root keeps and the race an old era's own init must not start. One crypto phase, ahead of group scopes;
-  - the reclaim of an abandoned init after a race (knit-next ADR 2026-10.4mjm), without which a pair split by a race and
-    a restore stays split over the relay;
+  - our own unanswered reset's scopes (knit-next ADR 2026-10.j67x's rule 1). The two ratchet rules they need, the slot a
+    second re-root keeps and the race an old era's own init must not start, are done (rules 2 and 3, phase P9a of ADR
+    2026-10.5sk9, 2026-11-22), so this is a spool phase now, ahead of group scopes;
+  - the reclaim of an abandoned init after a race (knit-next ADR 2026-10.4mjm): done 2026-11-22 (phase P9a), so a pair
+    split by a race and a restore meets on one root over the relay too;
   - group scopes: the group root's mint, adoption, re-mint and gossip, the founding roster and the group frame-set rule;
   - applying a received ctl 7, which matters once knit-next turns its `SPOOL_DIRECTORY` on and homes move off
     `public-1`;

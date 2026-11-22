@@ -58,7 +58,8 @@ extension GroupTranscriptReplay {
                 return Inside()
             }
         }
-        let answer = actor.dm.open(frame, from: sender.identity.bundle, now: step.now, prekeys: { actor.holds[$0] }, alongside: alongside)
+        let answer = actor.dm.open(
+            frame, from: sender.identity.bundle, now: step.now, sentAt: nil, prekeys: { actor.holds[$0] }, alongside: alongside)
         guard case .settled(.opened(let plaintext, let inside)) = answer else {
             Issue.record("\(label): expected an open, got \(answer)")
             return

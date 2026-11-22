@@ -1,4 +1,5 @@
 import KnitCrypto
+import KnitStore
 import KnitWire
 
 /// The DM ratchet's receive rules above the engine, pure (`InboundPipeline.decryptAndDeliver`, `decryptAndDeliverV2`,
@@ -48,17 +49,39 @@ internal enum RatchetInbound {
         let signed: Bool
         /// Whether this open is its first verdict.
         let origin: Origin
+        /// Whether a failure of it may be evidence for the reset heuristic at all; `false` only for the backlog a floored
+        /// reset's re-open replays out of our custody (``MeshEngine/replayFlooredResetBacklog(of:initEph:except:)``), which
+        /// keeps a frame a spool served without saying so, and a frame from a spool is never evidence (ADR 2026-11.adrq). Such
+        /// a frame still opens as a first verdict: it may be adopted and delivered.
+        var mayBeEvidence = true
+        /// The frame as it came, its signature over its signed bytes, by which a reset our replacement floor refused is
+        /// held whole (``FlooredResets``, knit-next ADR 2026-11.sfms); `nil` on a route that kept the envelope alone, as
+        /// Kotlin's `source` is null on such a path, and a reset is then not held.
+        let wire: WireEnvelope?
 
-        /// A route from `source`.
-        init(source: Source, signed: Bool, origin: Origin) {
+        /// A route from `source`, carrying `wire` when given.
+        init(source: Source, signed: Bool, origin: Origin, wire: WireEnvelope?) {
             self.source = source
             self.signed = signed
             self.origin = origin
+            self.wire = wire
         }
 
         /// A route off the link `hop`, or out of our own custody when `hop` is `nil`.
         init(hop: NodeId?, signed: Bool, origin: Origin) {
-            self.init(source: hop.map(Source.link) ?? .custody, signed: signed, origin: origin)
+            self.init(source: hop.map(Source.link) ?? .custody, signed: signed, origin: origin, wire: nil)
+        }
+
+        /// The first verdict of `frame` off its link, signed unless it came as the unsigned tick, carrying its wire.
+        init(arriving frame: InboundFrame) {
+            self.init(source: .link(frame.from), signed: !frame.wire.sig.isEmpty, origin: .firstVerdict, wire: frame.wire)
+        }
+
+        /// `carried`, out of our own custody, which kept no hop, opened as `origin`, carrying its signed bytes.
+        init(carried: CarriedFrame, origin: Origin) {
+            self.init(
+                source: .custody, signed: !carried.sig.isEmpty, origin: origin, wire: WireEnvelope(sig: carried.sig, signed: carried.signed)
+            )
         }
 
         /// The neighbour it came over; `nil` out of our own custody or from a spool.
@@ -128,6 +151,8 @@ internal enum RatchetInbound {
             .ratchetBadHeader
         case .aeadFail:
             .ratchetAeadFail
+        case .resetFloored:
+            .ratchetResetFloored
         }
     }
 
@@ -136,9 +161,11 @@ internal enum RatchetInbound {
     /// may count only because the signature came first (knit-next `d1984ea9`); the unsigned tick never counts, or three
     /// forged frames with distinct ids would buy an attacker a reset per pair; and a start's replay never does, or the
     /// tail an era left in our custody would buy a reset at every restart past the 6 h floor. A frame from a spool is never
-    /// evidence for a reset (ADR 2026-11.adrq, P4a), until the deferred reset unit.
+    /// evidence for a reset (ADR 2026-11.adrq, P4a), until the deferred reset unit, and nor is the backlog a floored reset's
+    /// re-open replays from our custody, which may hold such a frame (``Route/mayBeEvidence``).
     static func countsTowardReset(_ failure: RatchetEngine.OpenOutcome.Failed, route: Route) -> Bool {
-        route.signed && route.origin == .firstVerdict && !route.isSpool && RatchetResetPolicy.triggeringFailures.contains(failure)
+        route.signed && route.origin == .firstVerdict && !route.isSpool && route.mayBeEvidence
+            && RatchetResetPolicy.triggeringFailures.contains(failure)
     }
 
     /// The ids a receipt acknowledges, the single `ack` first, each once by its bytes, at most ``maxReceiptAcks``

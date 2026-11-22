@@ -25,8 +25,9 @@ internal struct RatchetReplay {
         /// verdict.
         let route: RatchetInbound.Route
 
-        /// What holding it costs, near enough: its payload.
-        var bytes: Int { envelope.payload.count }
+        /// What holding it costs, near enough: its payload, and the signed bytes and signature its route carries for a
+        /// floored reset's hold (``RatchetInbound/Route/wire``).
+        var bytes: Int { envelope.payload.count + (route.wire.map { $0.signed.count + $0.sig.count } ?? 0) }
     }
 
     /// The most copies kept, in custody's unit (``CustodyLimits/maxFrames``): a memory bound, since the copies are held

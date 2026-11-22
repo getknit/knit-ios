@@ -19,6 +19,7 @@ public enum RatchetRecords {
             prevRoot: record.prevRoot,
             prevRootWeAreInitiator: record.prevRootWeAreInitiator,
             prevRootExpiresAt: record.prevRootExpiresAt,
+            prevRootOwnInitAt: record.prevRootOwnInitAt,
             establishedAt: record.establishedAt,
             initEphPub: record.initEphPub,
             initPkid: record.initPkid,
@@ -46,6 +47,7 @@ public enum RatchetRecords {
             prevRoot: session.prevRoot,
             prevRootWeAreInitiator: session.prevRootWeAreInitiator,
             prevRootExpiresAt: session.prevRootExpiresAt,
+            prevRootOwnInitAt: session.prevRootOwnInitAt,
             establishedAt: session.establishedAt,
             initEphPub: session.initEphPub,
             initPkid: session.initPkid,
@@ -115,7 +117,8 @@ public enum RatchetRecords {
             recvEpoch: delta.recvEpoch.map { record($0) },
             skippedInserts: delta.skippedInserts.map { record($0) },
             consumedSkippedTag: delta.consumedSkippedTag,
-            purgePeerRecvState: delta.purgePeerRecvState
+            purgePeerRecvState: delta.purgePeerRecvState,
+            keepRecvTag: delta.keepRecvTag
         )
     }
 }

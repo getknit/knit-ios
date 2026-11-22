@@ -39,6 +39,7 @@ import Testing
             frame,
             from: side.peer.identity.bundle,
             now: now,
+            sentAt: nil,
             answeredBefore: { $0 == kept },
             prekeys: { [side] in side.prekeys[$0] },
             alongside: { _ in () }

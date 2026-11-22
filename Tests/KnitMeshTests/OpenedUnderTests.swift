@@ -20,7 +20,7 @@ import Testing
         let prekeys = side.prekeys
         let held: (Int) -> SignedPrekey? = { prekeys[$0] }
         let peer = side.peer.identity.bundle
-        let answer = side.sessions.open(frame, from: peer, now: now, allowEraChange: !replay, prekeys: held) { opened in
+        let answer = side.sessions.open(frame, from: peer, now: now, sentAt: nil, allowEraChange: !replay, prekeys: held) { opened in
             under = OpenedUnder(opened.delta)
         }
         guard case .settled(.opened) = answer else {

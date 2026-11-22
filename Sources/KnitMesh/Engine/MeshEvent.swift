@@ -81,6 +81,10 @@ public enum DropReason: Sendable, Hashable, CaseIterable {
     /// A DM ratchet frame whose keys resolved and whose tag refused (`RATCHET_AEAD_FAIL`): the pair's roots disagree.
     /// From a signed frame, at its first verdict, it counts toward a session reset.
     case ratchetAeadFail
+    /// A DM ratchet frame carrying a peer's flagged reset that our one-minute replacement floor refused, for a root we never
+    /// held (`RATCHET_RESET_FLOORED`, knit-next `MeshMetrics.kt:68-75` at `f018bc8ce`, its ADR 2026-11.sfms). It never counts
+    /// toward a reset: a signed one is held and opened again once the floor ends (ADR 2026-10.5sk9's P9b amendment).
+    case ratchetResetFloored
     /// A group-form frame whose sender's chain for its epoch we do not hold (`GROUP_RATCHET_NO_KEY`): its seed has not
     /// arrived, or was swept. It feeds the key-request heuristic, and custody keeps it for the replay after the seed lands
     /// (ADR 2026-10.5sk9, phase P6a2).

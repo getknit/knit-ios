@@ -25,7 +25,8 @@ import Testing
         let prekeys = bob.prekeys
         var inside: RatchetSessions.Floors?
         let outer = bob.transactor.atomically { () -> RatchetSessions.Settlement? in
-            let answer = bob.sessions.open(frame, from: alice.identity.bundle, now: now, prekeys: { prekeys[$0] }, alongside: { _ in () })
+            let answer = bob.sessions.open(
+                frame, from: alice.identity.bundle, now: now, sentAt: nil, prekeys: { prekeys[$0] }, alongside: { _ in () })
             guard case .joined(.opened, let settlement) = answer else {
                 return nil
             }

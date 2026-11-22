@@ -75,8 +75,9 @@ extension RatchetSessions {
     }
 
     /// Seals a session reset toward `peer`, the marker ``resetPlaintext`` names, unless the peer would refuse it
-    /// (`sealResetDm`, `RatchetSessions.kt:313-384`, knit-next ADR 2026-09.qerd): ``RatchetResetPolicy/plan(for:prekeyId:now:cause:answeredAt:)``
-    /// decides from the session held, its persisted `lastResetSentAt`, and when the peer answered our own init.
+    /// (`sealResetDm`, `RatchetSessions.kt:313-384`, knit-next ADR 2026-09.qerd): ``RatchetResetPolicy/plan(for:prekeyId:now:cause:answeredAt:replacedAt:)``
+    /// decides from the session held, its persisted `lastResetSentAt`, when the peer answered our own init, and when it took
+    /// one as a replacement.
     ///
     /// - A re-root is a fresh X3DH init replacing the session, flagged `FLAG_RESET`: our numbering restarts at 1, so its
     ///   first epoch replaces the dead era's key of that number (knit-next ADR 027), the old root drains as `prevRoot` for
@@ -102,7 +103,14 @@ extension RatchetSessions {
         var settlement = Settlement.unchanged(peer.nodeId)
         let unit = transactor.atomically { () -> ResetSealing? in
             let held = store.session(peer.nodeId).map(RatchetRecords.session)
-            let plan = RatchetResetPolicy.plan(for: held, prekeyId: prekey.id, now: now, cause: cause, answeredAt: confirmedAt[peer.nodeId])
+            let plan = RatchetResetPolicy.plan(
+                for: held,
+                prekeyId: prekey.id,
+                now: now,
+                cause: cause,
+                answeredAt: confirmedAt[peer.nodeId],
+                replacedAt: replacedAt[peer.nodeId]
+            )
             if case .decline(let reason) = plan.action {
                 unsealed = .declined(reason: reason, plan: plan)
                 return nil
@@ -128,6 +136,13 @@ extension RatchetSessions {
     /// (`markReset`, `RatchetSessions.kt:424-438`), or a fresh initiation replacing it (`reRoot`, `:440-469`), which keeps
     /// the old root draining for 48 h and purges our receive state with the era we leave. `nil` when the engine will not
     /// seal under the session held.
+    ///
+    /// Over our own reset, still unanswered and still draining the root it replaced (``pendingResetInit(_:)``), a re-root
+    /// keeps that drained root in the slot, with its role, and restarts its 48 h: the one root the peer is provably on, and
+    /// the one it still drains if it did adopt the first reset. The first reset's root goes, since the peer may never have
+    /// derived it; an answer sealed under it is lost, and the peer adopts the second reset under its one-minute floor
+    /// (`reRoot`, knit-next `RatchetSessions.kt:750-786` at `f018bc8ce`, its ADR 2026-10.j67x's rule 3). The drain restarts on
+    /// each such re-root, uncapped: the reset floors bound the chain.
     private func sealReset(
         _ plan: RatchetResetPolicy.Plan,
         held: RatchetEngine.SessionState?,
@@ -141,9 +156,17 @@ extension RatchetSessions {
         let initiation = try engine.initiate(
             peerId: peer.nodeId, identity: identity, peerIdentity: peer, peerPrekey: prekey, now: request.now)
         var fresh = initiation.session
-        fresh.prevRoot = held?.root
-        fresh.prevRootWeAreInitiator = held?.weAreInitiator ?? false
+        if let held, Self.pendingResetInit(held) != nil, held.prevRootExpiresAt > request.now {
+            fresh.prevRoot = held.prevRoot
+            fresh.prevRootWeAreInitiator = held.prevRootWeAreInitiator
+        } else {
+            fresh.prevRoot = held?.root
+            fresh.prevRootWeAreInitiator = held?.weAreInitiator ?? false
+        }
         fresh.prevRootExpiresAt = held == nil ? 0 : request.now &+ RatchetEngine.previousRootMilliseconds
+        // Our reset is no race lost: whatever the slot holds now is never ours to reclaim, the drained root included, since a
+        // reset over our own first contact's lost race abandons that init for good (`:771-774`, knit-next ADR 2026-10.4mjm).
+        fresh.prevRootOwnInitAt = nil
         // Abandon our receive side with the root, as the peer drops its rows when it adopts this init
         // (`RatchetSessions.kt:459-463`); since the root tag this is hygiene.
         store.purgeReceiveState(peer.nodeId)
@@ -180,6 +203,22 @@ extension RatchetSessions {
         advanced.lastResetSentAt = resetAt ?? advanced.lastResetSentAt
         store.commitSend(RatchetRecords.record(advanced), newLocalEpoch: (minted ?? sealed.newLocalEpoch).map { RatchetRecords.record($0) })
         return sealed
+    }
+
+    /// The init ephemeral of our own reset, still unanswered, over a root it replaced; `nil` for every other session
+    /// (`pendingResetInit`, knit-next `RatchetSessions.kt:1040-1068` at `f018bc8ce`, its ADR 2026-10.j67x). Read off the row
+    /// alone: we initiated, nobody has answered, so the init still rides, the init was minted by a reset's re-root
+    /// (`lastResetSentAt == establishedAt`: `initiate` stamps the one and the re-root the other with the same `now`, a plain
+    /// first seal leaves the reset stamp 0, and a mark stamps it past the init), and the re-root kept a root to drain. A reset
+    /// from no session has no `prevRoot` and is not one. The re-root's slot rule reads it today; the spool scopes of such a
+    /// reset (j67x's rule 1) are deferred (ADR 2026-11.adrq), and will read it too.
+    static func pendingResetInit(_ session: RatchetEngine.SessionState) -> [UInt8]? {
+        guard session.weAreInitiator, !session.confirmed, session.prevRoot != nil, session.lastResetSentAt > 0,
+            session.lastResetSentAt == session.establishedAt
+        else {
+            return nil
+        }
+        return session.initEphPub
     }
 
     /// Logs a seal toward `peer` that X25519 refused a key for (`refusedAsNull`, knit-next `RatchetSessions.kt:508-526` at

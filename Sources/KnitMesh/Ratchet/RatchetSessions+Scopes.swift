@@ -55,10 +55,10 @@ extension RatchetSessions {
 
     /// Whether the spool may derive scopes from `session` (`exports`, `RatchetSessions.kt:1099`): a confirmed session. A
     /// first-contact init is not, since the pair may still be resolving a race. Kotlin also takes our own reset while
-    /// it waits for its answer over a root it replaced (`pendingResetInit`, knit-next ADR 2026-10.j67x); that exception
-    /// needs the ratchet's slot and race rules for a reset, which this port has not taken, so it is deferred with them
-    /// (ADR 2026-11.adrq), and such a reset exports nothing here. Nothing else gates it: two phones meet only in a scope
-    /// both derive.
+    /// it waits for its answer over a root it replaced (`pendingResetInit`, knit-next ADR 2026-10.j67x's rule 1). The slot
+    /// and race rules that exception stands on are ported (j67x's rules 2 and 3, ``pendingResetInit(_:)``, ADR 2026-10.5sk9's
+    /// P9a amendment); rule 1 itself is deferred (ADR 2026-11.adrq), so such a reset exports nothing here. Nothing else
+    /// gates it: two phones meet only in a scope both derive.
     static func exports(_ session: RatchetSessionRecord) -> Bool {
         session.confirmed
     }

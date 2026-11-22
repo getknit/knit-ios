@@ -215,7 +215,7 @@ extension MeshEngine {
         let unread = stores.transactor.atomically { () -> CarriedFrame?? in .some(stores.messages.contains(envelope.id) ? nil : carried) }
         switch unread {
         case .committed(let frame?):
-            handleChat(frame.envelope, route: RatchetInbound.Route(hop: nil, signed: !frame.sig.isEmpty, origin: .startReplay))
+            handleChat(frame.envelope, route: RatchetInbound.Route(carried: frame, origin: .startReplay))
         case .committed(nil):
             return
         case .joined, .abandoned, .failed:

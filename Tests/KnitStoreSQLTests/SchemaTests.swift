@@ -16,7 +16,7 @@ import Testing
     /// The migrations every earlier build has run, in order.
     private static let frozen = [
         "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9", "v10", "v11", "v12", "v13", "v14", "v15", "v16", "v17", "v18", "v19",
-        "v20", "v21", "v22", "v23", "v24", "v25-own-profile-frame",
+        "v20", "v21", "v22", "v23", "v24", "v25-own-profile-frame", "v26-prev-root-own-init",
     ]
 
     @Test func migrationsOnlyEverGrowAtTheEnd() {
@@ -230,6 +230,7 @@ enum SchemaPins {
         ("v23", v23),
         ("v24", v24),
         ("v25-own-profile-frame", v25OwnProfileFrame),
+        ("v26-prev-root-own-init", v26PrevRootOwnInit),
     ]
 
     /// Every table, index and trigger this app made, sorted, with the statement SQLite keeps for it. GRDB's own

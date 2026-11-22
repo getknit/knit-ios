@@ -26,7 +26,7 @@ extension SchemaTests {
         }
         try Schema.migrator.migrate(queue)
         let applied = try queue.read { db in try String.fetchAll(db, sql: "SELECT identifier FROM grdb_migrations") }
-        #expect(applied.last == "v25-own-profile-frame", "registered under its name, never a bare v25")
+        #expect(applied.contains("v25-own-profile-frame") && !applied.contains("v25"), "registered under its name, never a bare v25")
         let store = SQLOwnProfileStore(try KnitDatabase(writer: queue, failures: recordFailure))
         var expected = OwnProfile(name: "Me", status: "here", openToChat: true, version: 5, publishedAt: 6, prekeyId: 2)
         expected.capabilities = Capabilities(rawValue: 0x1C015F)

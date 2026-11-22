@@ -144,7 +144,13 @@ struct SessionReplay {
         #expect(step.layer == "engine", "\(label): a session-layer open")
         let replay = actor.replay
         let answer = actor.sessions.open(
-            frame, from: sender.replay.identity.bundle, now: step.now, prekeys: { replay.prekey(id: $0) }, alongside: { _ in () })
+            frame,
+            from: sender.replay.identity.bundle,
+            now: step.now,
+            sentAt: nil,
+            prekeys: { replay.prekey(id: $0) },
+            alongside: { _ in () }
+        )
         switch answer {
         case .settled(.opened(let plaintext, _)):
             #expect(step.expect == "OPENED", "\(label): the outcome")

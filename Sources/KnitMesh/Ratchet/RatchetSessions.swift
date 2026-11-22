@@ -23,7 +23,8 @@ public import KnitWire
 /// is persisted before it is answered, so the chain it spent is never spent again (ADR 2026-10.5sk9's P4a amendment).
 ///
 /// **The floors held in memory** (`RatchetSessions.kt:97-111`) are the peer's replacements we adopted, when the peer
-/// answered our own init, our resets when no session row holds the stamp, and the heuristic's undecryptable frame ids.
+/// answered our own init and when it took one as a replacement, each peer's root generation, our resets when no session
+/// row holds the stamp, and the heuristic's undecryptable frame ids.
 /// They die with the process, as Android's do, and each moves only once its unit commits, but for one: a frame the
 /// heuristic counts joins its ids at once, as on Android, after the era gate read the session, and only their clearing
 /// waits for a commit. `sealResetDm`'s decline reads the persisted `lastResetSentAt`, which survives a restart; the stamp
@@ -51,10 +52,29 @@ public final class RatchetSessions {
     /// Per peer, when a session we initiated was confirmed: the peer adopted our init no later than it sealed that answer,
     /// so its replacement floor runs until at least a minute past this (`confirmedAt`, `:106-111`).
     var confirmedAt: [NodeId: Int64] = [:]
+    /// Per peer, when the peer took an init of ours as a replacement of a session of its own (`replacedAt`, knit-next
+    /// `RatchetSessions.kt:133-143` at `f018bc8ce`, the 2026-11-01 amendment to its ADR 2026-09.qerd): stamped beside
+    /// ``confirmedAt`` when the answered init was a reset or a marker, a reclaim, or the winner of a race whose losing init
+    /// we had resolved. Its adoption started the peer's one-minute floor no later than it sealed the answer, so
+    /// ``RatchetResetPolicy/plan(for:prekeyId:now:cause:answeredAt:replacedAt:)`` declines every cause but after-wipe inside
+    /// it, whatever our role is now. A first contact the peer established stamps nothing. Cleared only by a forget; a
+    /// restart forgets it, which costs only the floor this port had before it existed.
+    var replacedAt: [NodeId: Int64] = [:]
+    /// Per peer, a count of the root changes a settlement committed (`rootGenerations`, knit-next `RatchetSessions.kt:145-158`
+    /// at `f018bc8ce`, its ADR 2026-11.sfms): a replacement or race adopted, a reclaim (its delta purges too), our own
+    /// re-root, a forget. A reset our floor refused is held under the value read before its open, and the hold goes once
+    /// this moves: an era changed under it, and its init may name a root the peer has since left. Per peer and never
+    /// ``generation``, which moves at any peer's settlement and would drop every hold with it.
+    private var rootGenerations: [NodeId: Int] = [:]
     /// Bumped by every settlement that may have moved a session row's DM scopes (``Settlement/movesScopes``), once its unit
     /// commits as the outermost or its caller settles it: the spool plane reads ``dmScopes(now:)`` again when it moves
     /// (ADR 2026-11.adrq, P4a). In memory: a fresh process reads the table at its first turn anyway.
     public private(set) var generation = 0
+    /// How many times a session moved back onto our own init, lost to a race, because the peer sealed under it as responder
+    /// (`MeshMetrics.onRatchetReclaimed`, the STATE dump's `ratchetSwappedBack`, knit-next `MeshMetrics.kt:749-755` at
+    /// `f018bc8ce`, its ADR 2026-10.4mjm): non-zero means a pair that would have sat on two roots met on one. Counted once a
+    /// reclaim's unit commits; in memory, as Android's metric is.
+    public private(set) var reclaims = 0
 
     /// A session service for `identity` over `store`, whose units `transactor` runs, logging to `log`. `engine` draws from
     /// the system's generator unless a test or a vector replay passes another.
@@ -122,6 +142,19 @@ public final class RatchetSessions {
         return anchors
     }
 
+    /// `peer`'s root generation: 0 until its first root change in this process (`rootGeneration`, knit-next
+    /// `RatchetSessions.kt:157-158` at `f018bc8ce`). Memory alone, never the store.
+    public func rootGeneration(of peer: NodeId) -> Int {
+        rootGenerations[peer] ?? 0
+    }
+
+    /// Whether a flagged reset from `peer` would pass our replacement floor at `now`, on the wall clock the open path
+    /// stamps that floor with and no other (`resetFloorOpen`, knit-next `RatchetSessions.kt:160-168` at `f018bc8ce`, its ADR
+    /// 2026-11.sfms): what the re-open of a held reset asks before it opens the frame again.
+    public func resetFloorOpen(for peer: NodeId, now: Int64) -> Bool {
+        now &- (lastReplacementAt[peer] ?? 0) >= RatchetResetPolicy.resetReplacementMilliseconds
+    }
+
     /// The floors held in memory for `peer`, `nil` where none is held.
     public func floors(for peer: NodeId) -> Floors {
         Floors(
@@ -153,6 +186,20 @@ public final class RatchetSessions {
         }
         if let answered = settlement.initAnsweredAt {
             confirmedAt[peer] = answered
+            if settlement.peerReplaced {
+                replacedAt[peer] = answered
+            }
+        }
+        if settlement.forgotten {
+            replacedAt[peer] = nil
+        }
+        if settlement.movesRoot {
+            rootGenerations[peer, default: 0] &+= 1
+        }
+        if settlement.reclaimed {
+            reclaims += 1
+            // Kotlin's own line (`RatchetSessions.kt:309` at `f018bc8ce`), new here, so no harness pattern moves.
+            log.log(.info, "mesh reclaimed our own init with \(peer): the peer sealed under it as responder (ADR 2026-10.4mjm)")
         }
     }
 

@@ -143,6 +143,7 @@ import Testing
             frame,
             from: alice.identity.bundle,
             now: Self.now,
+            sentAt: nil,
             prekeys: { prekeys[$0] },
             alongside: { _ -> [UInt8]? in
                 threads.accept("thread")
@@ -159,6 +160,7 @@ import Testing
             frame,
             from: alice.identity.bundle,
             now: Self.now,
+            sentAt: nil,
             prekeys: { prekeys[$0] },
             alongside: { opened -> [UInt8]? in
                 threads.accept("thread")
@@ -208,7 +210,7 @@ import Testing
             var inner: RatchetSessions.Answer<RatchetSessions.Opening<Void>>?
             let outer = bob.transactor.atomically { () -> Int? in
                 inner = bob.sessions.open(
-                    frame, from: alice.identity.bundle, now: Self.now + 20, prekeys: { prekeys[$0] }, alongside: { _ in () })
+                    frame, from: alice.identity.bundle, now: Self.now + 20, sentAt: nil, prekeys: { prekeys[$0] }, alongside: { _ in () })
                 return commits ? 1 : nil
             }
             guard case .joined(.opened, let settlement) = inner else {
@@ -253,7 +255,8 @@ import Testing
         let (alice, bob) = try RatchetSessionSide.pair()
         let frame = try #require(RatchetSessions.Frame(envelope: alice.seal("hi", now: Self.now), aad: Self.aad))
         let other = try SignedPrekey.mint(id: 2, signedBy: bob.identity, createdAt: 0)
-        let answer = bob.sessions.open(frame, from: alice.identity.bundle, now: Self.now, prekeys: { _ in other }, alongside: { _ in () })
+        let answer = bob.sessions.open(
+            frame, from: alice.identity.bundle, now: Self.now, sentAt: nil, prekeys: { _ in other }, alongside: { _ in () })
         guard case .settled(.refused(.epochGone)) = answer else {
             Issue.record("expected EPOCH_GONE, got \(answer)")
             return

@@ -62,7 +62,7 @@ import Testing
     }
 
     @Test func aSpoolRouteKeepsItsSourceThroughTheReplayAndTheRules() {
-        let spool = RatchetInbound.Route(source: .spool, signed: true, origin: .firstVerdict)
+        let spool = RatchetInbound.Route(source: .spool, signed: true, origin: .firstVerdict, wire: nil)
         let link = RatchetInbound.Route(hop: alice.nodeId, signed: true, origin: .firstVerdict)
         let custody = RatchetInbound.Route(hop: nil, signed: true, origin: .startReplay)
         #expect(spool.hop == nil && spool.isSpool && link.hop == alice.nodeId && !link.isSpool && custody.source == .custody)

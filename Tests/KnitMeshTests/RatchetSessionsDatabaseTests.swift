@@ -31,6 +31,7 @@ import Testing
             frame,
             from: alice.identity.bundle,
             now: Self.now,
+            sentAt: nil,
             prekeys: { prekeys[$0] },
             alongside: { _ in
                 groups.save(refused)
@@ -49,6 +50,7 @@ import Testing
             frame,
             from: alice.identity.bundle,
             now: Self.now,
+            sentAt: nil,
             prekeys: { prekeys[$0] },
             alongside: { _ in
                 groups.save(healed)

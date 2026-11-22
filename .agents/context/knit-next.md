@@ -212,11 +212,11 @@ Kotlin wins.
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Up to `e63f15f4`** (the previous pin; 396 commits, releases `v2.9.0` and `v2.10.0` among them; 24 fixtures added to `wire-v1.json` and
     `ratchet-v1.json` new, none moved). Read on 2026-10-25, and the merged code checked at `e63f15f4`:
-    - **Owed here.** j67x's rule can bite between honest phones, and the last needs a failed database write.
-      `FLAG_NO_AWARE` (knit-ios #16) was owed here too, until `808472a3` turned it around past the pin ("Mirrored
-      ahead of the pin", below), and #13's two decoder items were too, until they landed ("Taken since the pin"):
-      - **j67x's third rule** (`6d9627b7`, knit-ios #15): over our own unanswered reset, still draining, Android keeps the drained root
-        as `prevRoot`, and `sealReset` takes the held one (`crypto.md`). It belongs with j67x's other two rules, below.
+    - **Owed here.** One item, which needs a failed database write. `FLAG_NO_AWARE` (knit-ios #16) was owed here too,
+      until `808472a3` turned it around past the pin ("Mirrored ahead of the pin", below), #13's two decoder items were
+      too, until they landed ("Taken since the pin"), and so was j67x's third rule (`6d9627b7`, knit-ios #15), the
+      drained root kept over our own unanswered reset, until phase P9a took it with the second (ADR 2026-10.5sk9;
+      `crypto.md`, "Lifecycle"):
       - **A blob that fails to store** (knit-ios #17): Android keeps the want and its asks (`BlobExchange.onReceived`,
         `BlobExchange.kt:2016-2021`). `receiveFile` here marks the blob obtained and withdraws its asks whether or not
         the insert landed (`MeshEngine+Blobs.swift:315-320`), and the next re-arm wants it again.
@@ -296,11 +296,11 @@ Kotlin wins.
         - At the pin, every function these touch is byte-identical to `4f3cd995`, and `prekeyBase` and `isRetiredBase`
           agree with `RatchetEngine.swift` and `RatchetResetPolicy.swift`. The only ratchet commits since are a Qodana
           refactor (`3b2f624c`) and `sealDm`'s `confirmedOnly`, for scope configs alone (`33d83aca`).
-      - **Not followed: j67x** (`6d9627b7`, knit-next ADR 2026-10.j67x). It gives the spool's scopes to our unanswered
-        reset, reads a frame that predates our session, carrying the init of the root we replaced, under the drained
-        root rather than racing it (`RatchetEngine.resolveSession`'s `predatesSession`, `derivesPrevRoot`), and keeps
-        the drained root over our own reset (above). The scopes are the spool's, which this port leaves out; the other
-        two change what a peer accepts, and are owed a phase of their own.
+      - **j67x, rules 2 and 3 followed** (`6d9627b7`, knit-next ADR 2026-10.j67x; phase P9a, knit-ios #15). A frame that
+        predates our session, carrying the init of the root we replaced, is read under the drained root rather than
+        raced (`RatchetEngine.resolveSession`'s `predatesSession`, `derivesPreviousRoot`), and a re-root over our own
+        unanswered reset keeps the drained root (`RatchetSessions.pendingResetInit`). Rule 1, the spool's scopes for that
+        reset, stays deferred (ADR 2026-11.adrq).
       - **Mentions** (ADR 2026-10.nbhj and 2026-10.jwst): a picked mention as a chip that backspace deletes whole
         (`d47ad76c`), a mention's color moved until it reads 4.5:1 on its bubble (`eafb0721`, merged unchanged as
         `bb87222c`), and `@everyone` in a group (`ac491f4c`, knit-next ADR 2026-10.6h2g, merged unchanged as
@@ -473,8 +473,10 @@ Kotlin wins.
         restarts; this port re-wants every advertised photo each pass (`MeshEngine+Passes.swift:99-118`) with the pull
         budget and keeps refusals per session. For `blobs-owner` to judge.
       - **The ratchet** (`crypto.md`): `9dfe9f626` keys the re-ack ledger by author and DM id, worth taking (this port's
-        ledger came with `afdd37204`, ADR 2026-10.2ehy); the race loser's reclaim (`d9993ed51`, its ADR 2026-10.4mjm);
-        and the floored reset held and opened again (`57b2a85c6`, its ADR 2026-11.sfms).
+        ledger came with `afdd37204`, ADR 2026-10.2ehy); the race loser's reclaim (`d9993ed51`, its ADR 2026-10.4mjm),
+        taken in phase P9a (knit-ios #49, schema `v26-prev-root-own-init`); and the floored reset held and opened again
+        (`57b2a85c6`, its ADR 2026-11.sfms) with the sender's decline of qerd's 2026-11-01 amendment, taken in phase P9b
+        (knit-ios #38).
       - **A typing cue in a request** (`ba26a7904`): Android drops one in a conversation that is still a message request
         (`InboundPipeline.kt:809`), and `MeshEngine+Typing.swift:37` does not. Its typing-indicators switch is product
         scope.

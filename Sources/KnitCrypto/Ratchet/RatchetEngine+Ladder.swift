@@ -66,7 +66,8 @@ extension RatchetEngine {
         }
 
         /// The candidate's stored key for `(se, n)`; a failure means the frame is not this root's (`openSkipped`,
-        /// `:414-432`). It moves no era, and touches only the chain row's clock.
+        /// `:414-432`; knit-next `RatchetEngine.kt:507-529` at `f018bc8ce`). It moves no era, and touches only the chain
+        /// row's clock, unless the candidate reclaims our own init, which moves the era there too.
         private mutating func openSkipped(_ candidate: RootCandidate, key: SkippedKey, row: RecvEpoch?) -> OpenOutcome.Opened? {
             guard let plaintext = decrypt(with: key.messageKey) else {
                 aeadFailed = true
@@ -74,12 +75,15 @@ extension RatchetEngine {
             }
             var touched = row
             touched?.lastUsedAt = now
+            let reclaims = candidate.reclaimsAt != nil
             let delta = OpenDelta(
-                session: touch(resolved.session, eraEffects: false),
+                session: settle(candidate, eraEffects: false),
                 recvEpoch: touched,
                 skippedInserts: [],
                 consumedSkippedTag: candidate.tag,
-                purgePeerRecvState: false,
+                purgePeerRecvState: reclaims,
+                keepRecvTag: reclaims ? candidate.tag : nil,
+                reclaimed: reclaims,
                 openedRootTag: candidate.tag
             )
             return OpenOutcome.Opened(plaintext: plaintext, delta: delta)
@@ -92,7 +96,7 @@ extension RatchetEngine {
                 consumed = true
                 return nil
             }
-            guard let opened = finishOpen(rootTag: candidate.tag, chainKey: row.chainKey, next: row.next, eraEffects: false) else {
+            guard let opened = finishOpen(candidate, chainKey: row.chainKey, next: row.next, eraEffects: false) else {
                 aeadFailed = true
                 return nil
             }
@@ -123,7 +127,7 @@ extension RatchetEngine {
                     senderEpoch: header.se,
                     baseEpoch: header.pe
                 )
-                if let opened = finishOpen(rootTag: candidate.tag, chainKey: keys.chainKey, next: 0, eraEffects: candidate.active) {
+                if let opened = finishOpen(candidate, chainKey: keys.chainKey, next: 0, eraEffects: candidate.active) {
                     return opened
                 }
                 aeadFailed = true
@@ -134,7 +138,9 @@ extension RatchetEngine {
         /// Nothing opened (`verdict`, `:484-491`). `DUPLICATE` outranks the rest: it is the benign verdict, and a
         /// genuine re-serve of a spent frame also fails under every other candidate, which must not walk the reset
         /// heuristic. It never stops the ladder, though, since a spent index under one root is exactly what an old era's
-        /// drained chain shows the new era's frame of the same number (#135).
+        /// drained chain shows the new era's frame of the same number (#135). Above it all, `RESET_FLOORED`, which
+        /// ``RatchetEngine/open(_:header:nonce:ct:aad:now:)`` decides after the ladder, since its X3DH may throw and this does
+        /// not (knit-next `RatchetEngine.kt:575-585` at `f018bc8ce`, its ADR 2026-11.sfms).
         private func verdict() -> OpenOutcome.Failed {
             if consumed {
                 return .duplicate
@@ -148,9 +154,17 @@ extension RatchetEngine {
             return epochGone ? .epochGone : .aeadFail
         }
 
-        /// Advances a chain at `next` to the header's index and opens the frame there (`finishOpen`, `:720-754`): the
-        /// keys it passes are banked as skipped keys, and everything it stores carries `rootTag`.
-        private func finishOpen(rootTag: Int64, chainKey chainKeyAtNext: [UInt8], next: Int, eraEffects: Bool) -> OpenOutcome.Opened? {
+        /// Advances a chain at `next` to the header's index and opens the frame there (`finishOpen`, `:720-754`; knit-next
+        /// `RatchetEngine.kt:866-905` at `f018bc8ce`): the keys it passes are banked as skipped keys, and everything it
+        /// stores carries the candidate's tag. A candidate that reclaims purges every other root's receive state.
+        private func finishOpen(
+            _ candidate: RootCandidate,
+            chainKey chainKeyAtNext: [UInt8],
+            next: Int,
+            eraEffects: Bool
+        ) -> OpenOutcome.Opened? {
+            let rootTag = candidate.tag
+            let reclaims = candidate.reclaimsAt != nil
             var chainKey = chainKeyAtNext
             var skipped: [SkippedKey] = []
             for index in stride(from: next, to: header.n, by: 1) {
@@ -162,7 +176,7 @@ extension RatchetEngine {
                 return nil
             }
             let delta = OpenDelta(
-                session: touch(resolved.session, eraEffects: eraEffects),
+                session: settle(candidate, eraEffects: eraEffects),
                 recvEpoch: RecvEpoch(
                     epoch: header.se,
                     rootTag: rootTag,
@@ -172,10 +186,23 @@ extension RatchetEngine {
                 ),
                 skippedInserts: skipped,
                 consumedSkippedTag: nil,
-                purgePeerRecvState: resolved.purge,
+                purgePeerRecvState: resolved.purge || reclaims,
+                keepRecvTag: reclaims ? rootTag : nil,
+                reclaimed: reclaims,
                 openedRootTag: rootTag
             )
             return OpenOutcome.Opened(plaintext: plaintext, delta: delta)
+        }
+
+        /// The session a frame that opened under `candidate` leaves (`settle`, knit-next `RatchetEngine.kt:907-924` at
+        /// `f018bc8ce`): the reclaim and then the era effects, on whichever rung, when the candidate reclaims our own init
+        /// (knit-next ADR 2026-10.4mjm, the one exception to pz9g: the root it opened under becomes the active one in the
+        /// same delta), else ``touch(_:eraEffects:)`` as the rung decided.
+        private func settle(_ candidate: RootCandidate, eraEffects: Bool) -> SessionState {
+            guard let ownInitAt = candidate.reclaimsAt else {
+                return touch(resolved.session, eraEffects: eraEffects)
+            }
+            return touch(RatchetEngine.reclaim(resolved.session, root: candidate.root, ownInitAt: ownInitAt, now: now), eraEffects: true)
         }
 
         /// One AEAD attempt with `key` (`decryptWith`, `:811-823`). Without a carried nonce it is the v3 form: the
@@ -222,7 +249,8 @@ extension RatchetEngine {
         }
     }
 
-    /// Drops a `prevRoot` whose drain has run out (`retirePrevRoot`, `:796-804`).
+    /// Drops a `prevRoot` whose drain has run out (`retirePrevRoot`, `:796-804`), and with it any stamp that named it our
+    /// own init (knit-next `RatchetEngine.kt:1011-1019` at `f018bc8ce`).
     static func retirePrevRoot(_ session: SessionState, now: Int64) -> SessionState {
         guard session.prevRoot != nil, session.prevRootExpiresAt <= now else {
             return session
@@ -230,6 +258,7 @@ extension RatchetEngine {
         var retired = session
         retired.prevRoot = nil
         retired.prevRootExpiresAt = 0
+        retired.prevRootOwnInitAt = nil
         return retired
     }
 }

@@ -98,17 +98,20 @@ public enum RatchetResetPolicy {
     }
 
     /// The plan for a reset toward a peer we hold `session` with, whose pinned prekey is `prekeyId`, asked at `now` for
-    /// `cause`; `answeredAt` is when the peer answered our own init, held in memory (`resetPlan`, `RatchetSessions.kt:392-422`,
-    /// knit-next ADR 2026-09.qerd). A reset the peer would refuse is never sealed: one inside its floor is dropped as a
-    /// duplicate after we have already left the root it is on, and our heuristic is then floored for six hours (#85, #86).
+    /// `cause`; `answeredAt` is when the peer answered our own init, and `replacedAt` when it took one as a replacement of a
+    /// session of its own, both held in memory (`resetPlan`, `RatchetSessions.kt:392-422`, knit-next ADR 2026-09.qerd and its
+    /// 2026-11-01 amendment). A reset the peer would refuse is never sealed: one inside its floor is dropped as a duplicate
+    /// after we have already left the root it is on, and our heuristic is then floored for six hours (#85, #86, #251).
     ///
-    /// The decline keys on the persisted `lastResetSentAt`, which survives a restart, never the stamp held in memory.
-    public static func plan(
+    /// The pending-init decline keys on the persisted `lastResetSentAt`, which survives a restart, never the stamp held in
+    /// memory.
+    public static func plan( // swiftlint:disable:this function_parameter_count - both answer stamps, which Kotlin reads off its facade
         for session: RatchetEngine.SessionState?,
         prekeyId: Int,
         now: Int64,
         cause: Cause,
-        answeredAt: Int64?
+        answeredAt: Int64?,
+        replacedAt: Int64?
     ) -> Plan {
         guard let session else {
             return Plan(action: .reRoot, decidedBy: .noSession)
@@ -130,13 +133,35 @@ public enum RatchetResetPolicy {
             let inFlight = now &- session.lastResetSentAt < resetReplacementMilliseconds
             return Plan(action: inFlight ? .decline("our reset is still on its way") : .reRoot, decidedBy: .resetInFlight)
         }
-        // The frames that failed prove the peer held another session with us, so taking our init was a replacement and
-        // started its floor no later than it sealed its answer. An on-demand reset has no such evidence.
-        guard cause == .unreadable, session.weAreInitiator, let answeredAt else {
-            return Plan(action: .reRoot, decidedBy: .noPendingInit)
+        return answeredPlan(for: session, now: now, cause: cause, answeredAt: answeredAt, replacedAt: replacedAt)
+    }
+
+    /// ``plan(for:prekeyId:now:cause:answeredAt:replacedAt:)`` past our own pending init: the floors our init's answer
+    /// started at the peer (`answeredPlan`, knit-next `RatchetSessions.kt:698-723` at `f018bc8ce`).
+    ///
+    /// - **The heuristic's reset after the peer answered our init** (`answeredAt`): the frames that failed prove the peer
+    ///   held another session with us, so taking our init was a replacement and started its floor no later than it sealed
+    ///   its answer. An on-demand reset has no such evidence from the answer alone.
+    /// - **Any cause after the peer took our init as a replacement** (`replacedAt`, the 2026-11-01 amendment to knit-next
+    ///   ADR 2026-09.qerd, #251): a reset, a marker, a reclaim or a race we won replaced a session of the peer's, and its
+    ///   floor refuses a new root whatever asks and whatever our role is now; after-wipe was decided above. Checked after
+    ///   the heuristic's rule, so a case that rule decides keeps its reason and its `decidedBy`, which the ratchet vectors
+    ///   pin. A first contact the peer established stamps no `replacedAt`, so an on-demand reset right after it still goes.
+    private static func answeredPlan(
+        for session: RatchetEngine.SessionState,
+        now: Int64,
+        cause: Cause,
+        answeredAt: Int64?,
+        replacedAt: Int64?
+    ) -> Plan {
+        let heuristic = cause == .unreadable && session.weAreInitiator ? answeredAt : nil
+        if let heuristic, now &- heuristic < resetReplacementMilliseconds {
+            return Plan(action: .decline("the peer adopted our init under a minute ago"), decidedBy: .answeredInit)
         }
-        let insideFloor = now &- answeredAt < resetReplacementMilliseconds
-        return Plan(action: insideFloor ? .decline("the peer adopted our init under a minute ago") : .reRoot, decidedBy: .answeredInit)
+        if let replacedAt, now &- replacedAt < resetReplacementMilliseconds {
+            return Plan(action: .decline("the peer adopted our reset under a minute ago"), decidedBy: .replacedInit)
+        }
+        return Plan(action: .reRoot, decidedBy: heuristic == nil ? .noPendingInit : .answeredInit)
     }
 }
 
@@ -178,6 +203,9 @@ extension RatchetResetPolicy {
             case resetInFlight
             /// The heuristic's reset after the peer answered our init: declined inside the peer's minute from that answer.
             case answeredInit
+            /// Any reset but after-wipe after the peer took our init as a replacement: declined inside the peer's minute from
+            /// that answer (knit-next ADR 2026-09.qerd's 2026-11-01 amendment, #251).
+            case replacedInit
             /// No pending init, and no answered-init floor applies.
             case noPendingInit
         }

@@ -7,13 +7,17 @@ import KnitWire
 /// collection a start and the sweep run (`BlobRepository.deleteOrphans`), with the reads it shares with a photo's replacement.
 extension MeshEngine {
     /// The 60-second re-offer to every linked neighbour (`MeshManager.reofferToNeighborsPeriodically`): the blobs and
-    /// keys we still lack, our digest, any ticks owed, and with the ratchet's switch on the group seeds it never acknowledged.
+    /// keys we still lack, our digest, any ticks owed, and with the ratchet's switch on the group seeds it never acknowledged
+    /// and the resets our floor refused whose floor has ended.
     /// A Bluetooth link stays up, so this is what reconciles custody that drifts after link-up, and what opens a blob's next
     /// cycle, which moves it one hop nearer.
     func reoffer() {
         // First, and whoever is linked: a reset's second re-seal is due by the clock, not by a link (knit-next
         // `MeshManager.kt:2815-2818` at `4f3cd995`, ADR 2026-10.dmgw).
         resealSecondPass()
+        // Clock-driven too, and outside the link-set guards: a reset our floor refused opens again from its own bytes once
+        // the floor ends (knit-next `MeshManager.kt:4206-4207` at `f018bc8ce`, its ADR 2026-11.sfms).
+        reopenFlooredResets()
         let neighbors = neighborIds
         rewantMissingBlobs(sparing: [])
         stepBlobs()

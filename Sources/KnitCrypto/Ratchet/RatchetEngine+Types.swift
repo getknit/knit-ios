@@ -24,6 +24,13 @@ extension RatchetEngine {
         public var prevRootWeAreInitiator: Bool
         /// When ``prevRoot`` stops opening frames, on our clock.
         public var prevRootExpiresAt: Int64
+        /// Set exactly while ``prevRoot`` is our own init, abandoned unconfirmed because we lost a race to the peer's
+        /// (`prevRootOwnInitAt`, knit-next `RatchetEngine.kt:55-61` at `f018bc8ce`, its ADR 2026-10.4mjm's rule C): that
+        /// init's own ``establishedAt``, our clock, read before the race-loser branch overwrote it with the winner's
+        /// `init.at`. Only that branch sets it; every other write of ``prevRoot`` clears it, so a root that was confirmed and
+        /// later replaced never qualifies. The reclaim restores ``establishedAt`` from it. Not in the ratchet vectors' state
+        /// digest, which knit-next's pins without it.
+        public var prevRootOwnInitAt: Int64?
         /// When the session started: our clock exactly when we initiated, else the peer's `init.at` (Kotlin's
         /// `establishedAtIsOurOwnClockExactlyWhenWeAreTheInitiator`). The session layer's era gate relies on that split.
         public var establishedAt: Int64
@@ -66,6 +73,7 @@ extension RatchetEngine {
             prevRoot: [UInt8]? = nil,
             prevRootWeAreInitiator: Bool = false,
             prevRootExpiresAt: Int64 = 0,
+            prevRootOwnInitAt: Int64? = nil,
             establishedAt: Int64,
             initEphPub: [UInt8]? = nil,
             initPkid: Int = 0,
@@ -88,6 +96,7 @@ extension RatchetEngine {
             self.prevRoot = prevRoot
             self.prevRootWeAreInitiator = prevRootWeAreInitiator
             self.prevRootExpiresAt = prevRootExpiresAt
+            self.prevRootOwnInitAt = prevRootOwnInitAt
             self.establishedAt = establishedAt
             self.initEphPub = initEphPub
             self.initPkid = initPkid
@@ -241,8 +250,19 @@ extension RatchetEngine {
         /// ``allowEraChange`` `false` reads it. Kotlin's anchor rule (`RatchetEngine.kt:575-578` at `4f3cd995`) carried
         /// across an iPhone reinstall, which keeps the Keychain and loses the session rows.
         public var initAnsweredBefore: Bool
+        /// Whether the session layer judged the frame sealed before the session we hold began (`predatesSession`, knit-next
+        /// `RatchetEngine.kt:181-187` at `f018bc8ce`): its raw signed `sentAt`, the sender's clock, more than the skew bound
+        /// before our `establishedAt`, which is our clock because we initiated (knit-next ADR 026). Only the race branch of
+        /// the resolution reads it, for an init that derives our draining `prevRoot` (knit-next ADR 2026-10.j67x's rule 2).
+        public var predatesSession: Bool
+        /// Whether the session layer judged the frame sealed after the init we lost a race to (`sealedSinceLostRace`,
+        /// `:188-196`, knit-next ADR 2026-10.4mjm): the session holds ``SessionState/prevRootOwnInitAt``, and the frame's raw
+        /// signed `sentAt` is more than the skew bound past the session's `establishedAt`, the winning init's `at`, both the
+        /// peer's clock. Only the draining `prevRoot` candidate reads it, to tell whether opening under it reclaims our init.
+        public var sealedSinceLostRace: Bool
 
-        /// A context; replacement and era changes allowed, no reset requested and no init answered before unless said.
+        /// A context; replacement and era changes allowed, no reset requested, no init answered before, and neither of the
+        /// session layer's era stamps judged, unless said.
         public init(
             selfNodeId: NodeId,
             peerId: NodeId,
@@ -256,7 +276,9 @@ extension RatchetEngine {
             allowReplacement: Bool = true,
             resetRequested: Bool = false,
             allowEraChange: Bool = true,
-            initAnsweredBefore: Bool = false
+            initAnsweredBefore: Bool = false,
+            predatesSession: Bool = false,
+            sealedSinceLostRace: Bool = false
         ) {
             self.selfNodeId = selfNodeId
             self.peerId = peerId
@@ -271,6 +293,8 @@ extension RatchetEngine {
             self.resetRequested = resetRequested
             self.allowEraChange = allowEraChange
             self.initAnsweredBefore = initAnsweredBefore
+            self.predatesSession = predatesSession
+            self.sealedSinceLostRace = sealedSinceLostRace
         }
     }
 
@@ -290,8 +314,8 @@ extension RatchetEngine {
         }
 
         /// The typed failures, which the session layer maps to drop reasons and the reset heuristic. Only `NO_SESSION`,
-        /// `EPOCH_GONE` and `AEAD_FAIL` from an authenticated frame count toward a reset; `DUPLICATE` and `BAD_HEADER`
-        /// never do (`RESET_TRIGGERING_DROPS`, `InboundPipeline.kt:3690-3704`).
+        /// `EPOCH_GONE` and `AEAD_FAIL` from an authenticated frame count toward a reset; `DUPLICATE`, `BAD_HEADER` and
+        /// `RESET_FLOORED` never do (`RESET_TRIGGERING_DROPS`, `InboundPipeline.kt:3690-3704`).
         public enum Failed: Sendable, Equatable, Hashable {
             /// No session and no usable init: the peer assumes state we do not have.
             case noSession
@@ -303,6 +327,16 @@ extension RatchetEngine {
             case badHeader
             /// Keys resolved and the AEAD refused: another era's root, a corrupt frame, or tampering.
             case aeadFail
+            /// A `FLAG_RESET` init refused by the replacement floor alone (``OpenContext/allowReplacement`` false, a newer
+            /// `at`, an ephemeral never resolved, our prekey held), whose frame nothing opened and whose root is none the
+            /// session holds: not the active root, not `prevRoot`, live or past its drain, not a race's other root
+            /// (`RESET_FLOORED`, knit-next `RatchetEngine.kt:222-233` at `f018bc8ce`, its ADR 2026-11.sfms). A flagged init is
+            /// adopted or refused, never read (knit-next ADR 2026-09.pz9g), so its frame was never opened and is no re-serve
+            /// of a spent index: it outranks ``duplicate``, which the resetter's restarted `se = 1 n = 0` would otherwise meet
+            /// on the previous reset's row (knit-next #251). It never counts toward a reset: the peer asked to re-root inside
+            /// our floor, and the caller holds the frame and opens it again once the floor ends. This port also answers it at
+            /// the start's replay, whatever the floor that died with the process said (ADR 2026-10.5sk9's P9b amendment).
+            case resetFloored
         }
     }
 
@@ -319,8 +353,16 @@ extension RatchetEngine {
         public let skippedInserts: [SkippedKey]
         /// The tag of the skipped key the frame spent at the header's `(se, n)`: only that root's key goes.
         public let consumedSkippedTag: Int64?
-        /// Whether a root change was adopted: drop every receive chain and skipped key held for the peer first.
+        /// Whether a root change was adopted: drop every receive chain and skipped key held for the peer first, but
+        /// ``keepRecvTag``'s.
         public let purgePeerRecvState: Bool
+        /// With ``purgePeerRecvState``, the one root whose receive state survives the purge, by its tag: the root a reclaim
+        /// moved back to, whose chains and skipped keys are the era we hold next, an earlier frame of it perhaps read
+        /// read-only (`keepRecvTag`, knit-next `RatchetEngine.kt:246-251` at `f018bc8ce`). `nil` purges everything.
+        public let keepRecvTag: Int64?
+        /// Whether this open moved the session back onto our own init, lost to a race, because the peer sealed under it as
+        /// responder (`reclaimed`, `:252-253`, knit-next ADR 2026-10.4mjm). The session layer reads it as our init answered.
+        public let reclaimed: Bool
         /// The tag of the root candidate the frame opened under (`openedRootTag`, `RatchetEngine.kt:523`, `:901`): set on
         /// every rung, a skipped key's, a live chain's and a fresh derivation's alike, so no caller falls back to reading
         /// the session's root as the one that opened it. A ctl that files what it carries by era reads it with
@@ -329,7 +371,7 @@ extension RatchetEngine {
 
         /// Whether the frame opened under the root the session holds once this open commits
         /// (`RatchetSessions.OpenedUnder`, `RatchetSessions.kt:290-292` at knit-next `cad69c77b`; the pz9g predicate):
-        /// true for a fresh session, an adopted replacement or race, and for a skipped key or live chain under that root;
+        /// true for a fresh session, an adopted replacement or race, a reclaim, and for a skipped key or live chain under that root;
         /// false for a drain under `prevRoot` or a late read under a race's other root. It is not the era effects of
         /// ``Ladder``'s `touch`: a skipped-key or live-chain open under the active root is active here and moves no era there.
         public var openedUnderActiveRoot: Bool {

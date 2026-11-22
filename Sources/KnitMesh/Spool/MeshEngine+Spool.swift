@@ -177,7 +177,7 @@ extension MeshEngine {
         if frame.envelope.type == .profile {
             handleProfile(frame.wire, frame.envelope)
         } else {
-            handleChat(frame.envelope, route: RatchetInbound.Route(source: .spool, signed: true, origin: .firstVerdict))
+            handleChat(frame.envelope, route: RatchetInbound.Route(source: .spool, signed: true, origin: .firstVerdict, wire: frame.wire))
         }
         return !spoolInbound.takeUndelivered(frame.envelope.id)
     }

@@ -36,7 +36,7 @@ extension MeshEngine {
         }
         switch envelope.type {
         case .chat:
-            handleChat(envelope, route: RatchetInbound.Route(hop: frame.from, signed: !frame.wire.sig.isEmpty, origin: .firstVerdict))
+            handleChat(envelope, route: RatchetInbound.Route(arriving: frame))
         case .profile:
             handleProfile(frame.wire, envelope)
         case .receipt:

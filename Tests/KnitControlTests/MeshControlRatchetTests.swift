@@ -1,11 +1,12 @@
 import Foundation
-import KnitControl
 import KnitCrypto
 import KnitMesh
 import KnitStore
 import KnitTestSupport
 import KnitWire
 import Testing
+
+@testable import KnitControl
 
 /// `{"cmd":"ratchet"}`: every pinned peer's DM ratchet state under the keys of Android's debug bridge `RATCHET`
 /// (`DebugBridgeReceiver.kt:1450-1502`), and with `reset` a forced reset first, sealed, persisted and flooded, as the
@@ -50,12 +51,13 @@ import Testing
         #expect(dana["capRatchet"] as? Bool == true && dana["peerPrekeyId"] as? Int == 2 && dana["peerPrekeyPinned"] as? Bool == true)
         #expect(dana["hasSession"] as? Bool == false && dana["confirmed"] as? Bool == false && dana["sendEpoch"] as? Int == 0)
         #expect(dana["rootHash"] is NSNull && (dana["localEpochs"] as? [String])?.isEmpty == true)
+        #expect(dana["prevRootOwnInitAt"] is NSNull, "no race lost, so no init of ours to reclaim")
         let keys = Set(dana.keys)
         #expect(
             keys == [
                 "peer", "name", "capRatchet", "peerPrekeyId", "peerPrekeyPinned", "hasSession", "confirmed", "sendEpoch",
                 "lastResetSentAt", "establishedAt", "weAreInitiator", "highestPeAcked", "rootHash", "prevRootExpiresAt",
-                "hasPeerInitAnchor", "localEpochs",
+                "prevRootOwnInitAt", "hasPeerInitAnchor", "localEpochs",
             ])
     }
 
@@ -130,15 +132,55 @@ import Testing
         }
     }
 
-    /// The reply's `answers`, beside `seals` and `receipts`, under the name of Android's metric (`introsAnswered`, in
-    /// `MeshMetrics.Keys`; phase P5e): zero before any init was answered, with the switch on or off. The engine's tests count
-    /// it (`MeshEngineInitAnswerTests`).
+    /// The reply's `answers`, beside `seals` and `receipts`, under the names of Android's metrics (`introsAnswered` and
+    /// `ratchetSwappedBack`, in `MeshMetrics.Keys`; phases P5e and P9a): zero before any init was answered or reclaimed, with
+    /// the switch on or off. The engine's tests count them (`MeshEngineInitAnswerTests`, `RatchetRestoreLabTests`).
     @Test func theDumpCountsOurInitAnswersUnderAndroidsName() async throws {
         for on in [true, false] {
             let rig = ControlRig(configuration: MeshConfiguration(ratchet: on))
             let answers = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["answers"] as? [String: Int])
-            #expect(answers == ["introsAnswered": 0], "switch \(on)")
+            #expect(answers == ["introsAnswered": 0, "ratchetSwappedBack": 0], "switch \(on)")
         }
+    }
+
+    /// The reply's `flooredResets`, under this port's names since Android counts only the drop (knit-next ADR 2026-11.sfms):
+    /// zero before any reset was held, with the switch on or off. The engine's tests count them (`MeshEngineFlooredResetTests`).
+    @Test func theDumpCountsTheResetsOurFloorRefused() async throws {
+        for on in [true, false] {
+            let rig = ControlRig(configuration: MeshConfiguration(ratchet: on))
+            let floored = try #require(try await rig.send(#"{"cmd":"ratchet"}"#)["flooredResets"] as? [String: Int])
+            #expect(
+                floored == ["flooredResetsHeld": 0, "flooredResetsDropped": 0, "flooredResetsReopened": 0, "flooredResetsAdopted": 0],
+                "switch \(on)")
+        }
+        let counts = RatchetFlooredCounts(flooredResetsHeld: 1, flooredResetsDropped: 2, flooredResetsReopened: 3, flooredResetsAdopted: 4)
+        #expect(
+            ControlLines.describe(counts)
+                == [
+                    "flooredResetsHeld": .int(1), "flooredResetsDropped": .int(2), "flooredResetsReopened": .int(3),
+                    "flooredResetsAdopted": .int(4),
+                ])
+    }
+
+    /// A session whose previous root is our own init, lost to a race, shows that init's stamp under Android's key
+    /// (`prevRootOwnInitAt`, the debug bridge's `RATCHET`, knit-next ADR 2026-10.4mjm), and the reclaims counted so far.
+    @Test func theDumpShowsTheStampOfOurOwnInitLostToARace() {
+        let session = RatchetEngine.SessionState(
+            peerId: peer.keys.nodeId,
+            confirmed: true,
+            weAreInitiator: false,
+            root: [UInt8](repeating: 1, count: 32),
+            prevRoot: [UInt8](repeating: 2, count: 32),
+            prevRootWeAreInitiator: true,
+            prevRootExpiresAt: 9,
+            prevRootOwnInitAt: 4,
+            establishedAt: 6
+        )
+        let record = PeerRecord(nodeId: peer.keys.nodeId, name: "Dana", status: "", publicKey: "key", updatedAt: 1)
+        let fields = ControlLines.fields(of: RatchetPeerState(peer: record, session: session, localEpochs: []))
+        #expect(fields["prevRootOwnInitAt"] == .int(4) && fields["prevRootExpiresAt"] == .int(9))
+        let answers = ControlLines.describe(RatchetAnswerCounts(introsAnswered: 1, ratchetSwappedBack: 2))
+        #expect(answers == ["introsAnswered": .int(1), "ratchetSwappedBack": .int(2)])
     }
 
     /// The reply's `groups`, beside `seals`, under the names of Android's `MeshMetrics.Groups` as its bridge reports them

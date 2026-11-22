@@ -13,9 +13,10 @@ import Testing
 /// Left out: `rootChanges`, which is not ported, and every case of our own unanswered reset that Kotlin exports
 /// (`ourResetOverAConfirmedSessionExports…`, `aResetRaceEnds…`, `aSecondResetOverOurUnansweredOne…`,
 /// `theReplacedErasOwnInit…`, `theReplacedErasInitSealedSinceOurReset…`, `thePendingResetRuleReadsTheRowAlone`): that
-/// exception (knit-next ADR 2026-10.j67x) is deferred with the slot and race rules it needs, so such a reset exports
-/// nothing here, as ``ourOwnUnansweredResetExportsNothingUntilItIsAnswered()`` pins. Also left out: the restore's
-/// `ownPendingResets` cases, and the scope config's confirmed-only seal (ctl 7 is never sent).
+/// exception, knit-next ADR 2026-10.j67x's rule 1, is deferred, so such a reset exports nothing here, as
+/// ``ourOwnUnansweredResetExportsNothingUntilItIsAnswered()`` pins. The slot and race rules it stands on, rules 2 and 3,
+/// are ported, and their cases are in `RatchetSessionsResetTests` and `RatchetEngineTests+Resets`. Also left out: the
+/// restore's `ownPendingResets` cases, and the scope config's confirmed-only seal (ctl 7 is never sent).
 @Suite struct RatchetSessionsScopesTests {
     static let t0: Int64 = 100_000_000
     static let t1 = t0 + 600_000
@@ -82,8 +83,8 @@ import Testing
         #expect(alice.sessions.dmScopes(now: Self.t1)?.isEmpty == true)
     }
 
-    /// Kotlin exports our own reset over a confirmed session while it waits (knit-next ADR 2026-10.j67x); this port
-    /// defers that with the slot and race rules (ADR 2026-11.adrq), so the scope goes until the peer answers. The peer,
+    /// Kotlin exports our own reset over a confirmed session while it waits (knit-next ADR 2026-10.j67x's rule 1); this
+    /// port defers rule 1 (ADR 2026-11.adrq), so the scope goes until the peer answers. The peer,
     /// which adopts the reset, holds the new root as live and the replaced one as retiring, and once its answer opens here
     /// both sides hold the same two.
     @Test func ourOwnUnansweredResetExportsNothingUntilItIsAnswered() throws {

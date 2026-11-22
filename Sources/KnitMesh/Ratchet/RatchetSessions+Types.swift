@@ -154,6 +154,26 @@ extension RatchetSessions {
         /// An open moved the session row's root, previous root or confirmation without any of the above: a first session
         /// established, or a responder's confirmed from the start (ADR 2026-11.adrq, P4a).
         var movedRow = false
+        /// An open moved the session back onto our own init, lost to a race, because the peer sealed under it as responder
+        /// (knit-next ADR 2026-10.4mjm). It also sets ``replacementAdoptedAt`` (the reclaim's purge), ``initAnsweredAt``
+        /// (the answer floor) and ``peerReplaced``; this one adds only the log line and the count (`commitOpen`, knit-next
+        /// `RatchetSessions.kt:308-311` at `f018bc8ce`).
+        var reclaimed = false
+        /// With ``initAnsweredAt``: the peer took our init as a replacement of a session of its own, a reclaim or what
+        /// ``RatchetSessions/peerReplacedWith(_:)`` reads on the row the answer found, so the sender's `replacedAt` is
+        /// stamped too (`commitOpen`, knit-next `RatchetSessions.kt:304-306` at `f018bc8ce`, the 2026-11-01 amendment to its
+        /// ADR 2026-09.qerd).
+        var peerReplaced = false
+        /// Every row dropped: the one settlement that clears `replacedAt` (`forget`, knit-next `RatchetSessions.kt:929`).
+        private(set) var forgotten = false
+
+        /// Whether the peer's root generation moves (``RatchetSessions/rootGeneration(of:)``): a replacement or race
+        /// adopted, which a reclaim's purge reports too, our own re-root, or every row forgotten, Kotlin's sites
+        /// (`RatchetSessions.kt:293-298`, `:787`, `:930` at `f018bc8ce`). ``clearsConfirmedAt`` is set by exactly the re-root
+        /// and the forget. Not a session first established, nor a race we won: neither leaves a root the peer holds.
+        var movesRoot: Bool {
+            replacementAdoptedAt != nil || clearsConfirmedAt
+        }
 
         /// Whether the session row's scopes may have moved (``RatchetSessions/dmScopes(now:)``): a replacement or reset
         /// adopted, our reset sealed, our init answered, a row moved, or every row forgotten. What bumps
@@ -191,7 +211,9 @@ extension RatchetSessions {
 
         /// Every row dropped.
         static func forgotten(_ peer: NodeId) -> Self {
-            Self(peer: peer, replacementAdoptedAt: nil, initAnsweredAt: nil, resetSealedAt: nil, clearsConfirmedAt: true)
+            var settlement = Self(peer: peer, replacementAdoptedAt: nil, initAnsweredAt: nil, resetSealedAt: nil, clearsConfirmedAt: true)
+            settlement.forgotten = true
+            return settlement
         }
     }
 }

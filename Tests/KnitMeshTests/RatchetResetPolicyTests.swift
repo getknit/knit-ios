@@ -28,6 +28,7 @@ import Testing
         #expect(RatchetResetPolicy.triggeringFailures == [.noSession, .epochGone, .aeadFail])
         #expect(!RatchetResetPolicy.triggeringFailures.contains(.duplicate))
         #expect(!RatchetResetPolicy.triggeringFailures.contains(.badHeader))
+        #expect(!RatchetResetPolicy.triggeringFailures.contains(.resetFloored), "a reset our floor refused is held, never evidence")
     }
 
     /// For a responder `establishedAt` is the peer's own `init.at`: one clock, compared exactly.
@@ -98,14 +99,41 @@ import Testing
         #expect(plan(session(weAreInitiator: true), cause: .unreadable, answeredAt: nil) == noFloor, "a restart forgot the answer")
     }
 
+    /// knit-next #251 (the 2026-11-01 amendment to its ADR 2026-09.qerd, `answeredPlan`, `RatchetSessions.kt:698-723` at
+    /// `f018bc8ce`): inside the minute after the peer took our init as a replacement, every cause but after-wipe is declined,
+    /// whatever our role is now, an on-demand reset among them; at the minute it re-roots.
+    @Test func everyCauseButAfterWipeWaitsAMinuteFromAReplacementAnswer() {
+        let replaced = RatchetResetPolicy.Plan(action: .decline("the peer adopted our reset under a minute ago"), decidedBy: .replacedInit)
+        let inside = Self.now - Self.minute + 1
+        #expect(plan(session(weAreInitiator: true), cause: .onDemand, replacedAt: inside) == replaced, "a forced reset")
+        #expect(plan(session(weAreInitiator: false), cause: .unreadable, replacedAt: inside) == replaced, "our role flipped since")
+        #expect(plan(session(weAreInitiator: false), cause: .onDemand, replacedAt: inside) == replaced)
+        let noFloor = RatchetResetPolicy.Plan(action: .reRoot, decidedBy: .noPendingInit)
+        #expect(plan(session(weAreInitiator: true), cause: .onDemand, replacedAt: Self.now - Self.minute) == noFloor, "the minute is up")
+        #expect(plan(session(weAreInitiator: true), cause: .afterWipe, replacedAt: inside).decidedBy == .afterWipe, "after-wipe goes on")
+        #expect(plan(session(weAreInitiator: true), cause: .afterWipe, replacedAt: inside).action == .mark)
+    }
+
+    /// The heuristic's own rule runs first and keeps its reason and its `decidedBy`, which the ratchet vectors pin; past it,
+    /// the replacement floor declines still.
+    @Test func theHeuristicsAnsweredInitRuleDecidesFirst() {
+        let held = session(weAreInitiator: true)
+        let inside = Self.now - Self.minute + 1
+        let answered = plan(held, cause: .unreadable, answeredAt: inside, replacedAt: inside)
+        #expect(answered == .init(action: .decline("the peer adopted our init under a minute ago"), decidedBy: .answeredInit))
+        let past = plan(held, cause: .unreadable, answeredAt: Self.now - Self.minute, replacedAt: inside)
+        #expect(past == .init(action: .decline("the peer adopted our reset under a minute ago"), decidedBy: .replacedInit))
+    }
+
     private func plan(
         _ held: RatchetEngine.SessionState?,
         prekeyId: Int = 1,
         now: Int64 = Self.now,
         cause: RatchetResetPolicy.Cause = .onDemand,
-        answeredAt: Int64? = nil
+        answeredAt: Int64? = nil,
+        replacedAt: Int64? = nil
     ) -> RatchetResetPolicy.Plan {
-        RatchetResetPolicy.plan(for: held, prekeyId: prekeyId, now: now, cause: cause, answeredAt: answeredAt)
+        RatchetResetPolicy.plan(for: held, prekeyId: prekeyId, now: now, cause: cause, answeredAt: answeredAt, replacedAt: replacedAt)
     }
 
     private func session(

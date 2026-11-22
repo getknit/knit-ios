@@ -48,13 +48,25 @@ extension Copy {
                     value: "Dropped: key change refused",
                     comment: "A drop counter"
                 )
-            case .cleartextGroup, .rosterRefused, .blocked, .reactionRefused, .blobControlNotFromLink, .presenceKeyRefused:
+            case .cleartextGroup, .rosterRefused, .blocked, .reactionRefused, .blobControlNotFromLink, .presenceKeyRefused,
+                .ratchetResetFloored:
                 laterReason(reason)
             case .ratchetNoSession, .ratchetEpochGone, .ratchetDuplicate, .ratchetBadHeader, .ratchetAeadFail, .storeRefused:
                 ratchetReason(reason)
             case .groupRatchetNoKey, .groupRatchetDuplicate, .groupRatchetBadHeader, .groupRatchetAeadFail:
                 groupRatchetReason(reason)
             }
+        }
+
+        /// The label for a peer's session reset our one-minute floor refused and keeps until the minute is up (knit-next ADR
+        /// 2026-11.sfms).
+        private static var resetFloored: String {
+            NSLocalizedString(
+                "diagnostics.drop.ratchet-reset-floored",
+                bundle: .main,
+                value: "Dropped: session reset too soon, retried after a minute",
+                comment: "A drop counter: an encryption session reset within a minute of the last, opened once the minute is up"
+            )
         }
 
         /// The labels for the drops the forward-secrecy ratchet brought (ADR 2026-10.5sk9).
@@ -163,6 +175,8 @@ extension Copy {
                     value: "Dropped: reaction that isn't an emoji",
                     comment: "A drop counter: a reaction whose text is not a single emoji, still passed on for others but not shown"
                 )
+            case .ratchetResetFloored:
+                resetFloored
             case .presenceKeyRefused:
                 NSLocalizedString(
                     "diagnostics.drop.presence-key-refused",

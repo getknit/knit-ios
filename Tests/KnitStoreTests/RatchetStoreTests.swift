@@ -25,6 +25,7 @@ import Testing
         full.prevRoot = bytes(9)
         full.prevRootWeAreInitiator = true
         full.prevRootExpiresAt = Self.now + 1
+        full.prevRootOwnInitAt = Self.now - 9
         full.initEphPub = bytes(4)
         full.initPkid = 7
         full.peerInitEphPub = bytes(5)

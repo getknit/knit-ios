@@ -7,10 +7,13 @@ extension MeshControl {
     /// first when one is asked for, sealed and flooded as Android's bridge sends one (`MeshManager.forceRatchetReset`), then
     /// every pinned peer's state, after the reset so the dump shows what it did, and the prekey our profile names, which
     /// the peer's dump shows as its `peerPrekeyId`. `seals` adds how our DMs and reactions were sealed, `receipts` how our
-    /// receipts and ticks were and how many room ticks rode, and `answers` how many inits our sealed profile answered,
-    /// under the names of Android's metrics (`MeshMetrics.Seals`, `MeshMetrics.Receipts` and `introsAnswered` in
-    /// `MeshMetrics.Keys`), which its bridge reports apart. `groups` adds how the group form went (phase P7d), under the names
-    /// of `MeshMetrics.Groups` as the bridge's metrics report them (`DebugBridgeReceiver.kt:1321-1329`).
+    /// receipts and ticks were and how many room ticks rode, and `answers` how many inits our sealed profile answered and
+    /// how many of our own inits we reclaimed, under the names of Android's metrics (`MeshMetrics.Seals`,
+    /// `MeshMetrics.Receipts`, and `introsAnswered` and `ratchetSwappedBack` in `MeshMetrics.Keys`), which its bridge reports
+    /// apart. `groups` adds how the group form went (phase P7d), under the names
+    /// of `MeshMetrics.Groups` as the bridge's metrics report them (`DebugBridgeReceiver.kt:1321-1329`). `flooredResets` adds
+    /// how the resets our replacement floor refused went (knit-next ADR 2026-11.sfms), under this port's names: Android
+    /// counts only their drop, `RATCHET_RESET_FLOORED`, which `status`'s `dropped` shows here as `ratchetResetFloored`.
     func ratchet(resetting peer: NodeId?) async -> [String: JSONValue] {
         var reply: [String: JSONValue] = [:]
         if let peer {
@@ -29,6 +32,7 @@ extension MeshControl {
         reply["receipts"] = ControlLines.describe(await mesh.receipts)
         reply["answers"] = ControlLines.describe(await mesh.answers)
         reply["groups"] = ControlLines.describe(await mesh.groupCounts)
+        reply["flooredResets"] = ControlLines.describe(await mesh.flooredResets)
         return reply
     }
 }

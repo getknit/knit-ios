@@ -324,11 +324,10 @@ extension RatchetSessionLabTests {
     /// re-seals them: lost for their day (ADR 2026-10.5sk9's P5e limits). The pin fails once the fix lands.
     private static let twoResetsApart: Comment = "two resets apart lose the smaller id's pre-reset DMs (knit-next #89)"
 
-    /// knit-next #89's own order, the defection, and the lab repro it asks for: both reset apart, the smaller id's first.
-    /// The larger id loses the race on it and answers at once, and the smaller id confirms on that answer. The larger id's
-    /// reset then lands, newer than the smaller id's era, and `FLAG_RESET` exempts it from the remnant guard, so the smaller
-    /// id adopts it, onto the root the larger id has left: two roots, both confirmed, both responders, each reading the
-    /// other only through the root it drains, for 48 h (ADR 2026-10.5sk9's P5e limits). The pin fails once the fix lands.
+    /// knit-next #89's own order, the defection: both reset apart, the smaller id's first. The larger id loses the race on
+    /// it and answers, and the smaller id confirms. The larger id's reset then lands, newer, flagged past the remnant guard,
+    /// and the smaller id adopts it, a root the larger id has left: two roots, both responders, each reading the other only
+    /// through its drain, until the larger id reclaims its reset (knit-next ADR 2026-10.4mjm; ADR 2026-10.5sk9's P9a).
     private static let defection: Comment = "two resets apart split the pair onto two roots (knit-next #89)"
 
     /// The lab's convergence check, `expected` as a known issue where `known` says (knit-next #89's two orders), with the
@@ -351,8 +350,8 @@ extension RatchetSessionLabTests {
     /// its unacked DMs on the other's reset. Pass: one root, the smaller id's reset's; each side's `lastResetSentAt` stamped
     /// by its own reset and never again; no third reset; each side's unacked DMs read once. Two meetings fail it, both
     /// knit-next #89's and pinned as known issues: apart with the larger id first, the smaller id's DMs are lost
-    /// (``twoResetsApart``), and with the larger id's reset released last, the pair splits (``defection``). A meeting where
-    /// both resets come by back-fill converges in both orders.
+    /// (``twoResetsApart``), and with the larger id's reset released last, the pair splits (``defection``) until the larger
+    /// id reclaims its reset by the hour's check (knit-next ADR 2026-10.4mjm). Both back-fill meetings converge either way.
     @Test(arguments: Meeting.all)
     func bothResetWithinASecondAndEachAnswersTheOthersFlaggedInit(_ meeting: Meeting) throws {
         let lab = try greeted()
@@ -381,10 +380,13 @@ extension RatchetSessionLabTests {
             split
         }
 
-        // An hour on, past every floor, heals and sweeps included: nothing resets again.
+        // An hour on, past every floor, heals and sweeps included: nothing resets again, and the larger id has reclaimed its
+        // reset, sealed under past the margin by the smaller id (knit-next ADR 2026-10.4mjm, #184 from the loser's side).
         lab.advance(RatchetAnswers.floorMilliseconds)
         try turnaround(lab, "an hour on")
-        expectConverged(lab, atLeast: 12, "an hour on", known: known, agreeing: lost)
+        expectConverged(lab, atLeast: 12, "an hour on", known: lost ? Self.twoResetsApart : nil, agreeing: lost)
+        let healed = [lab[0].ratchetRecords(of: bob).session?.root, lab[1].ratchetRecords(of: alice).session?.root]
+        #expect((!split || healed == [reset.roots[large], reset.roots[large]]) && lab[large].engine.ratchet.reclaims == (split ? 1 : 0))
         let received = [0, 1].map { receivedRecords(in: lab[$0].engine.drainEvents()).map { ExactKey($0.id) } }
         for index in [0, 1] {
             try expectResetOnce(lab, index, stamp: reset.stamps[index])

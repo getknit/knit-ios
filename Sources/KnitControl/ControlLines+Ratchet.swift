@@ -21,6 +21,7 @@ extension ControlLines {
             "highestPeAcked": .int(Int64(state.highestPeAcked)),
             "rootHash": .text(state.rootHash),
             "prevRootExpiresAt": .int(state.prevRootExpiresAt),
+            "prevRootOwnInitAt": state.prevRootOwnInitAt.map { .int($0) } ?? .null,
             "hasPeerInitAnchor": .bool(state.hasPeerInitAnchor),
             "localEpochs": .array(state.localEpochs.map { .string("\($0.epoch)@\($0.createdAt)") }),
         ]
@@ -38,10 +39,14 @@ extension ControlLines {
         ]
     }
 
-    /// How many inits our sealed profile answered, under the name of Android's metric (`introsAnswered`, in
-    /// `MeshMetrics.Keys`, `MeshMetrics.kt:1466-1474`): the one of that group this port counts.
+    /// How many inits our sealed profile answered, and how many times a session moved back onto our own init lost to a
+    /// race, under the names of Android's metrics (`introsAnswered` and `ratchetSwappedBack`, in `MeshMetrics.Keys`,
+    /// knit-next `MeshMetrics.kt:2209-2218` at `f018bc8ce`): the two of that group this port counts.
     static func describe(_ answers: RatchetAnswerCounts) -> JSONValue {
-        ["introsAnswered": .int(Int64(answers.introsAnswered))]
+        [
+            "introsAnswered": .int(Int64(answers.introsAnswered)),
+            "ratchetSwappedBack": .int(Int64(answers.ratchetSwappedBack)),
+        ]
     }
 
     /// How our receipts and ticks were sealed and how many room ticks rode, under the names of Android's metrics
@@ -54,6 +59,18 @@ extension ControlLines {
             "receiptsReAckSkipped": .int(Int64(receipts.receiptsReAckSkipped)),
             "receiptsCustodied": .int(Int64(receipts.receiptsCustodied)),
             "receiptsRidden": .int(Int64(receipts.receiptsRidden)),
+        ]
+    }
+
+    /// How the resets our replacement floor refused went: held, dropped unrun, opened again once the floor ended, and of
+    /// those adopted (knit-next ADR 2026-11.sfms; ADR 2026-10.5sk9's P9b amendment). The names are this port's, since
+    /// Android's `MeshMetrics` counts only the drop (`RATCHET_RESET_FLOORED`, `MeshMetrics.kt:68-75` at `f018bc8ce`).
+    static func describe(_ floored: RatchetFlooredCounts) -> JSONValue {
+        [
+            "flooredResetsHeld": .int(Int64(floored.flooredResetsHeld)),
+            "flooredResetsDropped": .int(Int64(floored.flooredResetsDropped)),
+            "flooredResetsReopened": .int(Int64(floored.flooredResetsReopened)),
+            "flooredResetsAdopted": .int(Int64(floored.flooredResetsAdopted)),
         ]
     }
 

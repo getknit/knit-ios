@@ -53,17 +53,23 @@ extension MeshEngine {
             drop(.noSenderKey, envelope)
             return
         }
-        let v3 = enc.version == EncEnvelope.Version.compactRatchet
         let now = clock.wallMilliseconds()
+        // The peer's root generation before the open: a root change committed after it can only make a floored reset's hold
+        // stale, never let one outlive its era (`InboundPipeline.kt:1809`, `:2818-2820` at `f018bc8ce`).
+        let generation = ratchet.rootGeneration(of: sender)
+        let open = DirectOpen(envelope: envelope, header: frame.header, sender: sender, route: route, now: now, generation: generation)
         var decided = DirectArrival.refused(.cannotOpen)
         // The inits of the peer's that a session of ours anchored, kept in the identity's item across a reinstall (ADR
         // 2026-10.wcex), and the one this open anchors, if it does.
         let answeredBefore = { [ring = prekeyRing] (eph: [UInt8]) in ring?.answered(eph, by: sender, now: now) ?? false }
         var anchored: [UInt8]?
+        // The era judgements read the envelope's signed `sentAt` as it arrived, never `clampFuture`'s (knit-next ADR 026,
+        // `cf447a9b`), as ``unreadable(_:epochGoneBase:)`` does: `InboundPipeline.kt:1810`, `:1833` at `f018bc8ce`.
         let answer = ratchet.open(
             frame,
             from: bundle,
             now: now,
+            sentAt: envelope.sentAt,
             allowEraChange: route.origin == .firstVerdict,
             answeredBefore: answeredBefore,
             prekeys: { [ring = prekeyRing] in ring?.prekey(id: $0) },
@@ -71,14 +77,13 @@ extension MeshEngine {
                 if let initial = frame.header.initial, opened.delta.session.peerInitEphPub == initial.eph {
                     anchored = initial.eph
                 }
-                decided = directArrival(OpenedContent(opened, v3: v3), envelope, from: sender, route: route, parksSeeds: parksSeeds)
+                decided = directArrival(OpenedContent(opened, of: enc), envelope, from: sender, route: route, parksSeeds: parksSeeds)
                 guard case .arrival(let arrival) = decided else {
                     return nil
                 }
                 return arrival
             }
         )
-        let open = DirectOpen(envelope: envelope, header: frame.header, sender: sender, route: route, now: now)
         switch answer {
         case .settled(.opened(_, let arrival)):
             committed(arrival, open, answering: true, anchored: anchored)
@@ -170,13 +175,16 @@ extension MeshEngine {
         }
     }
 
-    /// A typed failure of `open`'s frame, counted, and fed to the reset heuristic when it is evidence.
+    /// A typed failure of `open`'s frame, counted, and fed to the reset heuristic when it is evidence. A reset our floor
+    /// refused is never evidence: it is held, inside this failure, for the re-open once the floor ends (knit-next ADR
+    /// 2026-11.sfms, `onRatchetFailure`, `InboundPipeline.kt:2839-2842` at `f018bc8ce`).
     private func refusedOpen(_ open: DirectOpen, failure: RatchetEngine.OpenOutcome.Failed) {
         refused(open.envelope, failure, header: open.header)
         noteSpoolUndelivered(open.envelope, route: open.route)
-        if RatchetInbound.countsTowardReset(failure, route: open.route) {
-            let base = failure == .epochGone ? open.header.pe : nil
-            unreadable(open.envelope, from: open.sender, now: open.now, epochGoneBase: base)
+        if failure == .resetFloored {
+            holdFlooredReset(open)
+        } else if RatchetInbound.countsTowardReset(failure, route: open.route) {
+            unreadable(open, epochGoneBase: failure == .epochGone ? open.header.pe : nil)
         }
     }
 
@@ -186,16 +194,16 @@ extension MeshEngine {
     /// path, its plan and its floors (``sendSessionReset(to:now:cause:)``), and the frame is let past the router once for
     /// the peer's re-seal of it, as a counted failure is. Otherwise, or if that reset declines, it counts toward the
     /// heuristic only as `NO_SESSION`, which the engine answers only while no session is held: with one, it is evidence
-    /// about an era we no longer hold. Never at a start's replay, for an unsigned frame or for one a spool served, as no
-    /// failure counts there (ADR 2026-11.adrq, P4a).
+    /// about an era we no longer hold. Never at a start's replay, for an unsigned frame, for one a spool served, or for a
+    /// floored reset's backlog, as no failure counts there (ADR 2026-11.adrq, P4a).
     private func resolvedStale(_ open: DirectOpen, failure: RatchetEngine.OpenOutcome.Failed, resetsAtOnce: Bool) {
         refused(open.envelope, failure, header: open.header, stale: true)
         noteSpoolUndelivered(open.envelope, route: open.route)
-        guard open.route.signed, open.route.origin == .firstVerdict, !open.route.isSpool else {
+        guard open.route.signed, open.route.origin == .firstVerdict, !open.route.isSpool, open.route.mayBeEvidence else {
             return
         }
         // Whatever follows, the peer may re-seal this id after a reset of either side's: one copy is let past the router,
-        // as a counted failure's is (``unreadable(_:from:now:epochGoneBase:)``).
+        // as a counted failure's is (``unreadable(_:epochGoneBase:)``).
         _ = router.reopen(open.envelope.id, now: clock.monotonicMilliseconds())
         if resetsAtOnce {
             switch sendSessionReset(to: open.sender, now: open.now, cause: .unreadable) {
@@ -207,7 +215,7 @@ extension MeshEngine {
             }
         }
         if failure == .noSession {
-            unreadable(open.envelope, from: open.sender, now: open.now, epochGoneBase: nil)
+            unreadable(open, epochGoneBase: nil)
         }
     }
 
@@ -250,16 +258,27 @@ extension MeshEngine {
         log.log(.info, "mesh ratchet drop \(envelope.id) from \(envelope.senderId): \(failure) \(fields)")
     }
 
-    /// A signed frame whose failure is evidence that the session we hold is broken (`InboundPipeline.kt:1798-1828`): let
-    /// past the router's dedup once, and fed to the reset heuristic, which sends a reset when it fires. `epochGoneBase` is
-    /// the header's `pe` for an `EPOCH_GONE`, which the heuristic's retired-base gate reads (knit-next ADR 2026-10.9wvr).
-    private func unreadable(_ envelope: RelayEnvelope, from sender: NodeId, now: Int64, epochGoneBase: Int?) {
+    /// `open`'s signed frame, whose failure is evidence that the session we hold is broken (`InboundPipeline.kt:1798-1828`):
+    /// let past the router's dedup once, and fed to the reset heuristic, which sends a reset when it fires. `epochGoneBase`
+    /// is the header's `pe` for an `EPOCH_GONE`, which the heuristic's retired-base gate reads (knit-next ADR 2026-10.9wvr).
+    ///
+    /// A frame that carries the init of the reset we hold floored for its sender, at the root generation read before its
+    /// open, is that resetter's own follow-up, sealed under the root we have not adopted yet: it never reaches the heuristic,
+    /// or it would fire our own reset meanwhile (`maybeRequestReset`'s `explains`, knit-next `InboundPipeline.kt:2961-2967`
+    /// at `f018bc8ce`, its ADR 2026-11.sfms). The re-open replays it.
+    private func unreadable(_ open: DirectOpen, epochGoneBase: Int?) {
+        let (envelope, sender, now) = (open.envelope, open.sender, open.now)
         // A reset of ours makes the sender seal this very frame again under the same id, which the router would take for
         // the copy custody just served us, for ten minutes: one copy is let through (`:1819-1824`). This opens our gate
         // only: a relay between us that saw the id in its window drops that seal, which is why the sender seals it once
         // more after the window (`resealRecentDirectMessages`, knit-next `InboundPipeline.kt:1943-1948` at `4f3cd995`, knit-next
         // ADR 2026-10.dmgw).
         _ = router.reopen(envelope.id, now: clock.monotonicMilliseconds())
+        if explainsByFlooredReset(open) {
+            // Kotlin's own line (`InboundPipeline.kt:2965`), new here, so no harness pattern moves.
+            log.log(.info, "mesh reset gate: \(envelope.id) from \(sender) rides the reset we hold floored")
+            return
+        }
         // Outside any unit, as Kotlin runs it before any transaction (`:1041`, `:1835-1856`): inside one it counts nothing.
         // The stamp is the envelope's signed `sentAt` as it arrived, never `clampFuture`'s: a responder's era starts at the
         // peer's own `init.at`, so a clamped stamp would class every live failure from a fast clock as pre-era
@@ -290,85 +309,18 @@ extension MeshEngine {
             _ = router.reopen(envelope.id, now: clock.monotonicMilliseconds())
         }
     }
-
-    /// Opens again every copy whose unit failed since the last sweep, oldest first, by the route it came: for a frame off
-    /// a link, its first verdict. A copy another copy of its id already committed is gone (``RatchetReplay/forget(_:)``).
-    /// The rest are decided by their row, read in a unit of its own: a row lets the copy go, so a DM delivered another
-    /// way, or deleted since, is not acknowledged again; a read the store fails fails the unit and keeps the copy; with no
-    /// row, the copy opens again. Each goes through ``handleChat(_:route:)`` as it came, so the router's
-    /// dedup, which marked its id when it arrived, is no part of it.
-    func replayFailedRatchetOpens() {
-        let kept = ratchetReplay.take()
-        guard configuration.ratchet, !kept.isEmpty else {
-            return
-        }
-        for copy in kept {
-            // The body answers the copy to open again, or none once its row exists, never `nil`, which would abandon the unit.
-            let unread = stores.transactor.atomically { () -> RatchetReplay.Kept?? in
-                .some(stores.messages.contains(copy.envelope.id) ? nil : copy)
-            }
-            switch unread {
-            case .committed(let copy?):
-                handleChat(copy.envelope, route: copy.route)
-            case .committed(nil):
-                continue
-            case .joined, .abandoned, .failed:
-                log.log(.warning, "mesh ratchet frame \(copy.envelope.id) kept for the next replay: a store failed")
-                ratchetReplay.keep(copy.envelope, route: copy.route)
-            }
-        }
-    }
-
-    /// Opens again, at start, every ratchet DM to us that our own custody holds with no row, oldest first: a failed unit's
-    /// copy died with the process that kept it, and custody holds the first bytes stored under its id. It only delivers
-    /// (``RatchetInbound/Origin/startReplay``): it holds the era, and applies no reaction and no profile. Most of what it
-    /// finds is machinery already opened: a ctl frame from the era we hold drops as `DUPLICATE`, and one from an era the
-    /// pair has since left can open again under the root that era left draining, since leaving it purged the receive
-    /// state that spent it; a receipt then flips nothing new, and a reset's marker applies nothing. The rest are frames a
-    /// failed unit or a closed switch left unread.
-    func replayCustodiedRatchetMessages() {
-        guard configuration.ratchet else {
-            return
-        }
-        let me = ExactKey(nodeId.string)
-        for carried in stores.custody.liveFrames(now: clock.wallMilliseconds()).reversed() {
-            let envelope = carried.envelope
-            guard envelope.isDirect, envelope.recipientId.map(ExactKey.init) == me, !stores.messages.contains(envelope.id),
-                let enc = (try? ChatContent(decoding: envelope.payload))?.enc, RatchetInbound.isDirectRatchet(enc)
-            else {
-                continue
-            }
-            // Custody verified it, and the chat door reads the block list and the rest again. Custody kept no hop, so a
-            // photo it carries is asked of its author first.
-            handleChat(envelope, route: RatchetInbound.Route(hop: nil, signed: !carried.sig.isEmpty, origin: .startReplay))
-        }
-    }
-
-    /// The ratchet's retention sweeps, the DM ratchet's and then the group form's, at start and then hourly, with the switch
-    /// on, as Android's `sweepKeyRetention` runs both (`MeshManager.kt:988-993`): each in a unit of its own, never inside a
-    /// DM's, since on the database each truncates the write-ahead log once it commits, and no send may wait behind that.
-    func sweepRatchet() {
-        guard configuration.ratchet else {
-            return
-        }
-        let now = clock.wallMilliseconds()
-        if !ratchet.sweep(now: now) {
-            log.log(.warning, "mesh ratchet sweep failed: a store failed")
-        }
-        if !groupRatchet.sweep(now: now) {
-            log.log(.warning, "mesh group ratchet sweep failed: a store failed")
-        }
-    }
 }
 
 /// One DM ratchet frame's open, as the work after it reads it: the frame, its header, its verified sender, the route it
 /// came by, and the wall clock the open ran at.
-private struct DirectOpen {
+internal struct DirectOpen {
     let envelope: RelayEnvelope
     let header: RatchetHeader
     let sender: NodeId
     let route: RatchetInbound.Route
     let now: Int64
+    /// The peer's root generation read before the open (``RatchetSessions/rootGeneration(of:)``).
+    let generation: Int
 }
 
 /// What a DM ratchet frame opened to inside its open's unit: its plaintext read, or `nil` when it will not decode or is newer
@@ -377,8 +329,9 @@ private struct OpenedContent {
     let content: MessageContent?
     let under: OpenedUnder
 
-    init(_ opened: RatchetEngine.OpenOutcome.Opened, v3: Bool) {
-        content = RatchetInbound.content(of: opened.plaintext, v3: v3)
+    /// What `opened` holds, its plaintext read by the version of `enc`, the envelope it came in.
+    init(_ opened: RatchetEngine.OpenOutcome.Opened, of enc: EncEnvelope) {
+        content = RatchetInbound.content(of: opened.plaintext, v3: enc.version == EncEnvelope.Version.compactRatchet)
         under = OpenedUnder(opened.delta)
     }
 }

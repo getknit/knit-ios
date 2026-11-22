@@ -4,10 +4,11 @@ public import KnitStore
 public import KnitWire
 
 /// The ``RatchetStore`` on SQLite: `ratchet_sessions`, `ratchet_local_epochs`, `ratchet_recv_epochs` and
-/// `ratchet_skipped_keys` (schema v17, ADR 2026-10.5sk9), with `RatchetDao`'s row rules (knit-next
-/// `data/ratchet/RatchetDao.kt:18-118`): the session, a receive chain and a local epoch are `INSERT OR REPLACE`, a skipped
-/// key `INSERT OR IGNORE`, and a spent key is deleted by its full key, root tag included. Every peer id is its UTF-8 bytes
-/// in a `BLOB` (``StoredText``), and every root tag the signed integer Android keeps.
+/// `ratchet_skipped_keys` (schema v17, ADR 2026-10.5sk9; the session's `prevRootOwnInitAt` since
+/// `v26-prev-root-own-init`), with `RatchetDao`'s row rules (knit-next `data/ratchet/RatchetDao.kt:18-118`): the session, a
+/// receive chain and a local epoch are `INSERT OR REPLACE`, a skipped key `INSERT OR IGNORE`, and a spent key is deleted by
+/// its full key, root tag included. Every peer id is its UTF-8 bytes in a `BLOB` (``StoredText``), and every root tag the
+/// signed integer Android keeps.
 ///
 /// Each write is one transaction of its own outside a store unit, and one savepoint inside it, so an open's rows land
 /// together or not at all either way. The sweep applies ``RatchetRetention`` in Swift over what it reads, as
@@ -19,7 +20,7 @@ public final class SQLRatchetStore: RatchetStore {
     private static let sessionColumns = """
         peerId, confirmed, weAreInitiator, root, prevRoot, prevRootWeAreInitiator, prevRootExpiresAt, establishedAt, \
         initEphPub, initPkid, peerInitEphPub, peerBasePub, peerBaseEpoch, sendEpoch, sendEpochPub, sendChainKey, sendCount, \
-        sendEpochStartedAt, sendEpochBaseEpoch, highestPeAcked, lastResetSentAt
+        sendEpochStartedAt, sendEpochBaseEpoch, highestPeAcked, lastResetSentAt, prevRootOwnInitAt
         """
     private static let chainColumns = "epoch, rootTag, chainKey, next, lastUsedAt"
     private static let skippedKeyColumns = "epoch, rootTag, idx, msgKey, createdAt"
@@ -98,7 +99,11 @@ public final class SQLRatchetStore: RatchetStore {
         // The whole delta in one write, in `RatchetRepository.applyOpen`'s order (`RatchetRepository.kt:54-92`).
         database.write(or: ()) { db in
             let peerId = StoredText.bytes(peer.string)
-            if delta.purgePeerRecvState {
+            if delta.purgePeerRecvState, let keep = delta.keepRecvTag {
+                // A reclaim's purge keeps the one root it moves back to (`RatchetDao.kt:87-92`, `:132-137` at `f018bc8ce`).
+                try db.execute(sql: "DELETE FROM ratchet_recv_epochs WHERE peerId = ? AND rootTag != ?", arguments: [peerId, keep])
+                try db.execute(sql: "DELETE FROM ratchet_skipped_keys WHERE peerId = ? AND rootTag != ?", arguments: [peerId, keep])
+            } else if delta.purgePeerRecvState {
                 try Self.purgeReceiveState(peerId, in: db)
             }
             try Self.upsert(delta.session, in: db)
@@ -272,7 +277,7 @@ extension SQLRatchetStore {
         try db.execute(
             sql: """
                 INSERT OR REPLACE INTO ratchet_sessions (\(sessionColumns))
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
             arguments: [
                 StoredText.bytes(session.peerId.string), session.confirmed, session.weAreInitiator, Data(session.root),
@@ -280,7 +285,7 @@ extension SQLRatchetStore {
                 session.initEphPub.map { Data($0) }, session.initPkid, session.peerInitEphPub.map { Data($0) },
                 session.peerBasePub.map { Data($0) }, session.peerBaseEpoch, session.sendEpoch, session.sendEpochPub.map { Data($0) },
                 session.sendChainKey.map { Data($0) }, session.sendCount, session.sendEpochStartedAt, session.sendEpochBaseEpoch,
-                session.highestPeAcked, session.lastResetSentAt,
+                session.highestPeAcked, session.lastResetSentAt, session.prevRootOwnInitAt,
             ]
         )
     }
@@ -294,6 +299,7 @@ extension SQLRatchetStore {
             prevRoot: try row.optionalBytes("prevRoot"),
             prevRootWeAreInitiator: try row.decode(Bool.self, forColumn: "prevRootWeAreInitiator"),
             prevRootExpiresAt: try row.decode(Int64.self, forColumn: "prevRootExpiresAt"),
+            prevRootOwnInitAt: try row.decode(Int64?.self, forColumn: "prevRootOwnInitAt"),
             establishedAt: try row.decode(Int64.self, forColumn: "establishedAt"),
             initEphPub: try row.optionalBytes("initEphPub"),
             initPkid: try row.decode(Int.self, forColumn: "initPkid"),

@@ -163,4 +163,49 @@ extension RatchetEngineTests {
         #expect(try !#require(alice.session).weAreInitiator, "the reset was adopted")
         #expect(try #require(alice.session).root == #require(bob.session).root)
     }
+
+    /// knit-next ADR 2026-10.j67x's rule 2 (`RatchetEngineTest`'s replaced-era cases at `f018bc8ce`), in both node-id orders.
+    /// The peer started the root we hold and confirmed it on our answer; we reset, and it adopted the reset. A frame it
+    /// sealed as that root's unconfirmed initiator, its init attached, comes back from custody: one that predates our reset
+    /// is read under the drained root and moves nothing. Raced, a smaller-id peer's would put us back on the root it left;
+    /// a larger-id peer's would restart the drain and anchor its init.
+    @Test(arguments: [true, false])
+    func theReplacedErasOwnInitThatPredatesOurResetIsReadNotRaced(peerIsSmaller: Bool) throws {
+        let (small, large) = try RatchetSide.pair()
+        let (us, peer) = peerIsSmaller ? (large, small) : (small, large)
+        try peer.initiate(now: Self.now)
+        let reServed = try peer.seal("sealed as that root's initiator", now: Self.now)
+        #expect(try text(us.open(peer.seal("first", now: Self.now), now: Self.now)) == "first")
+        #expect(try text(peer.open(us.seal("answer", now: Self.now), now: Self.now)) == "answer")
+        let reset = try us.reset(now: Self.now + 600_000)
+        #expect(try text(peer.open(reset, now: Self.now + 600_000, resetRequested: true)) == "reset")
+        let before = try #require(us.session)
+        #expect(before.root == peer.session?.root && before.prevRoot != nil && before.peerInitEphPub == nil)
+
+        #expect(try text(us.open(reServed, now: Self.now + 601_000, predatesSession: true)) == "sealed as that root's initiator")
+        #expect(us.session == before, "read under the drained root: no race, no remnant, no purge, the drain and anchor untouched")
+        #expect(try #require(us.lastDelta).purgePeerRecvState == false)
+        #expect(us.session?.root == peer.session?.root, "still on the root the peer adopted")
+    }
+
+    /// The same frame judged sealed since our reset races as it always did (j67x's gate): the peer may still be that root's
+    /// unconfirmed initiator, and only the race lets either side confirm. A smaller-id peer wins it and we adopt the root.
+    @Test(arguments: [true, false])
+    func theReplacedErasOwnInitSealedSinceOurResetStillRaces(peerIsSmaller: Bool) throws {
+        let (small, large) = try RatchetSide.pair()
+        let (us, peer) = peerIsSmaller ? (large, small) : (small, large)
+        try peer.initiate(now: Self.now)
+        #expect(try text(us.open(peer.seal("first", now: Self.now), now: Self.now)) == "first")
+        let replaced = try #require(us.session).root
+        _ = try us.reset(now: Self.now + 600_000)
+        let before = try #require(us.session)
+        #expect(try text(us.open(peer.seal("still unconfirmed", now: Self.now + 700_000), now: Self.now + 700_000)) == "still unconfirmed")
+        let raced = try #require(us.session)
+        if peerIsSmaller {
+            #expect(raced.root == replaced && raced.confirmed && !raced.weAreInitiator, "the peer won: we adopt the root it keeps")
+        } else {
+            #expect(raced.root == before.root && raced.peerInitEphPub != nil, "we won: our reset stands, its init anchored")
+            #expect(raced.prevRootExpiresAt == Self.now + 700_000 + RatchetEngine.previousRootMilliseconds)
+        }
+    }
 }

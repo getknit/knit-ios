@@ -27,9 +27,10 @@ public final class MemoryRatchetStore: RatchetStore {
         var recvEpochs: [ChainKey: RatchetRecvEpochRecord] = [:]
         var skippedKeys: [SkippedKeyId: RatchetSkippedKeyRecord] = [:]
 
-        mutating func purgeReceiveState() {
-            recvEpochs = [:]
-            skippedKeys = [:]
+        /// Drops every receive chain and skipped key, but `keeping`'s, a root tag, when given.
+        mutating func purgeReceiveState(keeping tag: Int64? = nil) {
+            recvEpochs = recvEpochs.filter { $0.key.rootTag == tag }
+            skippedKeys = skippedKeys.filter { $0.key.rootTag == tag }
         }
     }
 
@@ -76,7 +77,7 @@ public final class MemoryRatchetStore: RatchetStore {
         peers.withLock { peers in
             var rows = peers[peer, default: Rows()]
             if delta.purgePeerRecvState {
-                rows.purgeReceiveState()
+                rows.purgeReceiveState(keeping: delta.keepRecvTag)
             }
             rows.session = delta.session
             if let chain = delta.recvEpoch {

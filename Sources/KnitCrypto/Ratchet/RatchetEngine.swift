@@ -20,7 +20,11 @@ public import KnitWire
 ///   vanish.
 /// - **Only a fresh derivation under the active root moves the session's era**: adopting the peer's epoch as our DH
 ///   base, raising `highestPeAcked` and confirming are claims about the era we hold now, and a frame read under any
-///   other root, on a live chain or from a skipped key says nothing about it (knit-next ADR 2026-09.pz9g).
+///   other root, on a live chain or from a skipped key says nothing about it (knit-next ADR 2026-09.pz9g). One
+///   exception (knit-next ADR 2026-10.4mjm, `RatchetEngine.kt:34-36` at `f018bc8ce`): a race loser whose `prevRoot` is its
+///   own abandoned init (``SessionState/prevRootOwnInitAt``) moves back onto that root when the peer seals under it as
+///   responder after the init we lost to, on any rung. Only a peer that adopted our init can, so that frame is the era we
+///   hold next.
 public struct RatchetEngine: Sendable {
     /// Messages per send epoch, the mesh's per-sender custody quota (`MAX_EPOCH_MESSAGES`, `:863`); `n` stays below it.
     public static let maxEpochMessages = 200
@@ -173,10 +177,13 @@ public struct RatchetEngine: Sendable {
     /// a reset. The pipeline's other shape rules (a v3 envelope carries an empty nonce, a DM form is never addressed to
     /// a group) are the caller's, before it calls this.
     ///
+    /// A flagged init the replacement floor alone refused, for a root the session does not hold, is `RESET_FLOORED` when
+    /// nothing opens, above every other verdict (knit-next ADR 2026-11.sfms): its derivation runs here, after the ladder.
+    ///
     /// Throws only where Tink throws out of Kotlin's engine: an X3DH respond over a key X25519 refuses, the init's
-    /// ephemeral or the peer's identity key (`respond`, `:707-716`). The caller refuses that frame with nothing
-    /// committed and counts nothing toward a reset, as `InboundPipeline`'s `runCatching` records `DECRYPT_FAILED`; it is
-    /// never `AEAD_FAIL`. A bad `ek` is the typed `BAD_HEADER` instead (`:456-460`).
+    /// ephemeral or the peer's identity key (`respond`, `:707-716`), the floored init's derivation included. The caller
+    /// refuses that frame with nothing committed and counts nothing toward a reset, as `InboundPipeline`'s `runCatching`
+    /// records `DECRYPT_FAILED`; it is never `AEAD_FAIL`. A bad `ek` is the typed `BAD_HEADER` instead (`:456-460`).
     public func open( // swiftlint:disable:this function_parameter_count - Kotlin's signature (`:324-331`), as P4c calls it
         _ context: OpenContext,
         header: RatchetHeader,
@@ -192,7 +199,24 @@ public struct RatchetEngine: Sendable {
             return .failed(Self.sessionFailure(context, header: header))
         }
         var ladder = Ladder(context: context, resolved: resolved, header: header, nonce: nonce, ct: ct, aad: aad, now: now)
-        return ladder.climb()
+        let outcome = ladder.climb()
+        guard case .failed = outcome, let floored = resolved.flooredReset else {
+            return outcome
+        }
+        return try holds(resolved, rootOf: floored, context: context) ? outcome : .failed(.resetFloored)
+    }
+
+    /// Whether the floored init derives a root `resolved` holds (`floored`, knit-next `RatchetEngine.kt:592-603` at
+    /// `f018bc8ce`, its ADR 2026-11.sfms): a root candidate's, the active root, or `prevRoot`, live or past its drain and not
+    /// yet retired. Such an init is an era we took and left, since our own re-root drops the anchor and keeps the peer's
+    /// root in the slot, and it keeps the ladder's verdict: answered `RESET_FLOORED`, its re-open would adopt a root the
+    /// peer has left. One X3DH, the first on the init's ephemeral on this path, and outside the ladder, which does not
+    /// throw: an ephemeral X25519 refuses throws out of ``open(_:header:nonce:ct:aad:now:)``, which the caller refuses with
+    /// nothing counted, never as `AEAD_FAIL` or `DUPLICATE`.
+    private func holds(_ resolved: ResolvedSession, rootOf floored: FlooredReset, context: OpenContext) throws(RatchetCryptoError) -> Bool {
+        let root = try respond(context, prekey: floored.prekey, initial: floored.initial)
+        let held = resolved.candidates.map(\.root) + [resolved.session.root] + [resolved.session.prevRoot].compactMap(\.self)
+        return held.contains(root)
     }
 
     // MARK: Sending
