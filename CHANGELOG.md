@@ -9,7 +9,7 @@ product:
   platforms: [ios]
   category: Communication
 document:
-  updated: 2026-11-21T00:00:00Z
+  updated: 2026-11-22T00:00:00Z
   coverage: complete
   canonical: https://github.com/getknit/knit-ios/blob/main/CHANGELOG.md
   locale: en
@@ -18,6 +18,23 @@ document:
 # Knit for iOS changelog
 
 ## Unreleased
+
+### Changed
+
+- Your iPhone now sends far less repeat traffic, which saves airtime and battery on every phone nearby.
+  Outside a busy group, it stops resending the members old messages their phones had dropped, and it no longer
+  answers a message you already have with a fresh delivery tick every ten minutes.
+
+### Fixed
+
+- Editing your name or photo while your iPhone briefly couldn't read your saved profile could send everyone a
+  profile with no name. Knit now skips that edit instead, so people keep seeing your name, and you can make
+  the change again.
+
+## 1.0.1 — 2026-11-22
+
+> Bluetooth links between phones on current versions of Knit are now encrypted. Web addresses in messages open
+> with a tap, and Content filtering screens names and statuses too.
 
 ### Added
 
@@ -36,19 +53,10 @@ document:
   alias, and a group whose name has a slur shows its members' names instead. Knit won't let you set such a
   name or status for yourself either.
 
-### Changed
-
-- Your iPhone now sends far less repeat traffic, which saves airtime and battery on every phone nearby.
-  Outside a busy group, it stops resending the members old messages their phones had dropped, and it no longer
-  answers a message you already have with a fresh delivery tick every ten minutes.
-
 ### Fixed
 
 - Knit refused to send a Nearby post with a lone "x" in it, like "2 x 3" or a kiss at the end, and hid one
   that someone else sent. Those posts now go through.
-- Editing your name or photo while your iPhone briefly couldn't read your saved profile could send everyone a
-  profile with no name. Knit now skips that edit instead, so people keep seeing your name, and you can make
-  the change again.
 
 ## 1.0.0 — 2026-11-21
 
