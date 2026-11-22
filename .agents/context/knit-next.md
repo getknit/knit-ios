@@ -633,9 +633,10 @@ Kotlin wins.
   - **Mirrored ahead of the pin, unmerged** (ADR 2026-11.3jry, the paired change `custody-carry-policy`, knit-next
     #352, #349, #276 and #64): custody serves the asking peer's mail and its groups' frames first, in rounds released
     as the link drains, with a not-kept memo and a re-offer back-off, and at the cap evicts the frame most peers are
-    believed to hold. It mirrors knit-next ADR 2026-11.bmks on its branch `feat/custody-carry-policy` at `9828710c1`
+    believed to hold. It mirrors knit-next ADR 2026-11.bmks on its branch `feat/custody-carry-policy` at `834ab80b7`
     (on `main` `8a78db55d`; the vector's commit is `711adae4e`, with the ledger at `2e6848401`, the rounds and memo at
-    `41af3214d`, release on drain at `9177f0865`):
+    `41af3214d`, release on drain at `9177f0865`, the ADR's measurements at `9828710c1`, and a new answer taking the
+    peer's uncredited releases at `834ab80b7`):
     `CapEviction.choose` over `ForwardDao.largestBucketRows`, the snapshot read once per write and only when the cap
     binds, counting the newcomer's source, behind the `CarryReader` interface. `vectors/custody-v1.json` was copied
     with `sync-vectors.py --only custody-v1.json` from `711adae4e`: 46 steps, the first 33 unchanged. No wire field,

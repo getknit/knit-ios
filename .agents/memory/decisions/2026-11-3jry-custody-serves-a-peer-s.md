@@ -10,7 +10,7 @@ topics: [custody, convergence, mesh, security]
 
 Status: Accepted (2026-11-20). A paired change with knit-next, `custody-carry-policy`, with Android leading, for
 knit-next's issues #352, #349, #276 and #64. It mirrors knit-next ADR 2026-11.bmks on knit-next's
-`feat/custody-carry-policy` at `9828710c1`, ahead of the pin (see `.agents/context/knit-next.md`), which amends
+`feat/custody-carry-policy` at `834ab80b7`, ahead of the pin (see `.agents/context/knit-next.md`), which amends
 knit-next ADR 006, ADR 2026-10.7mqm, ADR 2026-10.hr9f, ADR 2026-10.a5yj and the wording of ADR 2026-09.tjfb on the
 digest slot. Amends ADR 2026-09.p6nb, ADR 2026-10.9e7g and ADR 2026-10.f5zs.
 
@@ -121,17 +121,19 @@ the wire. The numbers are shared law with Android (the contract in `knit-pair`'s
    the answer remembers no release of it. The memo goes at link-down. At most 64 peers are
    kept, and a linked peer's is never the one evicted.
 
-   **A release is timed when its round is credited** (contract revisions 21 and 22). A release counts as made at the look that
-   credits its round (rule 3), and the judging delay, the 600 s pending lapse and the answer's forgetting (rule 2) all
-   run from then: a round cut behind a full link can take longer than 20 s to leave, and a digest that crossed it there
-   would judge a frame not yet written. Until the credit the release is remembered for that peer, past the answer that
-   cut it: a new answer starts with the peer's uncredited releases, so the frame isn't cut again, and no digest forgets
-   it. A credit dropped because its link ended
-   leaves nothing pending: the frame is owed again at once. One dropped after 120 s on a live link times the release at
-   the drop but makes nothing pending, as Android's `Verdict.Aged` does (`ForwardSync.settleHandoffs`): the first digest
-   20 s after the drop that still lacks the frame owes it again, though on the same link `LinkCrossings` still holds it
-   until 10 minutes after its send, so a re-send at the drop plus 20 s comes only over a new link. A link that can't say what it holds, a radio whose
-   outbox level answers 0, is credited at the next look, so its releases are timed within 100 ms of the cut.
+   **A release is timed when its round is credited** (contract revisions 21 to 23). A release counts as made at the
+   look that credits its round (rule 3), and the judging delay, the 600 s pending lapse and the answer's forgetting
+   (rule 2) all run from then: a round cut behind a full link can take longer than 20 s to leave, and a digest that
+   crossed it there would judge a frame not yet written. Until the credit the release is remembered for that peer, past
+   the answer that cut it: a new answer starts with the peer's uncredited releases, so the frame isn't cut again, and no
+   digest forgets it. Once credited or dropped, a release lives in the answer that holds it, and an answer that has
+   ended forgets it, which accepts one extra copy on a link full for 120 s rather than keep more state. A credit dropped
+   because its link ended leaves nothing pending: the frame is owed again at once. One dropped after 120 s on a live
+   link times the release at the drop but makes nothing pending, as Android's `Verdict.Aged` does
+   (`ForwardSync.settleHandoffs`): the first digest 20 s after the drop that still lacks the frame owes it again, though
+   on the same link `LinkCrossings` still holds it until 10 minutes after its send, so a re-send at the drop plus 20 s
+   comes only over a new link. A link that can't say what it holds, a radio whose outbox level answers 0, is credited at
+   the next look, so its releases are timed within 100 ms of the cut.
 6. **The re-offer backs off** (`ReofferBackoff`, `MeshEngine+Passes.swift`). The periodic custody digest to a neighbour
    waits 60 s, doubling to 600 s while our offers draw nothing from it. A frame kept from that neighbour resets it to
    60 s at once. A neighbour is due when `now − last offer ≥ interval − 30 s`, so a tick a few milliseconds early still
