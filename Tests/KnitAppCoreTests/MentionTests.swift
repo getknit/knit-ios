@@ -194,6 +194,7 @@ import Testing
     @Test func aMessageShowsWhereItsNamesSit() async throws {
         let rig = AppRig()
         rig.session.filtersContent = false
+        await rig.session.updateProfile(name: "Ana Lee", status: "", openToChat: false)
         await rig.pin(sam, name: "Sam")
         let ana = MessageMention(nodeId: rig.me.string, name: "Ana Lee")
         await rig.receive("hi @Ana Lee!", from: sam.nodeId, mentions: [ana])
@@ -206,6 +207,7 @@ import Testing
     @Test func aMessageShowsWhereItsLinksSit() async throws {
         let rig = AppRig()
         rig.session.filtersContent = false
+        await rig.session.updateProfile(name: "Ana", status: "", openToChat: false)
         await rig.pin(sam, name: "Sam")
         let ana = MessageMention(nodeId: rig.me.string, name: "Ana")
         await rig.receive("@Ana see www.a.com.", from: sam.nodeId, mentions: [ana])
@@ -213,6 +215,47 @@ import Testing
         let message = try #require(thread.state.messages.first)
         #expect(message.mentionSpans == [0..<4])
         #expect(message.links == [MessageLink(range: 9..<18, url: "https://www.a.com")])
+    }
+
+    /// An entry lights only under the label this phone gives its id (knit-ios #36): "@Sam" under an id whose label here is
+    /// its alias draws plain, and the same id's alias lights.
+    @Test func anEntryLightsOnlyUnderItsIdsLabel() async {
+        let rig = AppRig()
+        rig.session.filtersContent = false
+        await rig.pin(sam, name: "Sam")
+        let other = MessageMention(nodeId: stranger.nodeId.string, name: "Sam")
+        await rig.receive("@Sam hi", from: sam.nodeId, mentions: [other])
+        let alias = rig.session.directory.label(for: stranger.nodeId).text
+        await rig.receive(
+            "@\(alias) hi", from: sam.nodeId, sentAt: 2000, mentions: [MessageMention(nodeId: stranger.nodeId.string, name: alias)])
+        let thread = ChatModel(conversationId: Conversations.nearby, session: rig.session)
+        #expect(thread.state.messages.map(\.mentionSpans) == [[], [0..<(alias.utf16.count + 1)]])
+        #expect(rig.stores.messages.messages(in: Conversations.nearby).first?.mentions == [other], "the list is kept as it came")
+    }
+
+    /// The thread reads the labels as they are now: once Sam renames, the "@Sam" it lit draws plain, in the same thread.
+    @Test func aRenameTurnsAnEarlierHighlightOff() async throws {
+        let rig = AppRig()
+        rig.session.filtersContent = false
+        await rig.pin(sam, name: "Sam")
+        await rig.receive("@Sam hi", from: priya.nodeId, mentions: [MessageMention(nodeId: sam.nodeId.string, name: "Sam")])
+        let thread = ChatModel(conversationId: Conversations.nearby, session: rig.session)
+        #expect(try #require(thread.state.messages.first).mentionSpans == [0..<4])
+        await rig.receive("ok", from: priya.nodeId, sentAt: 2000)
+        #expect(try #require(thread.state.messages.first).mentionSpans == [0..<4], "a rebuild that moved no name")
+        await rig.pin(sam, name: "Samuel")
+        #expect(try #require(thread.state.messages.first).mentionSpans.isEmpty)
+    }
+
+    /// Our own message lights every name our composer wrote, whatever this phone now calls them.
+    @Test func ourOwnMessageLightsEveryName() async throws {
+        let rig = AppRig()
+        rig.session.filtersContent = false
+        await rig.pin(sam, name: "Sam")
+        await rig.session.send(
+            "@Robert hi", mentions: [MessageMention(nodeId: sam.nodeId.string, name: "Robert")], in: Conversations.nearby)
+        let thread = ChatModel(conversationId: Conversations.nearby, session: rig.session)
+        #expect(try #require(thread.state.messages.first).mentionSpans == [0..<7])
     }
 
     // MARK: Notifications

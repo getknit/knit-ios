@@ -231,17 +231,22 @@ public enum DemoSeed {
         }
     }
 
-    /// Gives each line the people it mentions, each under its sender's name for them as a composer writes one: their stored
-    /// name, or their alias without one, kept only where the words carry it (``MessageMention/carried(_:in:)``).
+    /// Gives each line the people it mentions as a composer writes them (``MentionCandidate/mention``): under the label this
+    /// phone gives each, which also takes the place of the "@" and name the scene wrote, so a person who shares a name with
+    /// someone reads "@Sam (alias)" and the thread lights it (knit-ios #36). Kept only where the words carry it
+    /// (``MessageMention/carried(_:in:)``).
     private static func mention(_ lines: [DemoCast.Line], people nodeIds: [DemoCast.Slot: NodeId], me: NodeId, in stores: MeshStores) {
         let ownName = stores.ownProfile.load().name
+        let labels = PeerLabelIndex(peers: stores.peers.allPeers().map { ($0.nodeId.string, $0.name) }, me: (me.string, ownName))
         for line in lines where !line.mentions.isEmpty {
             guard var message = stores.messages.message(line.id) else {
                 continue
             }
             let mentions = line.mentions.compactMap { nodeIds[$0] }.map { person in
                 let stored = person == me ? ownName : stores.peers.peer(person)?.name
-                return MessageMention(nodeId: person.string, name: Alias.displayName(stored: stored, nodeId: person.string))
+                let label = labels.label(for: person.string).text
+                message.body = message.body.replacing("@" + Alias.displayName(stored: stored, nodeId: person.string), with: "@" + label)
+                return MessageMention(nodeId: person.string, name: label)
             }
             message.mentions = MessageMention.carried(mentions, in: message.body)
             stores.messages.save(message)

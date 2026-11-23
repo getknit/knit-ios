@@ -126,3 +126,4 @@ the same number. Cite an ADR by its id, exactly as its heading spells it.
 | [2026-11.adrq](decisions/2026-11-adrq-text-dms-ride-spool-relays.md) | Text DMs ride spool relays, in debug builds until approved | scope, transport, spool, interop |
 | [2026-11.xfcq](decisions/2026-11-xfcq-our-own-profile-frame-is.md) | Our own profile frame is kept, so an evicted stamp goes back as its bytes | crypto, custody, profiles |
 | [2026-11.3jry](decisions/2026-11-3jry-custody-serves-a-peer-s.md) | custody serves a peer's mail first, in rounds as the link drains, and evicts the most widely carried at the cap | custody, convergence, mesh, security |
+| [2026-11.kkd4](decisions/2026-11-kkd4-a-received-mention-lights-only.md) | A received mention lights only under the reader's label | mentions, names |

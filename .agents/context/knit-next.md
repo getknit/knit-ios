@@ -643,6 +643,15 @@ Kotlin wins.
     first 33 unchanged. No wire field, capability bit or schema moves. The 157 commits from the pin to `94bca7042`
     weren't read, and some move the wire (read receipts on the delivery receipt, the sealed `meshcoreKey` profile
     field, MeshCore binding), so the pin stays until a pin move reads them.
+  - **Mirrored ahead of the pin, merged** (ADR 2026-11.kkd4, the paired change `mention-vouch`, knit-next #247 and
+    knit-ios #36): a received mention lights only under the label this phone gives its id, within a thread's window of
+    its newest 200 counted rows. It mirrors knit-next ADR 2026-11.p6dk as merged on knit-next's local `main` at
+    `2e91518e3`, two commits (`28d426883`, the rule, and `2e91518e3`, the window) through the contract's five revisions:
+    `PeerLabelIndex.mentionTexts`, `vouchedMentions` and the window. `vectors/mention-vouch-v1.json` was copied with
+    `sync-vectors.py --only mention-vouch-v1.json` from `2e91518e3`: 23 cases, 5 windows, and every label of two
+    directories, the first vector to pin ADR 058's labels. No wire field, capability bit or schema moves. The
+    follow-ups are knit-next #360 (knit-ios #61), a clash that grows by text rather than key, and #361, Android's
+    window query. The pin stays.
 - The `.agents/context/` files in this repo (`wire-format.md`, `ble-transport.md`, `crypto.md`,
   `custody.md`) were read at `02051b64`, and what moved was checked again at each pin since, last at `f018bc8ce`.
   Moving the pin means re-reading the files below and updating those four, in the same change, then running

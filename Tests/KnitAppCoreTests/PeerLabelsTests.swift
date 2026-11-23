@@ -165,4 +165,45 @@ import Testing
         #expect(labels.label(for: "a").text == "\(alias("a")) (\(tokens[1]))")
         #expect(labels.label(for: "a").text != labels.label(for: "b").text)
     }
+
+    // MARK: What a received mention may carry (knit-ios #36)
+
+    /// `nodeId`'s label grown by its own alias tokens from `from` up to each of `spent`...10 (`PeerLabel.text`'s form).
+    private func grown(_ name: String, _ nodeId: String, from: Int, spent: Int) -> [String] {
+        let words = Alias.tokens(for: nodeId)
+        return (spent...Alias.maxTokens).map { $0 == from ? name : "\(name) (\(words[from..<$0].joined(separator: " ")))" }
+    }
+
+    @Test func aUniqueNamesMentionTextsAreItThenEveryGrowth() {
+        let texts = index(("a", "Alice"), ("b", "Bob")).mentionTexts(for: "a")
+        #expect(texts == grown("Alice", "a", from: 0, spent: 0))
+        #expect(texts.count == Alias.maxTokens + 1)
+    }
+
+    @Test func aCollidedNamesMentionTextsStartAtItsLabel() {
+        let labels = index(("a", "Alice"), ("b", "ALICE"))
+        #expect(labels.mentionTexts(for: "a") == grown("Alice", "a", from: 0, spent: 1))
+        #expect(labels.mentionTexts(for: "a").first == labels.label(for: "a").text)
+    }
+
+    @Test func aBlankNamesMentionTextsAreItsAliasThenItsContinuations() {
+        let texts = index(("c", ""), ("b", "Bob")).mentionTexts(for: "c")
+        #expect(texts == grown(alias("c"), "c", from: 1, spent: 1))
+        #expect(texts.count == Alias.maxTokens)
+    }
+
+    @Test func anUnknownIdsMentionTextsStartAtTheLabelItWouldGet() {
+        let labels = index(("a", "Alice"), ("b", alias("u")))
+        #expect(labels.mentionTexts(for: "u").first == labels.label(for: "u").text)
+        #expect(labels.mentionTexts(for: "u") == grown(alias("u"), "u", from: 1, spent: 2), "it reads apart from b")
+        #expect(index(("a", "Alice")).mentionTexts(for: "u") == grown(alias("u"), "u", from: 1, spent: 1))
+    }
+
+    /// Our own name is never presented, so a content filter that hides every name leaves our texts as we wrote them.
+    @Test func ourOwnMentionTextsAreUnderOurNameAsItIs() {
+        let hiding = PeerLabelIndex(
+            peers: [(nodeId: "a", name: "Walter")], me: (nodeId: "me", name: "Walter"), presenter: NamePresenter { _ in "" })
+        #expect(hiding.mentionTexts(for: "me") == grown("Walter", "me", from: 0, spent: 0))
+        #expect(hiding.mentionTexts(for: "a") == grown(alias("a"), "a", from: 1, spent: 1))
+    }
 }

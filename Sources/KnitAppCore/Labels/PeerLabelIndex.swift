@@ -118,6 +118,13 @@ public struct PeerLabelIndex: Sendable {
         )
     }
 
+    /// Whether `other` holds the same names, byte for byte, under the same ids, so it gives every id the label and the
+    /// mention texts this index gives: both are made from the names alone.
+    func holdsTheNames(of other: Self) -> Bool {
+        selfId.map(ExactKey.init) == other.selfId.map(ExactKey.init) && storedNames.count == other.storedNames.count
+            && storedNames.allSatisfy { nodeId, name in other.storedNames[nodeId].map { ExactKey($0) == ExactKey(name) } ?? false }
+    }
+
     /// The label for `nodeId`, under the name the index holds for it. A node id outside the index, a sender whose
     /// profile has not pinned, grows as far as it must to read apart from every member, and never changes one.
     public func label(for nodeId: String) -> PeerLabel {
@@ -130,25 +137,43 @@ public struct PeerLabelIndex: Sendable {
         label(for: nodeId, shown: nodeId == selfId ? storedName : storedName.map { presenter($0) })
     }
 
+    /// The texts a received mention of `nodeId` may carry and still be drawn as one (`mentionTexts` in knit-next's
+    /// `PeerLabels.kt`): the label ``label(for:)`` gives them, then that label grown by each further token of their own
+    /// alias phrase, up to ``Alias/maxTokens``. A sender whose directory saw a clash this one does not writes one of the
+    /// longer texts; a name this index does not hold for them, or another id's tokens, is none of them.
+    public func mentionTexts(for nodeId: String) -> [String] {
+        let shown = storedNames[nodeId]
+        let parts = measure(nodeId, shown: shown)
+        return (parts.spent...max(parts.spent, Alias.maxTokens)).map { tokens in
+            PeerLabel.text(parts.name, Self.discriminator(parts.words, shown, tokens))
+        }
+    }
+
     /// The label for `nodeId` under `storedName` as it is drawn.
     private func label(for nodeId: String, shown storedName: String?) -> PeerLabel {
+        let parts = measure(nodeId, shown: storedName)
+        return PeerLabel(
+            nodeId: nodeId,
+            name: parts.name,
+            alias: parts.words.prefix(max(parts.spent, 1)).joined(separator: " "),
+            discriminator: Self.discriminator(parts.words, storedName, parts.spent)
+        )
+    }
+
+    /// What a label is made of: the name `nodeId` shows under `storedName` as it is drawn, its alias phrase, and the
+    /// tokens its label spends.
+    private func measure(_ nodeId: String, shown storedName: String?) -> LabelParts {
         let name = Alias.displayName(stored: storedName, nodeId: nodeId)
         let words = phrases[nodeId] ?? Alias.tokens(for: nodeId)
         let held = storedNames[nodeId] == storedName ? consumed[nodeId] : nil
-        let spent = held ?? resolve(nodeId, name, words, storedName)
-        return PeerLabel(
-            nodeId: nodeId,
-            name: name,
-            alias: words.prefix(max(spent, 1)).joined(separator: " "),
-            discriminator: Self.discriminator(words, storedName, spent)
-        )
+        return LabelParts(name: name, words: words, spent: held ?? resolve(nodeId, name, words, storedName))
     }
 
     /// The tokens an id needs against the index: one when a member shares its name's key, then one more while a
     /// member's text still matches.
     private func resolve(_ nodeId: String, _ name: String, _ words: [String], _ storedName: String?) -> Int {
         var spent = Self.tokensInName(storedName)
-        if !idsByKey[NameKey.of(name), default: []].subtracting([nodeId]).isEmpty {
+        if !idsByKey[NameKey.quick(name), default: []].subtracting([nodeId]).isEmpty {
             spent += 1
         }
         while spent < Alias.maxTokens, collides(nodeId, PeerLabel.text(name, Self.discriminator(words, storedName, spent))) {
@@ -204,4 +229,14 @@ public struct PeerLabelIndex: Sendable {
         }
         return words[from..<min(spent, words.count)].joined(separator: " ")
     }
+}
+
+/// A label's parts before it is rendered.
+private struct LabelParts {
+    /// ``Alias/displayName(stored:nodeId:)``'s answer.
+    var name: String
+    /// The id's whole alias phrase.
+    var words: [String]
+    /// The tokens the label spends, those its name spends included.
+    var spent: Int
 }

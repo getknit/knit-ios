@@ -20,6 +20,8 @@ public final class ChatModel {
     /// The cards this thread has drawn, by blob and key, so a card the session's memo let go stays drawn here and is not
     /// read again while the thread is open.
     @ObservationIgnored private var cardsDrawn: [LinkCardKey: LinkCard] = [:]
+    /// The names each row lights, kept across builds while the labels, the roster and the window they were judged under stand.
+    @ObservationIgnored private var lights = MentionLights()
     var text = ""
     /// The photo the composer holds, which Send sends with the draft or alone.
     public internal(set) var staged: StagedPhoto?
@@ -253,7 +255,8 @@ public final class ChatModel {
         let kind: ThreadKind = Conversations.isGroup(conversationId) ? .group : peer == nil ? .room : .direct
         // What blocked people wrote stays stored and hidden, and shows again once they are unblocked
         // (`ChatViewModel.kt:780-795`).
-        let stored = session.stores.messages.messages(in: conversationId).filter { !directory.blocked.contains($0.senderId) }
+        let thread = session.stores.messages.messages(in: conversationId)
+        let stored = thread.filter { !directory.blocked.contains($0.senderId) }
         let photos = ThreadPhotos(session.stores, conversationId: conversationId, shown: stored, threads: threads)
         let filtering = session.filtersContent
         let audience = ReactionAudience.of(conversationId, kind: kind, group: group, me: me)
@@ -261,14 +264,15 @@ public final class ChatModel {
             session.stores.messages.reactions(in: conversationId), me: me, audience: audience, blocked: directory.blocked)
         // The messages a quote can take the thread to: the ones it shows, status lines aside.
         let shown = Set(stored.filter { !$0.kind.isNotice }.map { ExactKey($0.id) })
+        lights.begin(directory: directory, roster: kind == .group ? group?.members ?? [] : nil, thread: thread)
         let messages = stored.compactMap { message in
             (message.kind.isNotice
                 ? GroupNaming.row(of: message, in: group, me: me, directory: directory)
                 : chatMessage(message, kind: kind, directory: directory, photos: photos, filtering: filtering))
                 .map { $0.reacted(chips[ExactKey(message.id)] ?? []) }
                 .map { $0.quoting(ChatQuote(quotedBy: message, me: me, directory: directory, shown: shown)) }
+                .map { $0.lit(lights.spans(of: message, me: me.string)) }
         }
-        let members = group?.members ?? []
         let isBlocked = peer.map(directory.blocked.contains) ?? false
         var built = ChatState(
             title: peer.map { directory.label(for: $0).text } ?? Copy.ChatList.nearby,
@@ -292,8 +296,8 @@ public final class ChatModel {
             built.isRequest = threads.isRequest(conversationId)
             built.requestTitle = Copy.Groups.requestTitle(GroupNaming.starter(of: group, me: me, directory: directory))
             built.requestBody = Copy.Groups.requestBody
-            built.memberCount = members.count
-            built.nobodyElse = !members.contains { ExactKey($0) != ExactKey(me.string) }
+            built.memberCount = group.members.count
+            built.nobodyElse = !group.members.contains { ExactKey($0) != ExactKey(me.string) }
         }
         return (built, audience)
     }
@@ -317,7 +321,6 @@ public final class ChatModel {
             authorFace: named ? directory.face(for: message.senderId) : nil,
             attachment: photos.attachment(of: message).map(showVoice(kind: kind)),
             hiddenWords: message.hidesWords(filtering: filtering, me: me) ? HiddenWords(message) : nil,
-            mentionSpans: MentionText.spans(in: message.body, mentions: message.mentions),
             links: links,
             card: card(of: message, links: links, inRoom: kind == .room, photos: photos)
         )

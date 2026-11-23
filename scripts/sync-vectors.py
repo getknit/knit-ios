@@ -14,8 +14,10 @@ number, the link records and an advert. Both are copied into `Tests/Vectors/` un
 `custody-v1.json` (knit-next ADR 2026-10.7mqm) the custody contract: steps stored through one store and what each
 must keep, evict and hold. `name-key-v1.json` (knit-next #228) holds the name key's lookalike fold and drop set, and
 names with the key, the display blank and the cleaned text each must give, and `name-screen-v1.json` (knit-next ADR
-2026-11.y4pc) the name screen's verdict on names over the shipped word lists, with each list's digest. A checkout from
-before any of these changes has none of that file, so each is copied and checked only where it exists.
+2026-11.y4pc) the name screen's verdict on names over the shipped word lists, with each list's digest.
+`mention-vouch-v1.json` (knit-next #247, knit-ios #36) holds directories with the label each id must get, and received
+mentions with which entries a bubble keeps and the spans it lights. A checkout from before any of these changes has none
+of that file, so each is copied and checked only where it exists.
 
 `spool-v1.json` is not copied but read out of two documents, since knit-next pins the spool's vectors in prose: the
 fenced blocks of `docs/SPOOL_PROTOCOL.md` §13 and of `docs/RELAY_INVITE.md` §5. It keeps what a text-only client
@@ -53,9 +55,10 @@ RATCHET = "ratchet-v1.json"
 CUSTODY = "custody-v1.json"
 NAME_KEY = "name-key-v1.json"
 NAME_SCREEN = "name-screen-v1.json"
+MENTION_VOUCH = "mention-vouch-v1.json"
 SPOOL = "spool-v1.json"
 # Copied where the knit-next checkout has them; a checkout from before the change that added one has none.
-OPTIONAL = (RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN, SPOOL)
+OPTIONAL = (RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN, MENTION_VOUCH, SPOOL)
 SPOOL_SPEC = Path("docs/SPOOL_PROTOCOL.md")
 RELAY_INVITE_SPEC = Path("docs/RELAY_INVITE.md")
 # The §13 blocks a text-only client checks, by the label that opens the paragraph before each.
@@ -272,7 +275,7 @@ def main() -> int:
     parser.add_argument(
         "--only",
         action="append",
-        choices=(WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN, SPOOL),
+        choices=(WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN, MENTION_VOUCH, SPOOL),
         help="copy or check only this vector file (repeatable); the alias words are left alone",
     )
     args = parser.parse_args()
@@ -285,7 +288,7 @@ def main() -> int:
         print(f"sync-vectors: copied {EMITTED} to {target}")
         return 0
 
-    names = args.only or [WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN, SPOOL]
+    names = args.only or [WIRE, KEYED, RATCHET, CUSTODY, NAME_KEY, NAME_SCREEN, MENTION_VOUCH, SPOOL]
     files: dict[str, dict] = {}
     absent: list[str] = []
     for name in names:

@@ -168,4 +168,28 @@ import Testing
         await rig.receive("@everyone again", from: sender.nodeId, in: group, sentAt: 2000, mentions: Array(listed.dropLast()))
         #expect(rig.notifier.posted.map(\.id) == [NotificationPolicy.mentionId(group.id), group.id])
     }
+
+    /// `@everyone` lights in a group, for its members (knit-ios #36), and draws plain in the room, where it names nobody's
+    /// label; there the list still alerts us.
+    @Test func everyoneLightsInAGroupAndNotInTheRoom() async throws {
+        let rig = AppRig()
+        let group = await fullGroup(rig, people: Array(crowd.prefix(2)))
+        let listed = [crowd[1].nodeId, rig.me].map { MessageMention(nodeId: $0.string, name: "everyone") }
+        await rig.receive("@everyone lunch?", from: crowd[0].nodeId, in: group, sentAt: 1000, mentions: listed)
+        let inGroup = ChatModel(conversationId: group.id, session: rig.session)
+        #expect(inGroup.state.messages.first { $0.notice == nil }?.mentionSpans == [0..<9])
+        // An entry for a member alone lights while they are one, and draws plain once they leave.
+        await rig.receive("@everyone dinner?", from: crowd[0].nodeId, in: group, sentAt: 1500, mentions: [listed[0]])
+        let dinner = { inGroup.state.messages.first { $0.body == "@everyone dinner?" }?.mentionSpans }
+        #expect(dinner() == [0..<9])
+        var left = group
+        left.roster = group.roster.map { GroupMember(nodeId: $0.nodeId, departed: $0.nodeId == crowd[1].nodeId.string, leftAt: 600) }
+        rig.stores.groups.save(left)
+        await rig.session.handle(.groupChanged(group.id))
+        #expect(dinner()?.isEmpty == true)
+        await rig.receive("@everyone lunch?", from: crowd[0].nodeId, mentions: listed)
+        let nearby = ChatModel(conversationId: Conversations.nearby, session: rig.session)
+        #expect(try #require(nearby.state.messages.first).mentionSpans.isEmpty)
+        #expect(rig.notifier.posted.map(\.id).last == NotificationPolicy.mentionId(Conversations.nearby))
+    }
 }

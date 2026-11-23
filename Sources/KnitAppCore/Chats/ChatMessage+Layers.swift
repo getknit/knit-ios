@@ -13,4 +13,11 @@ extension ChatMessage {
         copy.quote = notice == nil ? quote : nil
         return copy
     }
+
+    /// The message with `spans` of its words lit as names it mentions, unless it is a status line, which mentions nobody.
+    func lit(_ spans: [Range<Int>]) -> Self {
+        var copy = self
+        copy.mentionSpans = notice == nil ? spans : []
+        return copy
+    }
 }

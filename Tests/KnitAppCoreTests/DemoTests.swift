@@ -202,7 +202,7 @@ import Testing
     }
 
     /// A session over a real mesh on the demo's radio, in `radio`'s state, showing `linked` as linked.
-    private static func session(
+    static func session(
         _ stores: MeshStores,
         identity: IdentityKeys,
         radio: RadioState,
@@ -379,22 +379,5 @@ extension DemoTests {
         }
         #expect(room.state.typingLabel == nil)
         listening.cancel()
-    }
-}
-
-// Mentions (ADR 2026-10.nbhj), apart from the suite's body for the same reason.
-extension DemoTests {
-    @Test func theDemosMentionsAreStoredAndLit() throws {
-        // The other Sam's room post mentions Sam, and ours in the group mentions Priya, each under the stored name.
-        let identity = try #require(DemoSeed.identity)
-        let stores = MeshStores.inMemory()
-        DemoSeed.populate(stores, me: identity.nodeId, now: 10_000_000, scene: .edgeCases)
-        let room = try #require(stores.messages.message("room-2"))
-        #expect(room.mentions.map(\.name) == ["Sam"])
-        let group = try #require(stores.messages.message("group-2"))
-        #expect(group.mentions.map(\.name) == ["Priya"] && group.replyTo != nil)
-        let (session, _) = Self.session(stores, identity: identity, radio: .on, linked: [])
-        let thread = ChatModel(conversationId: group.conversationId, session: session)
-        #expect(thread.state.messages.first { $0.id == "group-2" }?.mentionSpans == [0..<6])
     }
 }
