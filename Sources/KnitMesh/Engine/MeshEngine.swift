@@ -195,12 +195,10 @@ public final class MeshEngine {
         guard let timers else {
             return nil
         }
-        let blobs = [blobExchange.nextDeadline, blobExchange.parkPollAt]
+        let exchanges = [blobExchange.nextDeadline, blobExchange.parkPollAt, ackSync.nextBatchDue, custodyLookDeadline]
         let ratchetSweep = configuration.ratchet ? timers.ratchetSweep : nil
-        let ticks = ackSync.nextBatchDue
-        let rounds = [custodyLookDeadline]
-        let deadlines = [router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ticks, ratchetSweep] + rounds
-        return (deadlines + blobs + [nextPresenceLinkUp]).compactMap(\.self).min()
+        let deadlines = [router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ratchetSweep]
+        return (deadlines + exchanges + [nextPresenceLinkUp]).compactMap(\.self).min()
     }
 
     /// Starts the node (`MeshManager.seedOwnProfileCustody`): seeds our sealed profile's dedupe, brings our prekey in step with the
