@@ -9,8 +9,8 @@ topics: [custody, convergence, mesh, security]
 # ADR 2026-11.3jry — custody serves a peer's mail first, in rounds as the link drains, and evicts the most widely carried at the cap
 
 Status: Accepted (2026-11-20). A paired change with knit-next, `custody-carry-policy`, with Android leading, for
-knit-next's issues #352, #349, #276 and #64. It mirrors knit-next ADR 2026-11.bmks on knit-next's
-`feat/custody-carry-policy` at `834ab80b7`, ahead of the pin (see `.agents/context/knit-next.md`), which amends
+knit-next's issues #352, #349, #276 and #64. It mirrors knit-next ADR 2026-11.bmks as merged on knit-next's
+`main` at `94bca7042` (the branch's `834ab80b7`), ahead of the pin (see `.agents/context/knit-next.md`), which amends
 knit-next ADR 006, ADR 2026-10.7mqm, ADR 2026-10.hr9f, ADR 2026-10.a5yj and the wording of ADR 2026-09.tjfb on the
 digest slot. Amends ADR 2026-09.p6nb, ADR 2026-10.9e7g and ADR 2026-10.f5zs.
 
