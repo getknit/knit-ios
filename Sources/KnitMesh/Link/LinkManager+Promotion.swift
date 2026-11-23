@@ -124,13 +124,14 @@ extension LinkManager {
 
     /// The sighted peers promotion may pick: ours to dial (``weDial(_:flags:)``), any while seeking
     /// (``dialsWhateverTheOrder``), or a flagged peer that would dial us once its head start ends
-    /// (``isHeadStartCandidate(_:)``), and not refused. A clear sighting is passed over while its id is linked, dialed or
-    /// proving. A blinded one is passed over while its own dial key is in flight, the id it is attributed to is being dialed
-    /// or proving, or a live link holds it off (``isHeldOff(_:live:proven:)``), all read now, never frozen at the sighting.
-    /// An unresolved form names no id to refuse (knit-peer's `deny-link`) until a dial to it proves one: the tag at that
-    /// address is passed over from then on while the id stays refused (``refusedDials``). A head-start peer's dwell
-    /// counts its head start less, and none is a candidate while a head-start dial is open. A peer ours to dial whose relink
-    /// window is open at `now` has its dwell met (``withRelinkDwell(_:now:)``); a head-start peer never does.
+    /// (``isHeadStartCandidate(_:)``), and not refused (``refusesSighting(_:)``). A clear sighting is passed over while its id
+    /// is linked, dialed or proving. A blinded one is passed over while its own dial key is in flight, the id it is attributed
+    /// to is being dialed or proving, or a live link holds it off (``isHeldOff(_:live:proven:)``), all read now, never frozen
+    /// at the sighting. An unresolved form names no id for `deny-link` to refuse until a dial to it proves one: the tag at that
+    /// address is passed over from then on while the id stays refused (``refusedDials``). Under an allow list it is never
+    /// dialed at all. A head-start peer's dwell counts its head start less, and none is a candidate while a head-start dial is
+    /// open. A peer ours to dial whose relink window is open at `now` has its dwell met (``withRelinkDwell(_:now:)``); a
+    /// head-start peer never does.
     func candidates(_ snapshots: [PresenceTracker.Snapshot], now: Int64) -> [PresenceTracker.Snapshot] {
         let anyOrder = dialsWhateverTheOrder
         let headStartOpen = headStartDialInFlight
@@ -139,7 +140,9 @@ extension LinkManager {
         let proven = Set(liveLinks.filter(\.proven).map(\.neighbor.nodeId))
         let attributedDials = Set(dialTargets.map(\.record.peerKey))
         return snapshots.compactMap { snapshot in
-            if let id = snapshot.key.nodeId, refused.contains(id) {
+            // First, so an unresolved form under an allow list never takes the head-start slot from a named peer
+            // (`keepingOneHeadStart`) nor names a dwell to wake for (`dwellDue`).
+            if refusesSighting(snapshot.key) {
                 return nil
             }
             if snapshot.advert.blinded {

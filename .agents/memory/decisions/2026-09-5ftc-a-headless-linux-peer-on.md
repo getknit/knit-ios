@@ -29,7 +29,8 @@ details:
 - **Tests.** A fake BlueZ on a peer-to-peer libdbus server, with Unix `SOCK_SEQPACKET` sockets in place of L2CAP,
   runs the whole radio in CI with no adapter and no bus daemon.
 - **Rig controls.** `deny-link` refuses a peer both ways, for forcing a line. `keygen` takes a window of node ids,
-  which picks the dial order. `scan` lists the Knit nodes in range without linking.
+  which picks the dial order. `scan` lists the Knit nodes in range without linking. `run --only-link` refuses every
+  node but the named ones both ways, so a trial's flood reaches nobody else (knit-ios #58, added 2026-11-23).
 
 The alternatives were Python scripts or an emulator. Python, as spike (e) used, would test a second
 implementation instead of this one. knit-next's emulator script takes the same dongle and needs an Android build.

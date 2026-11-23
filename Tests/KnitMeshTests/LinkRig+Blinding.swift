@@ -10,14 +10,16 @@ extension LinkRig {
     static let psm: UInt16 = 0x81
 
     /// A blinding iPhone: no service data, a GATT reader that serves the doorbell, a build that may blind, our keys attached,
-    /// `keys.key` handed in and taken, and its listener up, which brings the advert up on a tag.
+    /// `keys.key` handed in and taken, and its listener up, which brings the advert up on a tag; linking only with `onlyLinks`
+    /// when given.
     static func blindingIPhone(
         _ local: NodeId = high, keys: FakeKeys, background: Bool = false, log: RecordingLog = RecordingLog(), listening: Bool = true,
-        switchOn: Bool = true
+        switchOn: Bool = true, onlyLinks: Set<NodeId>? = nil
     ) -> LinkRig {
         var configuration = LinkManager.Configuration()
         configuration.blindsAdvert = true
         configuration.blindSwitchOn = switchOn
+        configuration.onlyLinks = onlyLinks
         let rig = LinkRig(
             local: local, advertisesServiceData: false, servesDoorbell: true, background: background, configuration: configuration, log: log
         )

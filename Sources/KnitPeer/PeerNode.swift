@@ -17,6 +17,8 @@ public actor PeerNode {
     private let avatarPath: String?
     private let stateDirectory: String?
     private let lies: PeerLies?
+    /// The allow list `status` reports as `onlyLink` (`--only-link`), sorted, or `null` without one.
+    private let onlyLink: JSONValue
     private let log: any KnitLog
     private var forwarding: Task<Void, Never>?
 
@@ -52,6 +54,7 @@ public actor PeerNode {
         self.avatarPath = avatarPath
         self.stateDirectory = stateDirectory
         self.log = log
+        onlyLink = linkConfiguration.onlyLinks.map { ids in .array(ids.map(\.string).sorted().map(JSONValue.string)) } ?? .null
         mesh = Mesh(
             identity: identity,
             prekeys: prekeys,
@@ -161,7 +164,8 @@ public actor PeerNode {
     }
 
     /// Answers one control line, and whether to keep reading: `false` after `quit`, which stops the node first. The lying
-    /// commands are answered here, before ``MeshControl``, and `status` gains `lying`, `null` without `--lying`.
+    /// commands are answered here, before ``MeshControl``, and `status` gains `lying`, `null` without `--lying`, and `onlyLink`,
+    /// the ids `--only-link` named, sorted, or `null` without it, so a harness can check it before a flood.
     @discardableResult
     public func handle(_ line: String) async -> Bool {
         let head = PeerLies.Head.parse(line)
@@ -176,7 +180,7 @@ public actor PeerNode {
         var text = reply.line
         if head?.cmd == "status", text.hasSuffix("}") {
             let lying = await lies?.status() ?? .null
-            text = String(text.dropLast()) + #","lying":"# + lying.line + "}"
+            text = String(text.dropLast()) + #","lying":"# + lying.line + #","onlyLink":"# + onlyLink.line + "}"
         }
         output(text)
         return !reply.quits

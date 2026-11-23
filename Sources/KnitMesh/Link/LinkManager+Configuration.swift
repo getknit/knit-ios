@@ -81,6 +81,10 @@ extension LinkManager {
         /// dials still open sealed toward a flagged advert, so a test writes the stand-in's HELLO by hand (``ourHello(addressing:)``),
         /// and one that dials through promotion sets ``LinkManager/sealSwitch`` to `.off` too, as Android v2.11.0 plays it.
         public var withholdsBlindAdvert: Bool
+        /// knit-peer's allow list (`--only-link`, knit-ios #58), a trial's switch the app never sets: `nil` for none, else the
+        /// only ids that may link, both ways (``LinkManager/refuses(_:)``), and no unresolved blinded form is dialed, since it
+        /// names no id to check (``LinkManager/candidates(_:now:)``). A `let` on the manager, so it never has to close a link.
+        public var onlyLinks: Set<NodeId>?
         /// Whether this build may air a rotating tag instead of its id (Android's `BLIND_ADVERT`; ADR 2026-11.prsp), the build
         /// gate: true in every debug build's factory and in knit-peer, false in release, which then has no switch. While it
         /// holds, ``LinkManager/setBlinding(_:)`` turns the runtime switch on and off.
@@ -119,6 +123,7 @@ extension LinkManager {
             backoff: ConnectBackoff.Configuration = ConnectBackoff.Configuration(),
             presence: PresenceTracker.Configuration = PresenceTracker.Configuration(),
             withholdsBlindAdvert: Bool = false,
+            onlyLinks: Set<NodeId>? = nil,
             blindsAdvert: Bool = false,
             blindSwitchOn: Bool = true,
             clockChangeName: String? = nil
@@ -146,6 +151,7 @@ extension LinkManager {
             self.backoff = backoff
             self.presence = presence
             self.withholdsBlindAdvert = withholdsBlindAdvert
+            self.onlyLinks = onlyLinks
             self.blindsAdvert = blindsAdvert
             self.blindSwitchOn = blindSwitchOn
             self.clockChangeName = clockChangeName

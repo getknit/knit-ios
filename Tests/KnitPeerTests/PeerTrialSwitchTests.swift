@@ -1,4 +1,8 @@
+import Foundation
+import KnitMesh
 import KnitPeer
+import KnitTestSupport
+import KnitWire
 import Testing
 
 /// `knit-peer`'s switches for device trials, which change nothing unless asked.
@@ -45,6 +49,35 @@ import Testing
         #expect(throws: UsageError.repeated("--lying")) { try run(["--lying", "--lying"]) }
         #expect(PeerCommand.usage.contains("[--lying]"))
         #expect(PeerCommand.usage.contains("--lying is for trials too"))
+    }
+
+    /// `--only-link`: an allow list in the link manager (knit-ios #58), absent unless asked, refusing an empty list or a bad id.
+    @Test func thePeerLinksWithAnyoneUnlessATrialNamesWhom() throws {
+        #expect(try run([]).onlyLinks == nil)
+        let low = fixtureNodeId(8)
+        let high = fixtureNodeId(9)
+        #expect(try run(["--only-link", "\(low.string),\(high.string)"]).onlyLinks == [low, high])
+        #expect(try run(["run", "--only-link", low.string, "--flood", "1"]).onlyLinks == [low])
+        for bad in ["", ",", "\(low.string),", "nobody", "\(low.string),nobody"] {
+            #expect(throws: UsageError.invalid(flag: "--only-link", value: bad)) { try run(["--only-link", bad]) }
+        }
+        #expect(PeerCommand.usage.contains("[--only-link NODE_ID[,NODE_ID...]]"))
+        #expect(PeerCommand.usage.contains("--only-link is for trials too"))
+    }
+
+    /// `status` names the allow list, sorted, so a harness can check it before a flood; `null` without one.
+    @Test func statusNamesTheAllowList() async throws {
+        let low = fixtureNodeId(8)
+        let high = fixtureNodeId(9)
+        var configuration = LinkManager.Configuration()
+        configuration.onlyLinks = [high, low]
+        let listed = PeerRig(linkConfiguration: configuration)
+        await listed.node.start(name: nil)
+        #expect(try await listed.send(#"{"cmd":"status"}"#)["onlyLink"] as? [String] == [low.string, high.string].sorted())
+        let open = PeerRig()
+        await open.node.start(name: nil)
+        let status = try await open.send(#"{"cmd":"status"}"#)
+        #expect(status["onlyLink"] is NSNull && status["lying"] is NSNull)
     }
 
     /// The seal's switches (the `link-seal` contract's T5 and T6): honest unless asked, and a PSM only from the dynamic range.

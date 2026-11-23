@@ -268,7 +268,7 @@ Since knit-next `99fbcad1` (#199, an amendment to its ADR 2026-10.9qr4), Android
 canonical: 26 lowercase base32 characters that round-trip through 16 bytes (`Protocol.kt:210-212`). On its own dial it
 closes the link and counts a `HANDSHAKE` failure, which bumps the backoff. As responder it just closes. This port
 already refuses the same ids the same way, through `NodeId(_:)`: the dialer retires with a backoff
-(`LinkManager+Admission.swift:202`), and the responder retires without one (`:218`). It only ever sends
+(`LinkManager+Admission.swift:119`), and the responder retires without one (`:136`). It only ever sends
 `localId.string`, which is canonical.
 
 ### After link-up

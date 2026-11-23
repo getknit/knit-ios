@@ -100,7 +100,7 @@ public final class LinkManager: MeshTransport {
     var liveLinks: [LiveLink] = []
     /// Dials in flight, by the key each is booked under (``DialKey``).
     var dialing: [DialKey: ChannelID] = [:]
-    /// Peers refused both ways (``refuse(_:)``).
+    /// Peers refused both ways (``refuse(_:)``, `deny-link`). Read it through ``refuses(_:)``, which adds the allow list.
     var refused: Set<NodeId> = []
     var presence: PresenceTracker
     /// Where each sighting was last heard, by the key it is kept under, pruned with presence.
@@ -120,7 +120,7 @@ public final class LinkManager: MeshTransport {
     /// Each live proven link we dialed at a tag, by the dial key it was dialed under (``DialKeys/heldDial(_:proven:)``).
     var heldDials: [ChannelID: DialKey] = [:]
     /// Each tag dial key whose dial proved a refused id, and that id (``refusedTagDial(_:_:_:now:)``): promotion passes the
-    /// tag at that address over while the id stays refused. Pruned with presence, and with its handle.
+    /// tag at that address over while the id stays refused (``refuses(_:)``). Pruned with presence, and with its handle.
     var refusedDials: [DialKey: NodeId] = [:]
     /// The newest `TAG_NEXT` each link sent in the read being handled, taken once the read's records drain.
     var tagNextHeld: [ChannelID: NodeId] = [:]

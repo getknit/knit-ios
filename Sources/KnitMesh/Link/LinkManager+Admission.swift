@@ -1,4 +1,4 @@
-public import KnitWire
+import KnitWire
 
 /// Who dials whom, and who is admitted: the dial rule, promotion, the HELLO exchange and the records behind it.
 extension LinkManager {
@@ -29,39 +29,6 @@ extension LinkManager {
         }
         writeHello(on: id)
         enterStage(.awaitingHello, on: id, now: now)
-    }
-
-    // MARK: Refusals
-
-    /// Refuses every link with `peer`, both ways, until ``permit(_:)``: closes its live link and any dial to it, never
-    /// dials it, and closes its HELLO when it dials us. An unresolved tag names no id, so it is dialed until a dial to it
-    /// proves `peer`; that dial closes before our PROOF, and the tag at that address is not dialed again while `peer` stays
-    /// refused (``refusedTagDial(_:_:_:now:)``): one dial per rotation, address and start, and one more after 90 s
-    /// unheard. A rig's tool for forcing a line of nodes that could all hear each other (knit-peer's `deny-link`).
-    /// Answers the link that went down.
-    public func refuse(_ peer: NodeId) -> [Event] {
-        refused.insert(peer)
-        let now = clock.monotonicMilliseconds()
-        let theirs = channels.filter { entry in
-            entry.value.stage == .live(peer) || Self.dials(peer, entry.value) || Self.awaitsProof(of: peer, entry.value)
-        }
-        return theirs.keys.sorted(by: Self.inOrder).flatMap { retire($0, backingOff: false, now: now) } + reconsiderSeeking(now: now)
-    }
-
-    /// Lets `peer` link again, and dials it now if the promotion rules say so.
-    public func permit(_ peer: NodeId) -> [Event] {
-        refused.remove(peer)
-        refusedDials = refusedDials.filter { $0.value != peer }
-        let now = clock.monotonicMilliseconds()
-        return promote(now: now) + reconsiderSeeking(now: now)
-    }
-
-    /// Whether `channel` is a clear dial to `peer`.
-    static func dials(_ peer: NodeId, _ channel: Channel) -> Bool {
-        if case .dialer(let target) = channel.role {
-            return target.expected == peer
-        }
-        return false
     }
 
     // MARK: Records
@@ -166,7 +133,7 @@ extension LinkManager {
     /// where today's rules would refuse it too. A dialer that proves itself is answered with our HELLO and PROOF, and
     /// registered only once its own PROOF verifies; a link it would replace stays up until then, and stays if it fails.
     func admit(_ id: ChannelID, hello: Hello, payload: [UInt8], now: Int64) -> [Event] {
-        guard let dialer = NodeId(hello.nodeId), dialer != localId, !refused.contains(dialer) else {
+        guard let dialer = NodeId(hello.nodeId), dialer != localId, !refusesDialer(dialer) else {
             return retire(id, backingOff: false, now: now)
         }
         // Before R1 and today's refusals, so the link counts once (`link-seal` §7). knit-peer's `downgrade` leaves it to
@@ -293,7 +260,7 @@ extension LinkManager {
     /// Registers the link on `id` to `claim`'s peer, `proven` when its PROOF verified, unless a link to that peer is up.
     func register(_ id: ChannelID, _ claim: Claim, proven: Bool, now: Int64) -> [Event] {
         let peer = claim.peer
-        if liveChannel(to: peer) != nil || refused.contains(peer) {
+        if liveChannel(to: peer) != nil || refuses(peer) {
             // Our dial landed while the peer's own link to us was already up: keep the older one. A proof displaced any
             // unproven link before it came here (``proved(_:_:now:)``), so this keeps a link as proven as the new one.
             return retire(id, backingOff: false, now: now)

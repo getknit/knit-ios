@@ -322,10 +322,10 @@ struct PeerRig {
 
     /// A peer on fresh stores in memory, its own profile in `ownProfile` when given, keeping its photo at `avatarPath`
     /// when given: a restart is a second rig on the same two. `ratchet` and `prekeys` are `--ratchet`'s switch and the ring
-    /// its `main` loads.
+    /// its `main` loads. `linkConfiguration` is what `main` builds from the options.
     init(
         ownProfile: (any OwnProfileStore & Checkpointing)? = nil, avatarPath: String? = nil, ratchet: Bool = false,
-        prekeys: PrekeyRing? = nil
+        prekeys: PrekeyRing? = nil, linkConfiguration: LinkManager.Configuration = LinkManager.Configuration()
     ) {
         let made = ownProfile.map { MeshStores.inMemory(ownProfileStore: $0) } ?? .inMemory()
         stores = made
@@ -338,6 +338,7 @@ struct PeerRig {
             radioProfile: "android",
             clock: StillClock(),
             random: CountingGenerator(),
+            linkConfiguration: linkConfiguration,
             log: SilentLog(),
             avatarPath: avatarPath,
             output: lines.write

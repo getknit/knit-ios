@@ -242,13 +242,14 @@ extension LinkManager {
         return events + register(id, pending.claim, proven: true, now: now)
     }
 
-    /// Our tag dial's responder proved `pending.peer`, an id this node refuses (``refuse(_:)``, knit-peer's `deny-link`):
-    /// closed before our PROOF, so the peer registers nothing either. The resolver hears only the proof (`onDialProved`),
-    /// and a replay is still marked (`onTagDialed`, `BluetoothMeshTransport.kt:3889-3899` at `cad69c77b`). Nothing backs
-    /// off, since the refusal is our policy and no failure of the peer's, and a backoff would outlive ``permit(_:)``;
-    /// instead the dial key is marked (``refusedDials``), so the tag at that address is not dialed again while the id is
-    /// refused, until the tag goes 90 s unheard or the cap lets its handle go. The lab iPhone on `1d6affd` redialed such
-    /// a tag at every advert, 1 to 3 s apart, with no line between.
+    /// Our tag dial's responder proved `pending.peer`, an id this node refuses (``refuses(_:)``: knit-peer's `deny-link`, or
+    /// an id its `--only-link` leaves out, where a claim or hint named an allowed one): closed before our PROOF, so the peer
+    /// registers nothing either. The resolver hears only the proof (`onDialProved`), and a replay is still marked
+    /// (`onTagDialed`, `BluetoothMeshTransport.kt:3889-3899` at `cad69c77b`). Nothing backs off, since the refusal is our
+    /// policy and no failure of the peer's, and a backoff would outlive ``permit(_:)``; instead the dial key is marked
+    /// (``refusedDials``), so the tag at that address is not dialed again while the id is refused, until the tag goes 90 s
+    /// unheard or the cap lets its handle go. The lab iPhone on `1d6affd` redialed such a tag at every advert, 1 to 3 s
+    /// apart, with no line between.
     func refusedTagDial(_ id: ChannelID, _ target: DialTarget, _ pending: PendingProof, now: Int64) -> [Event] {
         let peer = pending.peer
         let mismatches = aliases.keyProofMismatchCount
@@ -263,9 +264,10 @@ extension LinkManager {
         return retire(id, backingOff: false, now: now) + promote(now: now)
     }
 
-    /// Whether a dial under `dialKey` once proved an id still refused (``refusedTagDial(_:_:_:now:)``).
+    /// Whether a dial under `dialKey` once proved an id still refused, by `deny-link` or the allow list (``refuses(_:)``,
+    /// ``refusedTagDial(_:_:_:now:)``).
     func provedRefused(_ dialKey: DialKey) -> Bool {
-        refusedDials[dialKey].map(refused.contains) == true
+        refusedDials[dialKey].map(refuses) == true
     }
 
     // MARK: TAG_NEXT

@@ -204,11 +204,12 @@ extension LinkManager {
 
     /// The record where the peer's PROOF belongs. A dialer writes its own PROOF once the responder's verifies; either side
     /// then registers the peer as proven. Anything else there fails the proof and closes the link, backing off a dialer.
-    /// A tag dial whose responder proved a refused id closes before our PROOF (``refusedTagDial(_:_:_:now:)``).
+    /// A tag dial whose responder proved a refused id, or one outside an allow list (``refuses(_:)``), closes before our PROOF
+    /// (``refusedTagDial(_:_:_:now:)``).
     func handleProof(_ record: LinkRecord, _ pending: PendingProof, on id: ChannelID, role: Role, now: Int64) -> [Event] {
         let dialed = role != .responder
         var failure = Self.proofFailure(record, pending, form: form(of: id), signer: dialed ? .responder : .dialer)
-        if failure == nil, case .dialer(let target) = role, target.expected == nil, refused.contains(pending.peer) {
+        if failure == nil, case .dialer(let target) = role, target.expected == nil, refuses(pending.peer) {
             return refusedTagDial(id, target, pending, now: now)
         }
         if failure == nil, dialed {

@@ -54,6 +54,9 @@ and no say in the address's rotation, and the iPhone's id rides its GATT payload
   not dialed again while the id stays refused: one dial per rotation, address and mesh start, and one more after the
   tag goes 90 s unheard or the cap lets its handle go. The lab iPhone on `1d6affd` redialed such a tag at every
   advert, 1 to 3 s apart.
+  **Amended 2026-11-23:** with an allow list (knit-peer's `--only-link`, knit-ios #58) the link manager never dials an
+  unresolved form, whichever rule would, since it names no id to check. A form a key, claim or hint resolves is judged
+  by its id, and the proof still decides: one proving an id off the list closes as above.
 - **The responder** honours a proof-offering dialer's `t` and `a` in its order check, so a blinding Android whose real
   id sorts below ours is admitted. It records the dialer's `t` as a hint for the link. The iPhone has no responder rows
   of its own: Android's held-link row is inert while a phone's own form is clear, and the legacy-dialer row is the

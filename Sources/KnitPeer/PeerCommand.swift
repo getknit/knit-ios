@@ -7,6 +7,7 @@ public import KnitWire
 /// knit-peer [run] [--adapter-address AA:BB:CC:DD:EE:FF] [--shared-adapter]
 ///           [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
 ///           [--log debug|info|warning|off] [--rssi-floor DBM] [--never-sight NODE_ID[,NODE_ID…]]
+///           [--only-link NODE_ID[,NODE_ID…]]
 ///           [--no-gatt-payload] [--gatt-reads | --no-gatt-reads] [--feed window|pace] [--ratchet | --no-ratchet]
 ///           [--no-presence-keys] [--blind] [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
 ///           [--seal on|off|downgrade|plain-reply] [--flip-sealed-bit] [--psm PSM]
@@ -42,7 +43,8 @@ public enum PeerCommand: Equatable, Sendable {
             knit-peer [run] [--adapter-address ADDRESS] [--shared-adapter]
                 [--radio-profile android|ios] [--instance NAME | --state DIR] [--name NAME]
                 [--log debug|info|warning|off] [--rssi-floor DBM] [--receive-mtu BYTES] [--send-mtu BYTES]
-                [--never-sight NODE_ID[,NODE_ID...]] [--no-gatt-payload] [--gatt-reads | --no-gatt-reads]
+                [--never-sight NODE_ID[,NODE_ID...]] [--only-link NODE_ID[,NODE_ID...]]
+                [--no-gatt-payload] [--gatt-reads | --no-gatt-reads]
                 [--feed window|pace] [--ratchet | --no-ratchet] [--no-presence-keys] [--blind]
                 [--stop-reading-after SECONDS] [--flood BYTES_PER_SECOND] [--lying]
                 [--seal on|off|downgrade|plain-reply] [--flip-sealed-bit] [--psm PSM]
@@ -67,6 +69,9 @@ public enum PeerCommand: Equatable, Sendable {
         --flood is for trials too: while linked, the peer writes that many bytes a second of undecodable frames to
         every link, as a neighbour flooding it would, holding back while its own queue to that link is full.
         --lying is for trials too: only with it do lie-blobhas, junk, advertise-photo, pad-profile and ask-blob take.
+        --only-link is for trials too: the peer links with the named nodes alone, both ways, and refuses every other
+        node's dial at its HELLO. It never dials a blinded advert until a presence key, a claim or a hint names a
+        listed node, so it first meets a blinding phone by that phone's dial, or once linked before.
         --seal is for trials too: off seals nothing, as Android v2.11.0; downgrade strips the advert's flag and keeps the
         HELLO's bit; plain-reply answers a sealed dial with a plain HELLO. --flip-sealed-bit flips one bit in each link's
         first sealed frame after it comes up. --psm listens on that LE PSM (128 to 255) instead of the kernel's: give a
@@ -152,6 +157,10 @@ public struct RunOptions: Equatable, Sendable {
     /// to a phone while the phone's dial to the peer is under test. Without it, a peer that sights a phone above it
     /// with `FLAG_DIALS_GATT_PEERS` clear dials the phone, and refuses the phone's dial as one it makes itself.
     public var neverSighted: Set<NodeId> = []
+    /// The only nodes the peer links with, a trial's switch (`--only-link`, knit-ios #58), or `nil` for any: every other
+    /// node's dial is refused at its HELLO and never registered, so a flood or a lie reaches none of them, and a blinded
+    /// advert no key, claim or hint resolves to a listed node is never dialed (``LinkManager/Configuration/onlyLinks``).
+    public var onlyLinks: Set<NodeId>?
     /// Whether the `ios` profile serves its payload over GATT. `--no-gatt-payload` leaves the doorbell alone in the
     /// `0xFE30` service, so a phone that reads payloads files the peer as a stranger and never sights it: a test
     /// switch for A1's paths, which need a dialer the phone never sighted.
@@ -219,13 +228,8 @@ public struct RunOptions: Equatable, Sendable {
         }
         receiveMTU = try Self.mtu(flags.take("--receive-mtu"), flag: "--receive-mtu")
         sendMTU = try Self.mtu(flags.take("--send-mtu"), flag: "--send-mtu")
-        if let text = flags.take("--never-sight") {
-            let nodes = text.split(separator: ",", omittingEmptySubsequences: false).map { NodeId(String($0)) }
-            guard !nodes.isEmpty, nodes.allSatisfy({ $0 != nil }) else {
-                throw .invalid(flag: "--never-sight", value: text)
-            }
-            neverSighted = Set(nodes.compactMap(\.self))
-        }
+        neverSighted = try Self.nodes(flags.take("--never-sight"), flag: "--never-sight") ?? []
+        onlyLinks = try Self.nodes(flags.take("--only-link"), flag: "--only-link")
         servesGattPayload = !flags.take(switch: "--no-gatt-payload")
         let reads = flags.take(switch: "--gatt-reads")
         let readsNone = flags.take(switch: "--no-gatt-reads")
@@ -248,6 +252,19 @@ public struct RunOptions: Equatable, Sendable {
         sealSwitch = try flags.take("--seal", oneOf: Self.sealSwitches) ?? sealSwitch
         flipsSealedBit = flags.take(switch: "--flip-sealed-bit")
         listenPSM = try Self.psm(flags.take("--psm"))
+    }
+
+    /// The node ids a comma-separated `text` names, or `nil` when the flag was not given; an empty list or a bad id is
+    /// refused.
+    private static func nodes(_ text: String?, flag: String) throws(UsageError) -> Set<NodeId>? {
+        guard let text else {
+            return nil
+        }
+        let nodes = text.split(separator: ",", omittingEmptySubsequences: false).map { NodeId(String($0)) }
+        guard nodes.allSatisfy({ $0 != nil }) else {
+            throw .invalid(flag: flag, value: text)
+        }
+        return Set(nodes.compactMap(\.self))
     }
 
     /// Options as given, for tests and callers that build them.

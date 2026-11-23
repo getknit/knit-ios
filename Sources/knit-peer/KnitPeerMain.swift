@@ -83,6 +83,11 @@ import Foundation
             if options.blind {
                 log.log(.info, "airing a rotating tag in place of the node id (--blind)")
             }
+            if let only = options.onlyLinks {
+                links.onlyLinks = only
+                log.log(.info, "only linking \(only.map(\.string).sorted().joined(separator: ", ")), a test switch")
+                log.log(.info, "dialing no blinded advert until a presence key, claim or hint names one of them (--only-link)")
+            }
             if !options.feedWindow {
                 log.log(.info, "files paced and reported every 2 s, the window off for an A/B (--feed pace)")
             }
