@@ -40,7 +40,14 @@ public enum MessageClusters {
     /// Whether `next` joins `message`'s cluster: the same author, on the same day, soon after, and neither a status line.
     static func joins(_ message: ChatMessage, _ next: ChatMessage, calendar: Calendar) -> Bool {
         message.notice == nil && next.notice == nil && message.isMine == next.isMine && message.author == next.author
-            && abs(next.sentAt - message.sentAt) <= window && sameDay(message, next, calendar: calendar)
+            && within(window, message.sentAt, next.sentAt) && sameDay(message, next, calendar: calendar)
+    }
+
+    /// Whether `first` and `second` lie within `limit` of each other. Two stamps further apart than a 64-bit difference
+    /// holds never are.
+    static func within(_ limit: Int64, _ first: Int64, _ second: Int64) -> Bool {
+        let (gap, overflow) = second.subtractingReportingOverflow(first)
+        return !overflow && gap.magnitude <= limit.magnitude
     }
 
     /// Whether one stamp says it for both: the same minute, and the same tick.

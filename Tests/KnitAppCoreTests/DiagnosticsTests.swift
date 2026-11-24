@@ -83,6 +83,21 @@ import Testing
         #expect(ClockSkew.label(12_500) == Copy.Diagnostics.clockBehind(seconds: 12))
     }
 
+    /// A stamp whose distance from our arrival time a 64-bit difference cannot hold counts for nothing; the estimate reads
+    /// the rest.
+    @Test func aStampAtEitherEndOfTheRangeIsSkipped() {
+        let sam = AppRig.sam.nodeId
+        func received(_ id: String, sentAt: Int64, arrivedAt: Int64) -> MessageRecord {
+            MessageRecord(
+                id: id, senderId: sam, recipientId: nil, conversationId: "nearby", body: "", sentAt: sentAt, arrivedAt: arrivedAt)
+        }
+        let inRange = received("h", sentAt: 1_000_000, arrivedAt: 1_030_000)
+        #expect(ClockSkew.estimate([received("lo", sentAt: .min, arrivedAt: 1_000_000), inRange]) == 30_000)
+        #expect(ClockSkew.estimate([received("lo", sentAt: .min, arrivedAt: 1_000_000)]) == nil)
+        #expect(ClockSkew.estimate([received("hi", sentAt: .max, arrivedAt: -2)]) == nil)
+        #expect(ClockSkew.label(.min) == Copy.Diagnostics.clockAhead(seconds: Int(Int64.max / 1000)))
+    }
+
     @Test func refreshingReadsTheMeshThroughTheSession() async {
         let rig = AppRig()
         let model = DiagnosticsModel(session: rig.session)

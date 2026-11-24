@@ -17,17 +17,24 @@ public enum ClockSkew {
 
     static let millisecondsPerSecond: Int64 = 1000
 
-    /// Our clock minus theirs plus the fastest arrival, over `messages` from them: `nil` with nothing to go on.
+    /// Our clock minus theirs plus the fastest arrival, over `messages` from them: `nil` with nothing to go on. A message
+    /// whose difference a 64-bit value cannot hold is skipped.
     public static func estimate(_ messages: [MessageRecord]) -> Int64? {
-        messages.compactMap { message in message.arrivedAt.map { $0 - message.sentAt } }.min()
+        messages.compactMap { message in
+            message.arrivedAt.flatMap { arrived in
+                let (skew, overflow) = arrived.subtractingReportingOverflow(message.sentAt)
+                return overflow ? nil : skew
+            }
+        }
+        .min()
     }
 
     /// The estimate in words.
     public static func label(_ skew: Int64) -> String {
-        if abs(skew) <= inStepMilliseconds {
+        if skew.magnitude <= inStepMilliseconds.magnitude {
             return Copy.Diagnostics.clockInStep
         }
-        let seconds = Int(abs(skew) / millisecondsPerSecond)
+        let seconds = Int(skew.magnitude / millisecondsPerSecond.magnitude)
         return skew < 0 ? Copy.Diagnostics.clockAhead(seconds: seconds) : Copy.Diagnostics.clockBehind(seconds: seconds)
     }
 }

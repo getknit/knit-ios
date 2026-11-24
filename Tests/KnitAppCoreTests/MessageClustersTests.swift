@@ -94,6 +94,18 @@ import Testing
         #expect(Date(milliseconds: 1500) == Date(timeIntervalSince1970: 1.5))
     }
 
+    /// Two neighbours' stamps further apart than a 64-bit difference holds never join; two equal ones do, wherever they lie.
+    @Test func stampsAtTheEndsOfTheRangeNeverJoin() {
+        let sam = AppRig.sam.nodeId
+        for (earlier, later) in [(Int64.min, Self.noon), (Self.noon, Int64.min), (Int64.max, Int64.min), (Int64.min, Int64.max)] {
+            let places = Self.places([Self.message("a", at: earlier, by: sam), Self.message("b", at: later, by: sam)])
+            #expect(places.map(\.joinsNext) == [false, false], "\(earlier) then \(later)")
+            #expect(places.map(\.startsDay) == [true, true])
+        }
+        let alike = Self.places([Self.message("a", at: .min, by: sam), Self.message("b", at: .min, by: sam)])
+        #expect(alike.map(\.joinsNext) == [true, false], "two equal stamps join, however far from now")
+    }
+
     private static func places(_ messages: [ChatMessage]) -> [MessagePlace] {
         MessageClusters.places(messages, calendar: calendar)
     }
