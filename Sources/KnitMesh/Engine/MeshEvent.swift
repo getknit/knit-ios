@@ -18,6 +18,10 @@ public enum MeshEvent: Sendable, Equatable {
     case groupChanged(String)
     /// A peer's profile pinned or changed.
     case peerUpdated(NodeId)
+    /// Signed frames from these peers reached us, and the bank moved when each was last heard (knit-next ADR 2026-10.k8ge):
+    /// a stranger's name clash that had faded may stand again. One event per bank, whatever it moved. When a peer was last
+    /// heard decides how a label reads and nothing else.
+    case peersHeard(Set<NodeId>)
     /// Retention removed rows from these threads, the Nearby room's oldest or message requests' (knit-ios #21), each once
     /// in the order of its id's bytes: their counts and the list may have moved.
     case trimmed(conversations: [String])

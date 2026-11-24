@@ -266,7 +266,11 @@ extension MeshEngine {
         let blocked = continued || isBlocked(sender)
         // A first profile starts from an empty row, both watermarks at 0, as `PeerEntity(senderId)` does (`:3301`).
         let base = existing ?? PeerRecord(nodeId: sender, name: "", status: "", publicKey: key, updatedAt: 0)
-        let record = profileRecord(content, onto: base, version: version, stale: (stalePresentation, stalePrekey), blocked: blocked)
+        var record = profileRecord(content, onto: base, version: version, stale: (stalePresentation, stalePrekey), blocked: blocked)
+        // When the peer was last heard moves up to the profile's own stamp capped at our wall clock, blocked or not, so a new
+        // pin is never born quiet (`storeProfileRow`'s `lastSeenAt = maxOf(base.lastSeenAt, seenAt)`, `InboundPipeline.kt:5725`;
+        // knit-next ADR 2026-10.k8ge). A profile stale on both watermarks returned above, and was noted by ``noteHeard``.
+        record.lastSeenAt = max(base.lastSeenAt, HeardFrom.heardAt(envelope, now: clock.wallMilliseconds()))
         writeProfileRow(record, was: existing)
         if continued || record != existing {
             events.append(.peerUpdated(sender))

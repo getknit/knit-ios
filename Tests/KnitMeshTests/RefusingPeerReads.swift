@@ -39,4 +39,6 @@ final class RefusingPeerReads: PeerStore {
     }
     func profileFrame(of nodeId: NodeId) -> WireEnvelope? { held.profileFrame(of: nodeId) }
     func deleteProfileFrames(longerThan maxSignedBytes: Int) -> Int { held.deleteProfileFrames(longerThan: maxSignedBytes) }
+    func markSeen(_ stamps: [NodeId: Int64], gate: Int64) -> Set<NodeId>? { held.markSeen(stamps, gate: gate) }
+    func lastSeenStamps() -> [NodeId: Int64] { held.lastSeenStamps() }
 }

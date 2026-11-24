@@ -42,6 +42,17 @@ public struct PeerRecord: Sendable, Equatable {
     /// ``prekey``, clamped as ``updatedAt`` is, or 0 before any. It moves apart from ``updatedAt``, because a sealed
     /// profile update moves the presentation and carries no prekey (`InboundPipeline.kt:3276-3287`).
     public var prekeyProfileAt: Int64
+    /// When a signed frame of this peer's last reached us, by its own `sentAt` capped at our wall clock and floored at 0
+    /// (`PeerEntity.lastSeenAt`, knit-next ADR 2026-10.k8ge): what lets a stranger's name clash fade once they have been
+    /// quiet for a week. It never moves back (``PeerStore/upsert(_:)`` keeps the larger, ``PeerStore/markSeen(_:gate:)``
+    /// only raises it), and 0 means never heard since the column came.
+    ///
+    /// Presentation only. The peer picks the stamp and custody replays it for hours, so it must never feed a presence tier,
+    /// a route, custody, a fetch order or an eviction order; `PresenceTracker`'s own `lastSeenAt` is a different, local
+    /// clock. Android also reads it in `PeerDao.facesNeedingFetch` (the face re-want order, knit-next ADR 2026-11.4ckq) and
+    /// `MeshcoreClaim.kt:207`; this port takes neither. A new reader here needs an amendment to the ADR that ports the fade
+    /// and the blobs reviewer.
+    public var lastSeenAt: Int64
 
     /// Makes a record.
     public init(
@@ -58,7 +69,8 @@ public struct PeerRecord: Sendable, Equatable {
         avatarHash: BlobHash? = nil,
         advertisedAvatarHash: BlobHash? = nil,
         prekey: PrekeyInfo? = nil,
-        prekeyProfileAt: Int64 = 0
+        prekeyProfileAt: Int64 = 0,
+        lastSeenAt: Int64 = 0
     ) {
         self.nodeId = nodeId
         self.name = name
@@ -74,6 +86,14 @@ public struct PeerRecord: Sendable, Equatable {
         self.advertisedAvatarHash = advertisedAvatarHash
         self.prekey = prekey
         self.prekeyProfileAt = prekeyProfileAt
+        self.lastSeenAt = lastSeenAt
+    }
+
+    /// The stamp a row must be older than for `markSeen` to raise it to `at`: `at - gate` (`PeerRepository.flushSeen`'s
+    /// `olderThan`), or `nil` where that would overflow, which raises nothing. Both stores compute it here, so they agree.
+    public static func seenThreshold(at: Int64, gate: Int64) -> Int64? {
+        let (olderThan, overflow) = at.subtractingReportingOverflow(gate)
+        return overflow ? nil : olderThan
     }
 }
 
@@ -82,8 +102,19 @@ public protocol PeerStore: AnyObject, Sendable {
     /// The pinned peer, or `nil`.
     func peer(_ nodeId: NodeId) -> PeerRecord?
 
-    /// Inserts or replaces a peer.
+    /// Inserts or replaces a peer, but for ``PeerRecord/lastSeenAt``, which keeps the larger of the row's and `peer`'s
+    /// (`PeerDao.upsertRow`'s `MAX(peers.lastSeenAt, excluded.lastSeenAt)`): every writer reads the row, changes it and
+    /// writes it back, and a copy read before a ``markSeen(_:gate:)`` must not take its stamp back.
     func upsert(_ peer: PeerRecord)
+
+    /// Raises each row's ``PeerRecord/lastSeenAt`` to its stamp in `stamps` where the row's is older than the stamp by more
+    /// than `gate` (`PeerDao.markSeen`, `lastSeenAt < at - gate`), in one write, and answers the ids whose row changed, or
+    /// `nil` when the write failed, which changed nothing. A stamp for a node with no row writes nothing.
+    func markSeen(_ stamps: [NodeId: Int64], gate: Int64) -> Set<NodeId>?
+
+    /// Every row's ``PeerRecord/lastSeenAt``, and nothing else of it (`PeerDao.namesAll`): what primes the bank's memory of
+    /// what it wrote, without decoding every key and prekey.
+    func lastSeenStamps() -> [NodeId: Int64]
 
     /// Every peer the user marked verified.
     func verifiedNodeIds() -> Set<NodeId>
@@ -124,7 +155,31 @@ public final class MemoryPeerStore: PeerStore {
     }
 
     public func upsert(_ peer: PeerRecord) {
-        peers.withLock { $0[peer.nodeId] = peer }
+        peers.withLock { peers in
+            var row = peer
+            row.lastSeenAt = max(peer.lastSeenAt, peers[peer.nodeId]?.lastSeenAt ?? peer.lastSeenAt)
+            peers[peer.nodeId] = row
+        }
+    }
+
+    public func markSeen(_ stamps: [NodeId: Int64], gate: Int64) -> Set<NodeId>? {
+        peers.withLock { peers in
+            var changed: Set<NodeId> = []
+            for (nodeId, at) in stamps {
+                guard let olderThan = PeerRecord.seenThreshold(at: at, gate: gate), let held = peers[nodeId]?.lastSeenAt,
+                    held < olderThan
+                else {
+                    continue
+                }
+                peers[nodeId]?.lastSeenAt = at
+                changed.insert(nodeId)
+            }
+            return changed
+        }
+    }
+
+    public func lastSeenStamps() -> [NodeId: Int64] {
+        peers.withLock { $0.mapValues(\.lastSeenAt) }
     }
 
     public func verifiedNodeIds() -> Set<NodeId> {

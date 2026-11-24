@@ -27,6 +27,9 @@ document:
 - When your iPhone passes another phone for a few seconds, it now sends that phone's own messages first, a
   little at a time, so a short meeting still delivers them. An iPhone carrying all it can for others also
   stops resending messages the other phone turned down.
+- A contact who shares a name with a stranger now goes back to just their name once your iPhone hasn't heard
+  from the stranger for a week. The stranger keeps the alias, and both show it again if your iPhone hears from
+  the stranger later.
 
 ### Fixed
 

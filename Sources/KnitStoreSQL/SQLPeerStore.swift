@@ -10,11 +10,24 @@ public import KnitWire
 /// do, so the proof never outlives the pin it proves. A proof can go before its pin: the sweep deletes one longer than
 /// custody's profile cap (``deleteProfileFrames(longerThan:)``, ADR 2026-10.r88m), and the pin stays.
 public final class SQLPeerStore: PeerStore {
-    /// Every column of a peer, in the order ``upsert(_:)`` binds them. `INSERT OR REPLACE` writes a whole row, so a
-    /// column missing here would be nulled by every write: the photo hashes and the prekey are here for that reason.
+    /// Every column of a peer, in the order ``upsert(_:)`` binds them. The upsert writes a whole row, so a column missing
+    /// here would be reset by every write: the photo hashes, the prekey and `lastSeenAt` are here for that reason.
     private static let columns =
         "nodeId, name, status, publicKey, deviceTag, protocolVersion, capabilities, updatedAt, verified, openToChat, avatarHash, "
-        + "advertisedAvatarHash, prekeyId, prekeyPub, prekeySig, prekeyProfileAt"
+        + "advertisedAvatarHash, prekeyId, prekeyPub, prekeySig, prekeyProfileAt, lastSeenAt"
+
+    /// The upsert's conflict clause: every column but the key takes the row written, and `lastSeenAt` the larger of the two,
+    /// as `PeerDao.upsertRow` merges it (knit-next ADR 2026-10.k8ge), so a read-copy-write never takes back a stamp
+    /// ``markSeen(_:gate:)`` banked after the read. An upsert, not `INSERT OR REPLACE`, which deletes the row first.
+    private static let upsertSQL =
+        "INSERT INTO peers (\(columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+        + "ON CONFLICT (nodeId) DO UPDATE SET "
+        + "name = excluded.name, status = excluded.status, publicKey = excluded.publicKey, deviceTag = excluded.deviceTag, "
+        + "protocolVersion = excluded.protocolVersion, capabilities = excluded.capabilities, updatedAt = excluded.updatedAt, "
+        + "verified = excluded.verified, openToChat = excluded.openToChat, avatarHash = excluded.avatarHash, "
+        + "advertisedAvatarHash = excluded.advertisedAvatarHash, prekeyId = excluded.prekeyId, prekeyPub = excluded.prekeyPub, "
+        + "prekeySig = excluded.prekeySig, prekeyProfileAt = excluded.prekeyProfileAt, "
+        + "lastSeenAt = MAX(peers.lastSeenAt, excluded.lastSeenAt)"
 
     private let database: KnitDatabase
 
@@ -36,15 +49,46 @@ public final class SQLPeerStore: PeerStore {
     public func upsert(_ peer: PeerRecord) {
         database.write(or: ()) { db in
             try db.execute(
-                sql: "INSERT OR REPLACE INTO peers (\(Self.columns)) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                sql: Self.upsertSQL,
                 arguments: [
                     StoredText.bytes(peer.nodeId.string), StoredText.bytes(peer.name), StoredText.bytes(peer.status),
                     StoredText.bytes(peer.publicKey), StoredText.bytes(peer.deviceTag), peer.protocolVersion, peer.capabilities,
                     peer.updatedAt, peer.verified, peer.openToChat, StoredText.bytes(peer.avatarHash?.string),
                     StoredText.bytes(peer.advertisedAvatarHash?.string), peer.prekey?.id, peer.prekey.map { Data($0.pub) },
-                    peer.prekey.map { Data($0.sig) }, peer.prekeyProfileAt,
+                    peer.prekey.map { Data($0.sig) }, peer.prekeyProfileAt, peer.lastSeenAt,
                 ]
             )
+        }
+    }
+
+    public func markSeen(_ stamps: [NodeId: Int64], gate: Int64) -> Set<NodeId>? {
+        // One transaction for the whole bank, as `PeerRepository.flushSeen` writes it. The threshold is overflow-checked
+        // (``PeerRecord/seenThreshold(at:gate:)``), the same as the memory store's.
+        database.write(or: nil) { db -> Set<NodeId>? in
+            var changed: Set<NodeId> = []
+            for (nodeId, at) in stamps {
+                guard let olderThan = PeerRecord.seenThreshold(at: at, gate: gate) else {
+                    continue
+                }
+                try db.execute(
+                    sql: "UPDATE peers SET lastSeenAt = ? WHERE nodeId = ? AND lastSeenAt < ?",
+                    arguments: [at, StoredText.bytes(nodeId.string), olderThan]
+                )
+                if db.changesCount > 0 {
+                    changed.insert(nodeId)
+                }
+            }
+            return changed
+        }
+    }
+
+    public func lastSeenStamps() -> [NodeId: Int64] {
+        database.read(or: [:]) { db in
+            var stamps: [NodeId: Int64] = [:]
+            for row in try Row.fetchAll(db, sql: "SELECT nodeId, lastSeenAt FROM peers") {
+                stamps[try row.nodeId("nodeId")] = try row.decode(Int64.self, forColumn: "lastSeenAt")
+            }
+            return stamps
         }
     }
 
@@ -109,7 +153,8 @@ public final class SQLPeerStore: PeerStore {
             avatarHash: try row.optionalBlobHash("avatarHash"),
             advertisedAvatarHash: try row.optionalBlobHash("advertisedAvatarHash"),
             prekey: try prekey(row),
-            prekeyProfileAt: try row.decode(Int64.self, forColumn: "prekeyProfileAt")
+            prekeyProfileAt: try row.decode(Int64.self, forColumn: "prekeyProfileAt"),
+            lastSeenAt: try row.decode(Int64.self, forColumn: "lastSeenAt")
         )
     }
 

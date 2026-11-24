@@ -1,5 +1,6 @@
 public import KnitCrypto
 import KnitStore
+import KnitWire
 
 extension MeshEngine {
     /// A node with `identity` and the prekeys it keeps, its repositories, and the transport, clock and randomness it runs
@@ -29,5 +30,18 @@ extension MeshEngine {
             groupRatchetEngine: GroupRatchetEngine(),
             partials: MemoryPartialBlobStore()
         )
+    }
+
+    // Kept out of `MeshEngine.swift`, whose class body is at the lint's limit.
+
+    /// A relay's jitter, uniform in `0..<jitterWindowMilliseconds`.
+    func drawJitter() -> Int64 {
+        let window = UInt64(max(1, configuration.router.jitterWindowMilliseconds))
+        return Int64(random.next(upperBound: window))
+    }
+
+    /// A fresh frame id from the injected generator.
+    func newFrameId() -> String {
+        FrameId.generate(using: &random)
     }
 }

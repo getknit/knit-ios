@@ -33,6 +33,9 @@ public struct PeerLabel: Sendable, Equatable {
 /// distinct digests, so every label in an index is distinct. This makes a collision evident; it does not stop
 /// impersonation, which is what the safety number is for.
 ///
+/// A stranger not heard from in a week gives way (knit-next ADR 2026-10.k8ge, ``LabelFade``): the contact it collided
+/// with reads plain again, and the stranger keeps a label no one else wears.
+///
 /// Someone else's name is indexed as its ``NamePresenter`` draws it, so a name the content filter hides is blank here
 /// and takes the alias path an invisible name takes, and two hidden names still read apart (knit-next ADR
 /// 2026-11.y4pc). Our own name is never presented.
@@ -71,8 +74,17 @@ public struct PeerLabelIndex: Sendable {
     /// `me`, keyed by node id: a peer row for our own id and `me` are one identity, under our name as it is. Every
     /// member sharing a ``NameKey`` takes one token, then every member still sharing a rendered text takes one more,
     /// until all texts differ.
+    ///
+    /// The members in `stale` give way (`PeerLabels.index`'s `stale`, knit-next ADR 2026-10.k8ge): strangers not heard
+    /// from in a week (``LabelFade``). The rest, the live members, `me` always among them, are labelled as if the stale
+    /// ones were not there, so a contact whose only namesake went quiet reads plain again. A stale member still reads
+    /// apart from everyone: it starts at the tokens it would hold against every member, never fewer, so a look-alike that
+    /// ground a contact's alias and then went quiet cannot settle on the label the contact wore while both were live, and
+    /// it grows past every text that still matches, the live texts held fixed. Empty, or naming no member, it changes
+    /// nothing.
     public init(
-        peers: [(nodeId: String, name: String)], me: (nodeId: String, name: String)? = nil, presenter: NamePresenter = .asStored
+        peers: [(nodeId: String, name: String)], me: (nodeId: String, name: String)? = nil, presenter: NamePresenter = .asStored,
+        stale: Set<String> = []
     ) {
         var stored: [String: String] = [:]
         var order: [String] = []
@@ -82,30 +94,23 @@ public struct PeerLabelIndex: Sendable {
         }
         var words: [String: [String]] = [:]
         var names: [String: String] = [:]
+        var keys: [String: String] = [:]
         var keyGroups: [String: Set<String>] = [:]
         for nodeId in order {
             words[nodeId] = Alias.tokens(for: nodeId)
             let name = Alias.displayName(stored: stored[nodeId], nodeId: nodeId)
             names[nodeId] = name
-            keyGroups[NameKey.of(name), default: []].insert(nodeId)
+            let key = NameKey.of(name)
+            keys[nodeId] = key
+            keyGroups[key, default: []].insert(nodeId)
         }
-        var spent: [String: Int] = [:]
-        for group in keyGroups.values where group.count > 1 {
-            for nodeId in group {
-                spent[nodeId] = Self.tokensInName(stored[nodeId]) + 1
-            }
-        }
-        let render = { (nodeId: String, tokens: Int) in
-            PeerLabel.text(names[nodeId] ?? nodeId, Self.discriminator(words[nodeId] ?? [], stored[nodeId], tokens))
-        }
-        var texts: [String: String] = [:]
-        for nodeId in order {
-            texts[nodeId] = render(nodeId, spent[nodeId] ?? Self.tokensInName(stored[nodeId]))
-        }
-        Self.growUntilDistinct(&texts, &spent, stored, render)
+        let universe = Universe(stored: stored, names: names, keys: keys, words: words)
+        let full = universe.consumed(among: order)
+        let yielding = Set(order.filter { stale.contains($0) && $0 != me?.nodeId })
+        let spent = yielding.isEmpty ? full : universe.yielding(full, stale: yielding, order: order)
         var textGroups: [String: Set<String>] = [:]
-        for (nodeId, text) in texts {
-            textGroups[text, default: []].insert(nodeId)
+        for nodeId in order {
+            textGroups[universe.text(nodeId, spent[nodeId] ?? 0), default: []].insert(nodeId)
         }
         self.init(
             storedNames: stored,
@@ -118,10 +123,13 @@ public struct PeerLabelIndex: Sendable {
         )
     }
 
-    /// Whether `other` holds the same names, byte for byte, under the same ids, so it gives every id the label and the
-    /// mention texts this index gives: both are made from the names alone.
+    /// Whether `other` holds the same names, byte for byte, under the same ids, with every member spending the same
+    /// tokens, so it gives every id the label and the mention texts this index gives: both are made from the names and
+    /// those counts. The counts differ only where a stale member gave way in one index and not the other (ADR
+    /// 2026-11.58yk), which moves labels with no name changing.
     func holdsTheNames(of other: Self) -> Bool {
         selfId.map(ExactKey.init) == other.selfId.map(ExactKey.init) && storedNames.count == other.storedNames.count
+            && consumed == other.consumed
             && storedNames.allSatisfy { nodeId, name in other.storedNames[nodeId].map { ExactKey($0) == ExactKey(name) } ?? false }
     }
 
@@ -186,43 +194,15 @@ public struct PeerLabelIndex: Sendable {
         !idsByText[text, default: []].subtracting([nodeId]).isEmpty
     }
 
-    /// Each round, every id whose text another shares takes one more token, bounded by the digest's ten.
-    private static func growUntilDistinct(
-        _ texts: inout [String: String],
-        _ consumed: inout [String: Int],
-        _ stored: [String: String],
-        _ render: (String, Int) -> String
-    ) {
-        for _ in 0..<Alias.maxTokens {
-            let colliding = Dictionary(grouping: texts.keys) { texts[$0] ?? "" }.values.filter { $0.count > 1 }.flatMap(\.self)
-            guard !colliding.isEmpty else {
-                return
-            }
-            var grew = false
-            for nodeId in colliding {
-                let spent = consumed[nodeId] ?? tokensInName(stored[nodeId])
-                if spent < Alias.maxTokens {
-                    consumed[nodeId] = spent + 1
-                    texts[nodeId] = render(nodeId, spent + 1)
-                    grew = true
-                }
-            }
-            // Nothing left to grow: two ids share every token, which only a SHA-256 collision could do.
-            guard grew else {
-                return
-            }
-        }
-    }
-
     /// The tokens a rendered name already spends: one when it is the alias, a blank profile's name. Blank is
     /// ``NameKey/isBlankName(_:)``, as in ``Alias/displayName(stored:nodeId:)``: if the two disagreed, a name of U+3164
     /// alone would render as `Alias (Alias)`.
-    private static func tokensInName(_ storedName: String?) -> Int {
+    internal static func tokensInName(_ storedName: String?) -> Int {
         NameKey.isBlankName(storedName) ? 1 : 0
     }
 
     /// The tokens after those the name spends, up to `spent`, or `nil` when there are none.
-    private static func discriminator(_ words: [String], _ storedName: String?, _ spent: Int) -> String? {
+    internal static func discriminator(_ words: [String], _ storedName: String?, _ spent: Int) -> String? {
         let from = tokensInName(storedName)
         guard spent > from else {
             return nil
@@ -239,4 +219,81 @@ private struct LabelParts {
     var words: [String]
     /// The tokens the label spends, those its name spends included.
     var spent: Int
+}
+
+/// One index's members, what each renders as, and the passes that count their tokens (`Universe` in knit-next's
+/// `PeerLabels.kt`). Every member's count is recorded, live and stale alike: a member that fell through to
+/// ``PeerLabelIndex``'s `resolve` would be judged against the stale members its live labels leave out.
+private struct Universe {
+    /// Each member's stored name, as it is drawn.
+    let stored: [String: String]
+    /// ``Alias/displayName(stored:nodeId:)``'s answer for each member.
+    let names: [String: String]
+    /// Each member's name's ``NameKey``.
+    let keys: [String: String]
+    /// Each member's whole alias phrase.
+    let words: [String: [String]]
+
+    /// `nodeId`'s rendered label when it spends `tokens`.
+    func text(_ nodeId: String, _ tokens: Int) -> String {
+        PeerLabel.text(
+            names[nodeId] ?? nodeId, PeerLabelIndex.discriminator(words[nodeId] ?? [], stored[nodeId], tokens))
+    }
+
+    /// The rule over `ids` alone (`consumedAmong`): a token for each member of a name another of `ids` shares, then
+    /// rounds until no text repeats.
+    func consumed(among ids: [String]) -> [String: Int] {
+        var shared: [String: Int] = [:]
+        for nodeId in ids {
+            shared[keys[nodeId] ?? "", default: 0] += 1
+        }
+        var consumed: [String: Int] = [:]
+        for nodeId in ids {
+            let namesake = shared[keys[nodeId] ?? "", default: 0] > 1
+            consumed[nodeId] = PeerLabelIndex.tokensInName(stored[nodeId]) + (namesake ? 1 : 0)
+        }
+        growUntilDistinct(&consumed, frozen: [])
+        return consumed
+    }
+
+    /// The live members, every one in `order` outside `stale`, labelled among themselves; each of `stale` from where
+    /// `full` put it, grown past every text, the live ones held fixed (`yielding`).
+    func yielding(_ full: [String: Int], stale: Set<String>, order: [String]) -> [String: Int] {
+        let live = order.filter { !stale.contains($0) }
+        var consumed = consumed(among: live)
+        for nodeId in stale {
+            consumed[nodeId] = full[nodeId]
+        }
+        growUntilDistinct(&consumed, frozen: Set(live))
+        return consumed
+    }
+
+    /// Each round, every id whose text another shares takes one more token, except a `frozen` one, whose text the round
+    /// reads but never moves. Bounded by the digest's ten.
+    private func growUntilDistinct(_ consumed: inout [String: Int], frozen: Set<String>) {
+        var texts: [String: String] = [:]
+        for (nodeId, tokens) in consumed {
+            texts[nodeId] = text(nodeId, tokens)
+        }
+        for _ in 0..<Alias.maxTokens {
+            let colliding = Dictionary(grouping: texts.keys) { texts[$0] ?? "" }.values.filter { $0.count > 1 }.flatMap(\.self)
+                .filter { !frozen.contains($0) }
+            guard !colliding.isEmpty else {
+                return
+            }
+            var grew = false
+            for nodeId in colliding {
+                let spent = consumed[nodeId] ?? 0
+                if spent < Alias.maxTokens {
+                    consumed[nodeId] = spent + 1
+                    texts[nodeId] = text(nodeId, spent + 1)
+                    grew = true
+                }
+            }
+            // Nothing left to grow: two ids share every token, which only a SHA-256 collision could do.
+            guard grew else {
+                return
+            }
+        }
+    }
 }

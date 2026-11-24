@@ -206,8 +206,8 @@ Kotlin wins.
       - `ab0d17aa` hunts a Coded peer lost at range (knit-next ADR 2026-10.yvn6), never an iPhone (`ble-transport.md`);
       - `d6c3be1b` gives up a GATT payload read on the elapsed clock, still after 12 s;
       - `38e425b5` keys the DM ratchet's receive state by root tag (ADR 2026-10.gcrd), and this port has no ratchet;
-      - `540bf032` re-sends a direct transfer's READY, `d9b6f1c4` paces LoRa, and `47485429` fades stranger name clashes
-        after a week (ADR 2026-10.k8ge);
+      - `540bf032` re-sends a direct transfer's READY and `d9b6f1c4` paces LoRa. `47485429` fades stranger name clashes
+        after a week (ADR 2026-10.k8ge), and was mirrored past the pin on 2026-11-23 (ADR 2026-11.58yk);
       - `280bf959` and `5f521cb9` change Android's photo picks, within the types this port takes;
       - the rest is Android's alone: notifications, the debug bridge, metrics, agents, tooling and tests.
   - **Up to `e63f15f4`** (the previous pin; 396 commits, releases `v2.9.0` and `v2.10.0` among them; 24 fixtures added to `wire-v1.json` and

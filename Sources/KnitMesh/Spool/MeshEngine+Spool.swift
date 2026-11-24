@@ -76,6 +76,9 @@ extension MeshEngine {
             log.log(.debug, "spool unopenable \(id.prefix(CustodySync.idCharacters)): no key or a bad signature")
             return .unopenable
         }
+        // Outside the verdict's unit, before the admission: the same signed frame and `sentAt` the radio would stamp, and
+        // the bank keeps the newest, so a copy the router already saw costs nothing (knit-next ADR 2026-10.k8ge).
+        noteHeard(frame.wire, frame.envelope, sender: candidate.claimedSender)
         let wall = clock.wallMilliseconds()
         guard let held = custodyCopy(id, now: wall) else {
             return .notTaken

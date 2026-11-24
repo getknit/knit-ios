@@ -85,6 +85,7 @@ public final class MeshEngine {
     /// 2026-11.khhj; ADR 2026-11.xfcq). Gone with the process: the stamp's bytes outlive it in the kept frame.
     var signedProfile: SignedFrame?
     var timers: Timers?
+    var heardFrom = HeardFrom() // When each peer was last heard, until the next bank (knit-next ADR 2026-10.k8ge).
 
     /// Why frames were dropped so far, by reason.
     public private(set) var dropped: [DropReason: Int] = [:]
@@ -111,6 +112,8 @@ public final class MeshEngine {
         var heal: Int64
         /// When the ratchet's retention sweeps and the group custody replay are next due, read only with the switch on.
         var ratchetSweep: Int64
+        /// When the last-heard stamps are next banked (``bankHeard()``).
+        var seenBank: Int64
     }
 
     /// A node with `identity` and the prekeys it keeps, its repositories, and the transport, clock and randomness it runs
@@ -195,7 +198,7 @@ public final class MeshEngine {
         guard let timers else {
             return nil
         }
-        let exchanges = [blobExchange.nextDeadline, blobExchange.parkPollAt, ackSync.nextBatchDue, custodyLookDeadline]
+        let exchanges = [blobExchange.nextDeadline, blobExchange.parkPollAt, ackSync.nextBatchDue, custodyLookDeadline, timers.seenBank]
         let ratchetSweep = configuration.ratchet ? timers.ratchetSweep : nil
         let deadlines = [router.nextDeadline, timers.reoffer, timers.sweep, timers.heal, typing.nextDeadline, ratchetSweep]
         return (deadlines + exchanges + [nextPresenceLinkUp]).compactMap(\.self).min()
@@ -240,7 +243,8 @@ public final class MeshEngine {
             reoffer: now + configuration.reofferMilliseconds,
             sweep: now + configuration.sweepMilliseconds,
             heal: now + configuration.healMilliseconds,
-            ratchetSweep: now + RatchetSessions.sweepMilliseconds
+            ratchetSweep: now + RatchetSessions.sweepMilliseconds,
+            seenBank: now + configuration.seenBankMilliseconds
         )
     }
 
@@ -339,6 +343,7 @@ public final class MeshEngine {
             heal()
             due.heal = now + configuration.healMilliseconds
         }
+        bankHeardIfDue(now: now, timers: &due)
         if configuration.ratchet, now >= due.ratchetSweep {
             sweepRatchet()
             // The net under the instant replays (`replayUndeliveredGroupCustody`, `MeshManager.kt:971`), once an hour as
@@ -366,17 +371,6 @@ public final class MeshEngine {
 
     func noteCustodyChanged() {
         custodyRevision += 1
-    }
-
-    /// A relay's jitter, uniform in `0..<jitterWindowMilliseconds`.
-    func drawJitter() -> Int64 {
-        let window = UInt64(max(1, configuration.router.jitterWindowMilliseconds))
-        return Int64(random.next(upperBound: window))
-    }
-
-    /// A fresh frame id from the injected generator.
-    func newFrameId() -> String {
-        FrameId.generate(using: &random)
     }
 
     /// A sender-supplied clock bounded to five minutes past ours before it becomes a local watermark

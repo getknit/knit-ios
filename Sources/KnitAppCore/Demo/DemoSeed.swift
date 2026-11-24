@@ -339,7 +339,10 @@ public enum DemoSeed {
                     verified: person.verified,
                     openToChat: person.openToChat,
                     avatarHash: photo,
-                    advertisedAvatarHash: photo
+                    advertisedAvatarHash: photo,
+                    // Heard from as their profile came, so the demo's cast never reads as strangers gone quiet (ADR
+                    // 2026-11.58yk).
+                    lastSeenAt: now - profileAge
                 )
             )
             return keys.nodeId

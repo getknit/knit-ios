@@ -29,6 +29,8 @@ public struct Directory: Sendable {
     public let blocked: Set<NodeId>
     /// The collision-aware labels.
     public let labels: PeerLabelIndex
+    /// The strangers whose name clash has faded (``LabelFade``): they give way in ``labels``, and keep a label of their own.
+    public let stale: Set<NodeId>
     /// Our own node id.
     public let me: NodeId
     /// Our own photo, or `nil` for none.
@@ -38,17 +40,24 @@ public struct Directory: Sendable {
 
     /// The directory over `peers`, the people blocked, and our own id, name and photo. With `names`, the content filter
     /// is on: someone else's name, status or group name that the name screen flags draws blank (knit-next ADR
-    /// 2026-11.y4pc). Without it, everything draws as it is stored.
+    /// 2026-11.y4pc). Without it, everything draws as it is stored. The peers in `stale` give way in the labels (ADR
+    /// 2026-11.58yk); we never do.
     public init(
         peers: [PeerRecord], blocked: Set<NodeId> = [], me: NodeId, myName: String, myPhoto: BlobHash? = nil,
-        names: ShownNames? = nil
+        names: ShownNames? = nil, stale: Set<NodeId> = []
     ) {
         self.peers = Dictionary(peers.map { ($0.nodeId, $0) }) { first, _ in first }
         verified = Set(peers.filter(\.verified).map(\.nodeId))
         self.blocked = blocked
         person = names?.person ?? .asStored
         group = names?.group ?? .asStored
-        labels = PeerLabelIndex(peers: peers.map { ($0.nodeId.string, $0.name) }, me: (me.string, myName), presenter: person)
+        self.stale = stale.subtracting([me])
+        labels = PeerLabelIndex(
+            peers: peers.map { ($0.nodeId.string, $0.name) },
+            me: (me.string, myName),
+            presenter: person,
+            stale: Set(self.stale.map(\.string))
+        )
         self.me = me
         self.myPhoto = myPhoto
     }

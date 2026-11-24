@@ -32,6 +32,10 @@ extension AppSession {
     /// notification left behind would make the thread's next one a quiet replacement.
     public func setActive(_ active: Bool) async {
         isActive = active
+        if active {
+            // Days may have passed while the app was suspended, and its hourly judge with it.
+            judgeLabelFade()
+        }
         if active, let visible {
             read(visible)
             await notifier?.withdraw(threadId: visible)

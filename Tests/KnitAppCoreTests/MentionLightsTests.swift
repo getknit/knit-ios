@@ -12,12 +12,21 @@ import Testing
     private static let me = Person(seed: 1).nodeId
     private static let alice = Person(seed: 2).nodeId
     private static let bob = Person(seed: 3).nodeId
+    /// A stranger also named Alice.
+    private static let namesake = Person(seed: 4).nodeId
 
-    private func labels(alice name: String = "Alice", hiding: Bool = false) -> PeerLabelIndex {
-        PeerLabelIndex(
-            peers: [(nodeId: Self.alice.string, name: name), (nodeId: Self.bob.string, name: "Bob")],
+    /// Whether the index holds a second Alice, and whether her clash has faded (ADR 2026-11.58yk).
+    private enum Namesake {
+        case absent, live, stale
+    }
+
+    private func labels(alice name: String = "Alice", hiding: Bool = false, namesake: Namesake = .absent) -> PeerLabelIndex {
+        let stranger = namesake == .absent ? [] : [(nodeId: Self.namesake.string, name: "Alice")]
+        return PeerLabelIndex(
+            peers: [(nodeId: Self.alice.string, name: name), (nodeId: Self.bob.string, name: "Bob")] + stranger,
             me: (nodeId: Self.me.string, name: "Walter"),
-            presenter: hiding ? NamePresenter { $0 == "Alice" ? "" : $0 } : .asStored)
+            presenter: hiding ? NamePresenter { $0 == "Alice" ? "" : $0 } : .asStored,
+            stale: namesake == .stale ? [Self.namesake.string] : [])
     }
 
     private func row(
@@ -84,7 +93,8 @@ import Testing
 
     /// Builds over the labels, the filter, the roster and the window: unchanged, a rename, the filter on and off, two
     /// rosters, then 200 newer counted rows that push the room's rows out of the window, their sender blocked and
-    /// unblocked, and back.
+    /// unblocked, and back; then a namesake who arrives, fades and comes back, which moves the labels with no name
+    /// changing.
     @Test func everyBuildLightsWhatAFreshJudgeWould() {
         var lights = MentionLights()
         let builds = [
@@ -100,6 +110,9 @@ import Testing
             Build(labels: labels(), newer: MentionWindow.size, blocked: [Self.alice]),
             Build(labels: labels(), newer: MentionWindow.size),
             Build(labels: labels()),
+            Build(labels: labels(namesake: .live)),
+            Build(labels: labels(namesake: .stale)),
+            Build(labels: labels(namesake: .live)),
         ]
         for (index, build) in builds.enumerated() {
             let (labels, roster) = (build.labels, build.roster)
@@ -107,6 +120,17 @@ import Testing
             lights.begin(labels: labels, roster: roster, thread: thread, me: Self.me.string, blocked: build.blocked)
             let lit = thread.map { lights.spans(of: $0, me: Self.me.string) }
             #expect(lit == fresh(thread, labels, roster, blocked: build.blocked), "build \(index)")
+        }
+    }
+
+    /// The fade is what moves the bare name's light: the reader who sees two Alices lights no bare "@Alice", and once the
+    /// stranger has faded, the contact's bare name lights again (knit-next ADR 2026-11.p6dk's amendment to 2026-10.k8ge).
+    @Test func aFadeLightsTheBareNameAndANewClashPutsItOut() {
+        var lights = MentionLights()
+        let named = row("1", from: Self.bob, "@Alice hi", [(Self.alice, "Alice")])
+        for (state, lit) in [(Namesake.live, false), (.stale, true), (.live, false)] {
+            lights.begin(labels: labels(namesake: state), roster: nil, thread: [named], me: Self.me.string, blocked: [])
+            #expect(lights.spans(of: named, me: Self.me.string).isEmpty == !lit, "\(state)")
         }
     }
 

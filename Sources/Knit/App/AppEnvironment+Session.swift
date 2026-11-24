@@ -46,7 +46,9 @@
         static func session(
             _ parts: Parts, over service: any MeshService, notifying alerts: LocalNotifier?, linkPreviews: LinkPreviews?
         ) -> AppSession {
-            AppSession(
+            let clock = SystemClock()
+            let now: @Sendable () -> Int64 = { clock.wallMilliseconds() }
+            return AppSession(
                 identity: OwnIdentity(bundle: parts.identity.bundle),
                 stores: parts.stores,
                 mesh: service,
@@ -56,7 +58,8 @@
                 photoDimensions: { PhotoDecoder.dimensions($0) },
                 voiceNotes: voiceNotes(log: parts.log, demoClip: parts.demoVoice),
                 linkPreviews: linkPreviews,
-                preferences: parts.preferences
+                preferences: parts.preferences,
+                now: now
             )
         }
     }

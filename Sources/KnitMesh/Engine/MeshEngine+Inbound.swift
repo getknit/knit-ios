@@ -25,6 +25,10 @@ extension MeshEngine {
             return
         }
         let envelope = frame.envelope
+        // Right after the verdict, keyed on the id it checked against the key (`noteVerified`, `InboundPipeline.kt:373-388`).
+        if let sender = NodeId(envelope.senderId) {
+            noteHeard(frame.wire, envelope, sender: sender)
+        }
         // The custody entry rule (InboundPipeline.kt:236). A profile is carried even point to point, the way a
         // key request serves it, or the requester would pin the key and hold nothing (ADR 2026-09.7bu7).
         if envelope.type.isCustodial, frame.wire.relay || envelope.type == .profile {

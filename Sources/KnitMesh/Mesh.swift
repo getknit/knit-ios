@@ -161,7 +161,8 @@ public actor Mesh {
         serviceSpool()
         apply(links.stop())
         partials.purge()
-        engine.forgetTyping()
+        // Before the publish, so the bank's event goes out in it.
+        engine.meshStopping()
         publish()
     }
 

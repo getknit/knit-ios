@@ -71,6 +71,10 @@ public final class AppSession {
     @ObservationIgnored public let linkPreviews: LinkPreviews?
     /// The link-preview cards opened so far, which a thread draws; `nil` in a build without link previews.
     public let linkCards: LinkCards?
+    /// The wall clock a stranger's name clash fades by (``LabelFade``, knit-next ADR 2026-10.k8ge), or `nil` for a session
+    /// whose clashes never fade, as one built without a `LabelFade` keeps the old forever-universe there. The app always
+    /// passes one.
+    @ObservationIgnored let now: (@Sendable () -> Int64)?
 
     @ObservationIgnored let mesh: any MeshService
     @ObservationIgnored let notifier: (any Notifier)?
@@ -84,8 +88,8 @@ public final class AppSession {
 
     /// A session over `mesh` and the stores it writes, posting notifications through `notifier`, screening words with
     /// `textScreening` and names with `names`, reading photos' sizes with `photoDimensions`, recording, playing and
-    /// reading voice notes with `voiceNotes`, drawing link previews' cards with `linkPreviews`, and keeping the content
-    /// filter's toggle in `preferences`.
+    /// reading voice notes with `voiceNotes`, drawing link previews' cards with `linkPreviews`, keeping the content
+    /// filter's toggle in `preferences`, and letting a stranger's name clash fade by the wall clock `now`.
     @preconcurrency
     public init(
         identity: OwnIdentity, stores: MeshStores, mesh: any MeshService,
@@ -95,7 +99,8 @@ public final class AppSession {
         photoDimensions: (@Sendable ([UInt8]) -> PhotoDimensions?)? = nil,
         voiceNotes: VoiceNotes? = nil,
         linkPreviews: LinkPreviews? = nil,
-        preferences: any AppPreferences = MemoryPreferences()
+        preferences: any AppPreferences = MemoryPreferences(),
+        now: (@Sendable () -> Int64)? = nil
     ) {
         self.identity = identity
         self.stores = stores
@@ -109,24 +114,14 @@ public final class AppSession {
         let blobs = stores.blobs
         linkCards = linkPreviews.map { _ in LinkCards { blobs.bytes(of: $0) } }
         self.preferences = preferences
+        self.now = now
         filtersContent = preferences.filtersContent
         sendsLinkPreviews = preferences.linkPreviews
     }
 
-    /// Everyone this device knows, labelled, as of the current revision.
+    /// Everyone this device knows, labelled, as of the current revision (``buildDirectory()``).
     public var directory: Directory {
-        let now = revision
-        return cachedDirectory.value(for: now) {
-            let own = stores.ownProfile.load()
-            return Directory(
-                peers: stores.peers.allPeers(),
-                blocked: stores.blocks.blockedNodeIds(),
-                me: identity.nodeId,
-                myName: own.name,
-                myPhoto: own.avatarHash,
-                names: filtersContent ? names : nil
-            )
-        }
+        cachedDirectory.value(for: revision) { buildDirectory() }
     }
 
     /// The threads, and which are requests, as of the current revision.
@@ -150,6 +145,9 @@ public final class AppSession {
         // Read beside the mesh, not before it: the first launch of a build that keeps sizes reads every photo held, and the
         // first that reads voice notes every note.
         async let read: Void = readHeldAttachments()
+        // A stranger crosses a week of silence on the calendar, with no event to say so (ADR 2026-11.58yk).
+        let fading = Task { await judgeLabelFadeHourly() }
+        defer { fading.cancel() }
         for await event in mesh.events {
             await handle(event)
             eventTap?(event)
@@ -198,6 +196,12 @@ public final class AppSession {
             // A profile's device tag can block someone, and a group can lose us: either can take a thread off the list.
             revision += 1
             syncBadge()
+        case .peersHeard(let heard):
+            // A stamp only ever moves forward, so it can bring a faded clash back and never fade one: only a stranger the
+            // labels let go can read differently now (ADR 2026-11.58yk).
+            if !directory.stale.isDisjoint(with: heard) {
+                revision += 1
+            }
         case .trimmed:
             await noteTrimmed()
         case .neighborsChanged(let linked):

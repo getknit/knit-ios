@@ -166,9 +166,10 @@ public actor MeshControl {
                 return []
             }
             // A profile event says when the block followed someone's new keys (`MeshEngine.continueBlock`).
-            var fields = ControlLines.fields(of: peer, bundle: bundle, blocked: stores.blocks.blockedNodeIds().contains(node))
-            fields["event"] = "profile"
-            return [JSONValue.object(fields).line]
+            let fields = ControlLines.fields(of: peer, bundle: bundle, blocked: stores.blocks.blockedNodeIds().contains(node))
+            return [JSONValue.object(fields.merging(["event": "profile"]) { $1 }).line]
+        case .peersHeard:
+            return [] // Only a label reads it; a `profile` line would tell `interop.py` a profile came that did not.
         case .neighborsChanged(let neighbors):
             defer { linked = neighbors }
             return ControlLines.linkChanges(from: linked, to: neighbors)

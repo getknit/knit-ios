@@ -122,6 +122,9 @@ public struct MeshConfiguration: Sendable {
     /// How old our profile's publish stamp may grow before a republish, inside custody's 24 hours
     /// (`PROFILE_REPUBLISH_MS`).
     public var republishMilliseconds: Int64
+    /// How often the stamps of when each peer was last heard are banked to `peers.lastSeenAt`: Android banks them on its
+    /// 60 s metrics tick (`METRICS_LOG_INTERVAL_MS`, `MeshManager.kt:7950-7979`), and at stop (knit-next ADR 2026-10.k8ge).
+    public var seenBankMilliseconds: Int64
     /// Whether a fetch queries the neighbours that answer one before it asks for a blob (`BuildConfig.BLOB_QUERY`,
     /// knit-next ADR 2026-10.6e5t): on in the app, in every build, and in the Linux peer. Off, the default tests start
     /// from, every neighbour gets the blind round. Answering a query is on whatever this says.
@@ -175,7 +178,7 @@ public struct MeshConfiguration: Sendable {
         linkPreviews ? .linkPreview : []
     }
 
-    /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min and 12 h, and typing's 12 s and 8 s. The ratchet
+    /// knit-next's cadences unless told otherwise: 60 s, 10 min, 15 min, 12 h and the bank's 60 s, and typing's 12 s and 8 s. The ratchet
     /// is off unless asked for, as the blob query is: the app and the peer ask, and a test starts from the build before it.
     @preconcurrency
     public init(
@@ -184,6 +187,7 @@ public struct MeshConfiguration: Sendable {
         sweepMilliseconds: Int64 = 600_000,
         healMilliseconds: Int64 = 900_000,
         republishMilliseconds: Int64 = 43_200_000,
+        seenBankMilliseconds: Int64 = 60_000,
         queriesBlobHolders: Bool = false,
         typingLifetimeMilliseconds: Int64 = 12_000,
         typingIntervalMilliseconds: Int64 = 8000,
@@ -198,6 +202,7 @@ public struct MeshConfiguration: Sendable {
         self.sweepMilliseconds = sweepMilliseconds
         self.healMilliseconds = healMilliseconds
         self.republishMilliseconds = republishMilliseconds
+        self.seenBankMilliseconds = seenBankMilliseconds
         self.queriesBlobHolders = queriesBlobHolders
         self.typingLifetimeMilliseconds = typingLifetimeMilliseconds
         self.typingIntervalMilliseconds = typingIntervalMilliseconds
