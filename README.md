@@ -9,6 +9,8 @@
 Phones in range link over Bluetooth LE and relay for one another, so a message reaches people you were never
 in range of yourself. There is no server, no account and no phone number.
 
+[![Download on the App Store](https://img.shields.io/badge/App%20Store-Download-0D96F6?logo=appstore&logoColor=white)](https://apps.apple.com/app/id6820348510)
+
 [![CI](https://github.com/getknit/knit-ios/actions/workflows/ci.yml/badge.svg)](https://github.com/getknit/knit-ios/actions/workflows/ci.yml)
 ![Platform](https://img.shields.io/badge/iOS-18%2B-000000?logo=apple&logoColor=white)
 ![Swift](https://img.shields.io/badge/Swift-6.4-F05138?logo=swift&logoColor=white)
@@ -30,7 +32,9 @@ Knit for iOS is the iPhone port of [Knit](https://github.com/getknit/knit), the 
 Android. An iPhone speaks the same protocol as Knit for Android, so the two link directly and relay for each
 other on one mesh.
 
-Version 1.0.0 is headed for the App Store and has not been released yet. Everything below is in that build.
+Knit for iOS is free [on the App Store](https://apps.apple.com/app/id6820348510). Version 1.0.0 shipped on
+21 November 2026, and [`CHANGELOG.md`](CHANGELOG.md) lists what each release since has changed. Everything
+below is in the current release.
 
 ## Features
 
@@ -42,13 +46,19 @@ Version 1.0.0 is headed for the App Store and has not been released yet. Everyth
   Messages from people you haven't chatted with wait in Requests until you accept them.
 - **Groups** of up to eight people are end-to-end encrypted too. Start one with anyone you've chatted with or
   verified, then rename it or leave it. Groups started on Android phones work as well.
-- **Send photos in any chat** and save the ones you receive. GIFs and animated stickers play, and you can
-  react to a message with one of six emoji.
-- **Verify people in person** by scanning their code with the camera or comparing safety numbers. It works
-  with Android phones too.
+- **Send photos in any chat** and save the ones you receive. A ring fills as a photo arrives, and one cut off
+  when someone walks out of range picks up where it stopped once you reconnect. GIFs and animated stickers
+  play.
+- **Swipe a message to reply** with a quote, or long-press it to react with one of six emoji. Type @ to
+  mention someone, or @everyone in a group, and a message that mentions you gets a notification of its own.
+- **Add contacts and verify them in person** by scanning their code with the camera, or swap contact links
+  when you're apart. Safety numbers are there too, and all of it works with Android phones.
 - **Block or report someone** from their profile, a message or a request. Content filtering runs on the
-  iPhone itself: it hides explicit photos and abusive messages from other people until you tap them, and
-  won't send explicit photos or abuse to Nearby from your iPhone.
+  iPhone itself: it hides explicit photos and abusive messages from other people until you tap them, shows
+  someone with a slur in their name under an alias, and won't send explicit photos or abuse to Nearby from
+  your iPhone.
+- **Try sample chats** with made-up people to see how Knit works when nobody's nearby. Nothing you send there
+  reaches anyone.
 - **Knit stays readable at the largest text sizes,** and its text and buttons meet WCAG AA contrast.
 
 ## How it works
@@ -62,8 +72,8 @@ of the mesh through the Android phones around it.
 
 ### On iPhone, in the background
 
-Knit's open links keep running when it's in the background. iOS doesn't let other phones discover a
-backgrounded app, though, and suspends it until something wakes it, so Knit finds new people while it's open.
+Knit's open links stay up when it's in the background. iOS doesn't let other phones discover a backgrounded
+app, though, and suspends it until something wakes it, so Knit finds new people while it's open.
 
 - **It reconnects on its own.** When your iPhone loses its last link, Knit looks for nearby phones and
   reconnects to the first one it can, without being opened. If the phones it finds won't connect, it stops
@@ -83,13 +93,18 @@ backgrounded app, though, and suspends it until something wakes it, so Knit find
   static-key scheme, which has no forward secrecy, and reactions travel unencrypted.
 - A group's name and member list travel unencrypted, and so do typing indicators.
 - The Nearby room is public: everyone in range can read it.
+- Bluetooth links are encrypted between phones on Knit for iPhone 1.0.1 or later and the matching Knit for
+  Android update. A radio listening nearby sees how much crosses a link and when, but not who messages whom.
+  Links with older Android versions aren't encrypted, and your iPhone's own Bluetooth signal still names it.
+- Crash reports stay on your iPhone, under Settings › Diagnostics, unless you choose to send one.
 
 Report vulnerabilities privately, as [`SECURITY.md`](SECURITY.md) describes. It also lists the limits that
 are known and deliberate.
 
 ## Requirements
 
-- An iPhone running iOS 18 or later, with Bluetooth on.
+- An iPhone running iOS 18 or later, with Bluetooth on. Get Knit from the
+  [App Store](https://apps.apple.com/app/id6820348510).
 - Other people nearby running Knit, on iPhone or Android.
 
 ## Build
